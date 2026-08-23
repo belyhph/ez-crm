@@ -10623,8 +10623,14 @@ async function cloudPush(force){
   cloudSay('sending');
   try{
     if(!cloudVerified) await cloudVerifyRepo();
-    const snap = collectState();
-    const text = JSON.stringify(snap);
+    /* Берём сохранённые байты, а не свежий снимок: у свежего была бы новая метка
+       времени, местное хранилище осталось бы со старой — и приложение при каждом
+       возврате в окно считало бы облако новее себя и спрашивало про версию. */
+    let text = null;
+    try{ text = localStorage.getItem(stateKey()); }catch(e){}
+    if(!text){ saveState(); try{ text = localStorage.getItem(stateKey()); }catch(e){} }
+    if(!text){ cloudSay('ok'); return false; }
+    const snapAt = (text.match(/"savedAt":"([^"]+)"/) || [])[1] || '';
     const c = cloudCfg();
     const msg = 'EZ CRM · ' + (c.label || 'устройство')
       + ' · ' + new Date().toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})
@@ -10634,7 +10640,7 @@ async function cloudPush(force){
     if(res.conflict){
       const remote = await cloudRead();
       const remoteAt = remote && remote.data && remote.data.savedAt;
-      if(!force && remoteAt && snap.savedAt && remoteAt > snap.savedAt){
+      if(!force && remoteAt && snapAt && remoteAt > snapAt){
         cloudSay('conflict', 'В облаке версия новее — от ' + cloudTimeText(remoteAt));
         cloudAskWhich(remote);
         return false;
@@ -10642,7 +10648,7 @@ async function cloudPush(force){
       res = await cloudWrite(text, remote && remote.sha, msg);
       if(res.conflict) throw new Error('Облако сейчас занято другим устройством — повтори через минуту');
     }
-    cloudSetMark(snap.savedAt, res.sha);
+    cloudSetMark(snapAt, res.sha);
     cloudSay('ok');
     return true;
   }catch(e){
@@ -10671,7 +10677,15 @@ function cloudAdopt(remote){
   if(!remote || !remote.data) return;
   applyState(remote.data);
   stateStamp = null;          // состояние пришло извне — местный замок снимаем
-  saveState();
+  /* Кладём пришедшее с ЕГО меткой времени: пересохранение поставило бы новую,
+     и устройство сразу решило бы, что оно свежее облака, и погнало копию назад. */
+  let stored = false;
+  try{
+    localStorage.setItem(stateKey(), JSON.stringify(remote.data));
+    stateStamp = remote.data.savedAt || null;
+    stored = true;
+  }catch(e){}
+  if(!stored) saveState();
   cloudSetMark(stateStamp, remote.sha);
   cloudSay('ok');
   goHome(); refreshAll();
@@ -10712,6 +10726,15 @@ async function cloudPullNow(){
     cloudSay('error', cloudHuman(e));
   }
 }
+/* Одинаковы ли данные с точностью до метки времени. Метка меняется при каждом
+   сохранении, а содержимое — нет; без этой проверки человека спрашивали бы
+   про «новую версию» там, где менять нечего. */
+function cloudSameData(remoteData){
+  try{
+    const strip = t => String(t).replace(/"savedAt":"[^"]*",?/, '');
+    return strip(localStorage.getItem(stateKey()) || '') === strip(JSON.stringify(remoteData));
+  }catch(e){ return false; }
+}
 /* Тихая сверка при каждом возвращении в приложение: кто отстал — тот догоняет.
    Молча забираем только когда местных правок после последней отправки не было. */
 async function cloudCheckRemote(){
@@ -10723,6 +10746,11 @@ async function cloudCheckRemote(){
     const localAt = stateStamp || '';
     if(!remote){ await cloudPush(); return; }        // облако пустое — заселяем
     const rAt = (remote.data && remote.data.savedAt) || '';
+    if(cloudSameData(remote.data)){        // содержимое совпало — вопросов нет
+      cloudSetMark(localAt || rAt, remote.sha);
+      cloudSay('ok');
+      return;
+    }
     if(rAt && (!localAt || rAt > localAt)){
       const mark = cloudMark();
       if(mark && mark.stamp && localAt && mark.stamp === localAt){
