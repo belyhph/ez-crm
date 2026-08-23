@@ -1232,6 +1232,50 @@
   .picker-day.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:700;}
   .picker-day.today{border:1px solid var(--accent);}
   .picker-day.pad{visibility:hidden;}
+
+  /* ===== Широкие экраны: айпад альбомно и ноут (от 900px) =====
+     Всё ниже 900px не трогается вообще — телефонная вёрстка остаётся как была.
+     Здесь только раскладка: блоки те же, порядок в разметке тот же, просто
+     ширина тратится с пользой, а не на пустые поля по бокам. */
+  @media (min-width:900px){
+    .app{max-width:1600px;}
+
+    /* Дашборд: календарь слева и прилипает при прокрутке, задачи справа,
+       разделы одной полосой под ними */
+    #screen-dashboard.active{display:grid;grid-template-columns:minmax(400px,460px) minmax(0,1fr);
+      gap:1rem;align-items:start;}
+    #screen-dashboard .cal-panel{position:sticky;top:122px;}
+    #screen-dashboard .tasks-panel-big{margin-top:0;}
+    #screen-dashboard .quicklinks{grid-column:1 / -1;margin-top:.2rem;}
+    /* клетки месяца на большом экране не тянутся за высотой окна */
+    #screen-dashboard .cal-day-mini{height:36px;}
+
+    /* Проекты: строки в две колонки */
+    #screen-projects .tabpane.active{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:.5rem;align-items:start;}
+    #screen-projects .tabpane .empty-hint{grid-column:1 / -1;}
+
+    /* Карточка проекта: вкладки — боковая колонка слева, содержимое справа.
+       Разметка не меняется: сетка раскладывает прямых детей экрана, скрытые
+       панели (display:none) в ней не участвуют. */
+    #screen-project.active{display:grid;grid-template-columns:190px minmax(0,1fr);
+      gap:0 1.2rem;align-items:start;}
+    #screen-project > .card-head,
+    #screen-project > .checklist,
+    #screen-project > .day-strip,
+    #screen-project > .crew-strip,
+    #screen-project > .cancelled-banner{grid-column:1 / -1;}
+    #screen-project > .tabs{grid-column:1;flex-direction:column;gap:.15rem;
+      border:1px solid var(--line);border-radius:12px;background:var(--bg-raised);
+      padding:.45rem;margin-bottom:0;overflow:visible;position:sticky;top:122px;}
+    #screen-project > .tabs .tab{border-bottom:none;border-left:2px solid transparent;
+      border-radius:8px;text-align:left;padding:.5rem .7rem;}
+    #screen-project > .tabs .tab.active{border-color:var(--accent);background:var(--accent-soft);}
+    #screen-project > .tabpane{grid-column:2;}
+
+    /* Финансы: четыре плитки и график и так растягиваются; спискам долгов
+       ширина уходит целиком — им колонки не нужны, там группы по проектам */
+  }
 </style>
 
 
