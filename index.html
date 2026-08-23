@@ -518,6 +518,10 @@
   .form-slot input, .form-slot select{border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
     border-radius:8px;padding:.45rem .6rem;font-size:.84rem;outline:none;font-family:inherit;width:100%;}
   .form-slot input:focus, .form-slot select:focus{border-color:var(--accent);}
+  /* Галочки и радио внутри формы не растягиваются на всю ширину: правило выше рассчитано
+     на текстовые поля, а флажку width:100% ломало строку — подпись выдавливало за край. */
+  .form-slot input[type="checkbox"], .form-slot input[type="radio"]{width:auto;flex:0 0 auto;
+    padding:0;border:none;background:none;border-radius:0;}
   .form-slot .frow{display:flex;gap:.5rem;flex-wrap:wrap;}
   .form-slot .frow > *{flex:1;min-width:130px;}
   .form-hint{font-size:.72rem;color:var(--ink-muted);}
@@ -630,7 +634,8 @@
     font-size:.72rem;color:var(--ink-muted);padding:.12rem 0;}
   .settle-check{display:flex;align-items:flex-start;gap:.45rem;margin-top:.6rem;
     font-size:.78rem;color:var(--ink-muted);cursor:pointer;}
-  .settle-check input{margin-top:.15rem;flex:none;}
+  .settle-check input{margin-top:.15rem;flex:0 0 auto;width:auto;}
+  .settle-check > span{flex:1 1 auto;min-width:0;}
 
   /* ===== Отмена проекта: окно неустойки =====
      Строка на человека и на рентал: сверху кто и сколько выходит, снизу — быстрый
@@ -1010,10 +1015,15 @@
      циферблат 12-часовой, поэтому 15:00 и 3:00 — одна и та же точка. */
   .dial-shift-label{display:flex;align-items:center;justify-content:center;gap:.45rem;
     flex-wrap:wrap;font-size:.78rem;color:var(--ink-muted);margin:-.7rem 0 1rem;text-align:center;
-    min-height:1.5rem;}
+    min-height:1.5rem;
+    /* карточка панели — flex-колонка с прокруткой: без flex:none она сжимает подпись
+       до min-height, и вторая строка наезжает на список позиций */
+    flex:none;}
+  .dial-hint{flex-basis:100%;font-size:.66rem;opacity:.7;margin-top:.15rem;}
   .dial-ampm{border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink-muted);
     border-radius:99px;padding:.2rem .55rem;font-size:.66rem;font-family:inherit;cursor:pointer;}
   .dial-ampm:hover{border-color:var(--accent);color:var(--accent-ink);}
+  .dial-ampm.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
   .dial-roles{width:100%;max-width:380px;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.9rem;}
   .dial-role-row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
     border:1px solid var(--line);background:var(--bg-raised);border-radius:10px;padding:.5rem .7rem;}
@@ -1065,20 +1075,32 @@
   @keyframes micPulse{0%,100%{opacity:1;}50%{opacity:.4;}}
   .mic-btn.recording{animation:micPulse 1s ease-in-out infinite;}
 
-  /* Мини-календарь с множественным выбором дней — создание проекта */
-  .np-dates-block{border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem;background:var(--bg-sunk);}
-  .np-dates-head{display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;}
-  .np-dates-month{font-family:var(--font-mono);font-size:.78rem;flex:1;text-align:center;}
-  .np-dates-weekdays,.np-dates-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-  .np-dates-weekdays div{text-align:center;font-size:.6rem;color:var(--ink-muted);padding-bottom:.25rem;
-    text-transform:uppercase;}
-  .np-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;
-    font-size:.72rem;cursor:pointer;border:1px solid transparent;color:var(--ink);
+  /* Мини-календарь с множественным выбором дней — создание проекта.
+     Клетки намеренно НЕ квадратные: при семи колонках квадрат разгонял месяц
+     почти на треть экрана телефона, и форма создания проекта превращалась
+     в один сплошной календарь. Высота фиксированная, ширина тянется. */
+  .np-dates-block{border:1px solid var(--line);border-radius:10px;padding:.45rem .5rem;background:var(--bg-sunk);}
+  .np-dates-head{display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;}
+  .np-dates-head .icon-btn{width:22px;height:22px;font-size:.78rem;}
+  .np-dates-month{font-family:var(--font-mono);font-size:.72rem;flex:1;text-align:center;}
+  .np-dates-weekdays,.np-dates-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .np-dates-weekdays div{text-align:center;font-size:.54rem;color:var(--ink-muted);padding-bottom:.1rem;
+    text-transform:uppercase;letter-spacing:.02em;}
+  .np-day{height:26px;display:flex;align-items:center;justify-content:center;border-radius:5px;
+    font-size:.7rem;cursor:pointer;border:1px solid transparent;color:var(--ink);
     user-select:none;-webkit-user-select:none;touch-action:none;}
   .np-day.pad{visibility:hidden;}
+  .np-day.today{border-color:var(--line);font-weight:700;}
   .np-day.selected{background:var(--accent);color:var(--accent-contrast);font-weight:700;}
   .np-day:hover{border-color:var(--accent);}
-  #npDatesSummary{margin:.5rem 0 .2rem;}
+  /* Итог выбора и подсказка — одной строкой: раньше это были два абзаца,
+     и длинный текст про драг занимал две строки сам по себе. */
+  .np-dates-foot{display:flex;flex-wrap:wrap;justify-content:space-between;
+    gap:.05rem .6rem;margin-top:.35rem;}
+  .np-dates-foot .np-tip{opacity:.7;}
+  /* Пока открыта форма создания, месяц под ней прячем: два календаря подряд
+     (мини в форме и большой на дэшборде) забивали весь экран телефона. */
+  .cal-panel.creating #calBody, .cal-panel.creating > .legend{display:none;}
 
   /* Всплывающая подсказка календаря — маленькая, следует за курсором (Mac/iPad с трекпадом) */
   .cal-tooltip{position:fixed;z-index:200;transform:translate(-50%,-100%);background:var(--bg-raised);
@@ -1276,8 +1298,10 @@
           </div>
           <div class="np-dates-weekdays"><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div></div>
           <div class="np-dates-grid" id="npCalGrid"></div>
-          <div class="form-hint" id="npDatesSummary">Даты не выбраны — по умолчанию сегодня</div>
-          <div class="form-hint">Клик по дням — выбрать несколько; зажать и провести — выбрать диапазон (тач и мышь).</div>
+          <div class="np-dates-foot">
+            <span class="form-hint" id="npDatesSummary">Даты не выбраны — по умолчанию сегодня</span>
+            <span class="form-hint np-tip">тап — день, зажать и провести — диапазон</span>
+          </div>
         </div>
         <div class="form-err" id="np-error" style="display:none;"></div>
         <div style="display:flex;gap:.5rem;">
@@ -1776,8 +1800,10 @@
       </div>
       <div class="np-dates-weekdays"><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div></div>
       <div class="np-dates-grid" id="mdCalGrid"></div>
-      <div class="form-hint" id="mdDatesSummary"></div>
-      <div class="form-hint">Клик по дню — добавить или убрать; зажать и провести — выбрать диапазон.</div>
+      <div class="np-dates-foot">
+        <span class="form-hint" id="mdDatesSummary"></span>
+        <span class="form-hint np-tip">тап — день, зажать и провести — диапазон</span>
+      </div>
     </div>
     <div class="form-err" id="mdError" style="display:none;"></div>
     <div style="display:flex;gap:.5rem;margin-top:.8rem;">
@@ -2923,8 +2949,9 @@ function overtimePayFlatR(rates, role, otHours){
 function overtimePayFlat(role, otHours){ return overtimePayFlatR(CURRENT_RATES, role, otHours); }
 
 let dialDragging = false;
-let dialCumAngle = 0;      // накопленный угол в градусах, 360° = 12 ч, может уходить за 360 (несколько кругов)
-let dialLastAngle = null;
+let dialCumAngle = 0;      // длительность смены в градусах, 360° = 12 ч; больше круга = больше 12 ч
+let dialLaps = 0;          // сколько полных кругов уже накручено
+let dialNorm = 0;          // где ручка внутри круга, 0..360, отсчёт от начала смены
 /* Начало смены на циферблате. Раньше дуга всегда росла от 12 часов, и «смену с 15:00»
    отметить было нельзя. Теперь первый тап ставит начало там, где палец, а протяжка
    набирает длительность от этой точки. На расчёт влияет только длительность —
@@ -2932,14 +2959,25 @@ let dialLastAngle = null;
 let dialStartAngle = 0;
 let dialStartSet = false;  // начало уже выбрано пальцем (иначе — 12 часов по умолчанию)
 let dialStartPM = true;    // 15:00 или 3:00 — циферблат 12-часовой, читаем по переключателю
+let dialGrab = 'end';      // что тянем в этом жесте: 'end' — конец смены, 'start' — всю дугу
+/* Перенос начала — ОТДЕЛЬНЫЙ режим по кнопке, а не «взялся рядом с меткой».
+   Захват по близости выглядел удобным, но ломался ровно там, где нужен второй круг:
+   чтобы накрутить больше 12 часов, палец обязан пройти мимо метки начала, и касание
+   в паре градусов от неё утаскивало не конец смены, а всю дугу целиком — заливка
+   уезжала на новое время. Теперь по умолчанию палец всегда тянет ТОЛЬКО конец. */
+let dialMoveStart = false;
 const DIAL_MAX_ANGLE = 360*3; // не даём накрутить больше 36 часов — за пределами разумной смены
 const DIAL_SNAP = 7.5;        // 7.5° = 15 минут
 
-/* Геометрия циферблата замораживается на время жеста: если во время протяжки
-   карточка сдвинется хоть на пиксель (обновилась подпись, дорисовался расчёт),
-   центр не уплывёт — и дуга не съедет относительно пальца. */
-let dialGeom = null;        // центр жеста
-let dialLastClient = null;  // последняя точка пальца — для перебазирования при сдвиге
+/* ===== Почему механика абсолютная, а не «по приращениям» =====
+   Прежний циферблат складывал разницу углов между кадрами. Пока смена начиналась
+   с 12 часов и набиралась одним непрерывным жестом, это работало; но стоило
+   отпустить палец и коснуться в другом месте (а с началом не в 12 это происходит
+   всегда), как дуга и палец расходились на постоянный угол — циферблат «уплывал»,
+   и вернуть его можно было только «Очистить». Теперь состояние — это угол начала,
+   число полных кругов и положение ручки внутри круга. Ручка при каждом касании
+   встаёт ровно под палец, накопленной ошибке взяться неоткуда: сдвинулась карточка
+   во время протяжки — центр просто пересчитывается, и дуга остаётся под пальцем. */
 function dialCenterNow(){
   const rect = document.getElementById('dialWrap').getBoundingClientRect();
   return {cx: rect.left + rect.width/2, cy: rect.top + rect.height/2};
@@ -2949,51 +2987,64 @@ function dialAngleAt(c, x, y){
   if(deg < 0) deg += 360;
   return deg;
 }
-function dialAngleFromEvent(clientX, clientY){
-  if(!dialGeom) dialGeom = dialCenterNow();
-  return dialAngleAt(dialGeom, clientX, clientY);
+// центр берём живым на каждом событии — карточка может доехать анимацией прямо во время жеста
+function dialAngleFromEvent(clientX, clientY){ return dialAngleAt(dialCenterNow(), clientX, clientY); }
+function dialSnap(deg){ return Math.round(deg/DIAL_SNAP)*DIAL_SNAP; }
+function dialWrap360(deg){ return ((deg % 360) + 360) % 360; }
+function dialSyncCum(){ dialCumAngle = Math.min(DIAL_MAX_ANGLE, dialLaps*360 + dialNorm); }
+function dialArc(){ const l = Math.floor(dialCumAngle/360), r = dialCumAngle - l*360;
+  return {laps:l, rem:r, handle: dialStartAngle + (dialCumAngle>0 ? (r>0 ? r : 360) : 0)}; }
+
+/* Конец смены = абсолютный угол пальца, а круг выбирается по КРАТЧАЙШЕМУ пути от
+   того места, где ручка стояла. Правило одно и для протяжки, и для нового касания:
+   иначе повторное касание за меткой начала (без него второй круг не накрутить)
+   сбрасывало целый круг — 12 ч превращались в полчаса. */
+function dialSetEnd(angle){
+  const norm = dialSnap(dialWrap360(angle - dialStartAngle)) % 360;
+  const d = norm - dialNorm;
+  if(d < -180) dialLaps++;        // прошли метку начала по часовой
+  else if(d > 180) dialLaps--;    // и против часовой
+  dialNorm = norm;
+  if(dialLaps < 0){ dialLaps = 0; dialNorm = 0; }                    // назад дальше нуля не уводим
+  if(dialLaps*360 + dialNorm > DIAL_MAX_ANGLE){ dialLaps = DIAL_MAX_ANGLE/360; dialNorm = 0; }
 }
 function dialPointerDown(e){
   dialDragging = true;
-  dialGeom = null;   // центр берём заново в начале каждого жеста
   const angle = dialAngleFromEvent(e.clientX, e.clientY);
-  // новое касание по пустому циферблату задаёт начало смены и обнуляет длительность
-  if(dialCumAngle === 0){
-    dialStartAngle = Math.round(angle/DIAL_SNAP)*DIAL_SNAP;
+  if(!dialStartSet){
+    /* Начало ещё не выбрано — первое касание ставит его. Дальше начало держится
+       намертво (даже если длительность скрутили обратно в ноль): раньше условием
+       был нулевой угол, и случайно отмотанная в ноль смена теряла своё время. */
+    dialStartAngle = dialWrap360(dialSnap(angle));
     dialStartSet = true;
+    dialLaps = 0; dialNorm = 0; dialGrab = 'end';
+  } else if(dialMoveStart){
+    // режим «сдвинуть начало» включён кнопкой: вся смена переезжает, длительность сохраняется
+    dialGrab = 'start';
+    dialStartAngle = dialWrap360(dialSnap(angle));
+  } else {
+    dialGrab = 'end';
+    dialSetEnd(angle);             // ручка сразу встаёт под палец, круг — по кратчайшему пути
   }
-  dialLastAngle = angle;
-  dialLastClient = {x:e.clientX, y:e.clientY};
+  dialSyncCum();
   try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
   renderDial();   // метка начала и подпись должны появиться сразу по касанию, без протяжки
   e.preventDefault();
 }
 function dialPointerMove(e){
   if(!dialDragging) return;
-  /* Панель может сдвинуться прямо во время протяжки: доехала анимация открытия,
-     подскроллилась карточка — на телефоне это и выглядело «съезжающим» циферблатом.
-     Ловим сдвиг центра и перебазируем прошлую точку в новой системе координат —
-     дуга продолжается без скачка и не уходит от пальца. */
-  const now = dialCenterNow();
-  if(dialGeom && (Math.abs(now.cx - dialGeom.cx) > 0.5 || Math.abs(now.cy - dialGeom.cy) > 0.5)){
-    if(dialLastClient) dialLastAngle = dialAngleAt(now, dialLastClient.x, dialLastClient.y);
-    dialGeom = now;
-  }
   const angle = dialAngleFromEvent(e.clientX, e.clientY);
-  let delta = angle - dialLastAngle;
-  if(delta > 180) delta -= 360;   // переход через границу 0°/360° при движении по часовой
-  if(delta < -180) delta += 360;  // и против часовой
-  dialCumAngle = Math.min(DIAL_MAX_ANGLE, Math.max(0, dialCumAngle + delta));
-  dialLastAngle = angle;
-  dialLastClient = {x:e.clientX, y:e.clientY};
+  if(dialGrab === 'start') dialStartAngle = dialWrap360(dialSnap(angle));
+  else dialSetEnd(angle);
+  dialSyncCum();
   renderDial();
+  e.preventDefault();
 }
 function dialPointerUp(){
   if(!dialDragging) return;
   dialDragging = false;
-  dialGeom = null;
-  dialLastClient = null;
-  dialCumAngle = Math.round(dialCumAngle/DIAL_SNAP)*DIAL_SNAP; // снап к 15 минутам
+  if(dialGrab === 'start') dialMoveStart = false;   // перенесли — режим сам выключается
+  dialSyncCum();
   renderDial();
   updateDialCostIfReady();
 }
@@ -3017,6 +3068,10 @@ function dialShiftLabel(){
 }
 function toggleDialStartPM(){
   dialStartPM = !dialStartPM;
+  renderDial();
+}
+function toggleDialMoveStart(){
+  dialMoveStart = !dialMoveStart;
   renderDial();
 }
 function dialPolar(cx,cy,r,angleDeg){
@@ -3087,6 +3142,14 @@ function renderDial(){
     label.innerHTML = `<span>${esc(dialShiftLabel())}</span>` +
       ((dialStartSet || dialCumAngle>0)
         ? `<button class="dial-ampm" onclick="toggleDialStartPM()" title="Циферблат 12-часовой — уточни, день это или ночь">${dialStartPM?'после полудня':'до полудня'}</button>`
+        : '') +
+      (dialStartSet
+        ? `<button class="dial-ampm${dialMoveStart?' on':''}" onclick="toggleDialMoveStart()">сдвинуть начало</button>`
+        : '') +
+      (dialStartSet
+        ? `<span class="dial-hint">${dialMoveStart
+            ? 'коснись циферблата — туда переедет начало смены'
+            : 'больше 12 ч — просто крути дальше'}</span>`
         : '');
   }
 }
@@ -3181,8 +3244,8 @@ function closeHoursDial(){
   syncLayerLock();
 }
 function clearHoursDial(){
-  dialCumAngle = 0; dialLastAngle = null; dialDragging = false;
-  dialStartAngle = 0; dialStartSet = false; dialStartPM = true;
+  dialCumAngle = 0; dialLaps = 0; dialNorm = 0; dialDragging = false;
+  dialStartAngle = 0; dialStartSet = false; dialStartPM = true; dialGrab = 'end'; dialMoveStart = false;
   resetDialCounts();
   resetDialFlags();
   resetDialExtras();
@@ -4108,6 +4171,8 @@ function toggleCreateProject(){
   const f = document.getElementById('createProjectForm');
   const opening = f.style.display==='none';
   f.style.display = opening ? 'flex' : 'none';
+  const panel = f.closest('.cal-panel');
+  if(panel) panel.classList.toggle('creating', opening);
   document.getElementById('np-error').style.display='none';
   if(opening){
     resetNpDates(); npCalMonth = TODAY.getMonth(); npCalYear = TODAY.getFullYear(); renderNpCal();
@@ -4153,7 +4218,8 @@ function renderNpCal(){
   for(let i=0;i<startOffset;i++) cells += `<div class="np-day pad"></div>`;
   for(let d=1; d<=daysInMonth; d++){
     const iso = npIsoFor(d, npCalMonth, npCalYear);
-    cells += `<div class="np-day" data-iso="${iso}" onpointerdown="npPointerDown(event,'${iso}')">${d}</div>`;
+    const isToday = iso === TODAY_ISO;
+    cells += `<div class="np-day${isToday?' today':''}" data-iso="${iso}" onpointerdown="npPointerDown(event,'${iso}')">${d}</div>`;
   }
   document.getElementById(npTarget.grid).innerHTML = cells;
   npApplyPreviewClasses();

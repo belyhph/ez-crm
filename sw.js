@@ -3,7 +3,7 @@
    отдаём последнюю сохранённую копию. Данные проекта тут ни при чём: они
    живут в localStorage устройства, кэш хранит только сам файл приложения.
    Имя кэша меняется с каждой сборкой — прошлая версия подчищается сама. */
-const CACHE = 'ez-crm-03dadd3451';
+const CACHE = 'ez-crm-4fb1a532b0';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
