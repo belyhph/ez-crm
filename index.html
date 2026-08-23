@@ -1008,6 +1008,7 @@
   .dial-wrap{position:relative;width:min(244px,64vw,32vh);height:min(244px,64vw,32vh);touch-action:none;
     cursor:grab;flex:none;}
   .dial-wrap:active{cursor:grabbing;}
+  .dial-wrap.moving-start{border-radius:50%;box-shadow:0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft);}
   .dial-wrap svg{width:100%;height:100%;display:block;}
   .dial-hours{font-family:var(--font-mono);font-size:1.4rem;font-weight:700;text-align:center;
     margin:.35rem 0 .25rem;line-height:1.1;flex:none;}
@@ -1024,6 +1025,9 @@
   .dsl-line{max-width:100%;height:1.15rem;line-height:1.15rem;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .dsl-row{display:flex;gap:.4rem;height:1.4rem;align-items:center;}
+  .dial-diag{width:100%;max-width:380px;font-family:var(--font-mono);font-size:.58rem;
+    line-height:1.35;color:var(--ink-muted);background:var(--bg-sunk);border:1px solid var(--line);
+    border-radius:8px;padding:.35rem .5rem;margin-bottom:.5rem;white-space:pre-wrap;word-break:break-word;}
   .dsl-hint{height:1rem;line-height:1rem;font-size:.66rem;opacity:.7;
     max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .dial-ampm{border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink-muted);
@@ -1573,7 +1577,10 @@
   <div class="dial-wrap" id="dialWrap">
     <svg id="dialSvg" viewBox="0 0 320 320"></svg>
   </div>
-  <div class="dial-hours"><span id="dialHoursNum">0 ч</span><small>смена</small></div>
+  <div class="dial-hours" onclick="dialDiagTap()"><span id="dialHoursNum">0 ч</span><small>смена</small></div>
+  <!-- Строка диагностики: включается тройным тапом по числу часов. Нужна, чтобы поймать
+       «съезд» на живом телефоне: видно угол пальца, сдвиг центра и что прислала система. -->
+  <div class="dial-diag" id="dialDiag" style="display:none;"></div>
   <!-- Подпись — блок постоянной высоты и постоянных узлов: см. комментарий в renderDial -->
   <div class="dial-shift-label" id="dialShiftLabel">
     <div class="dsl-line" id="dialShiftText"></div>
@@ -3042,6 +3049,15 @@ function dialAngleFromEvent(clientX, clientY){
   }
   return dialAngleAt(dialCenterNow(), clientX, clientY);   // запасной путь
 }
+let dialDiagCtm0 = null;
+function dialCtmOffset(){   // где центр рисунка сейчас на экране — для замера «уехал ли циферблат»
+  const svg = document.getElementById('dialSvg');
+  const m = svg && svg.getScreenCTM ? svg.getScreenCTM() : null;
+  if(!m) return {x:0,y:0};
+  const p = svg.createSVGPoint(); p.x = DIAL_C; p.y = DIAL_C;
+  const q = p.matrixTransform(m);
+  return {x:q.x, y:q.y};
+}
 function dialSnap(deg){ return Math.round(deg/DIAL_SNAP)*DIAL_SNAP; }
 function dialWrap360(deg){ return ((deg % 360) + 360) % 360; }
 function dialSyncCum(){ dialCumAngle = Math.min(DIAL_MAX_ANGLE, dialLaps*360 + dialNorm); }
@@ -3081,14 +3097,46 @@ function dialApplyDrag(clientX, clientY){
   dialPrevRaw = raw;
   dialSetCum(dialSnap(dialDownCum + dialTurns*360 + raw));
 }
+/* ===== Диагностика жеста (тройной тап по числу часов) =====
+   Синтетическими событиями в браузере на компьютере «съезд» не воспроизводится,
+   поэтому меряем на живом телефоне: что прислала система, куда попал палец,
+   не уехал ли сам циферблат за время жеста. */
+let dialDiag = false, dialDiagTaps = 0, dialDiagTapT = 0;
+let dialDiagLog = {событий:0, отмен:0, чужих:0, типы:'', сдвигЦентра:0, палец:0, старт0:0, cum0:0, кадры:0};
+function dialDiagTap(){
+  const now = Date.now();
+  dialDiagTaps = (now - dialDiagTapT < 700) ? dialDiagTaps+1 : 1;
+  dialDiagTapT = now;
+  if(dialDiagTaps >= 3){
+    dialDiagTaps = 0;
+    dialDiag = !dialDiag;
+    document.getElementById('dialDiag').style.display = dialDiag ? 'block' : 'none';
+    dialDiagRender();
+  }
+}
+function dialDiagRender(){
+  const el = document.getElementById('dialDiag');
+  if(!el || !dialDiag) return;
+  const g = dialDiagLog;
+  el.textContent =
+    `старт ${dialStartAngle}° · круг ${dialLaps+1} · ${(dialCumAngle/360*12).toFixed(2)} ч · norm ${dialNorm.toFixed(1)}°\n`+
+    `жест: было ${(g.cum0/360*12).toFixed(2)} ч → стало ${(dialCumAngle/360*12).toFixed(2)} ч (${((dialCumAngle-g.cum0)>=0?'+':'')}${(dialCumAngle-g.cum0).toFixed(1)}°)\n`+
+    `палец ${g.палец.toFixed(1)}° · разворот ${dialPrevRaw.toFixed(1)}° · turns ${dialTurns}\n`+
+    `событий ${g.событий} · кадров ${g.кадры} · отмен ${g.отмен} · чужих пальцев ${g.чужих}\n`+
+    `сдвиг центра за жест ${g.сдвигЦентра.toFixed(2)} px · тип ${g.типы||'—'}\n`+
+    `режим ${dialMoveStart?'ПЕРЕНОС НАЧАЛА':'обычный'} · захват ${dialGrab} · тянем ${dialDragging?'да':'нет'}`;
+}
 let dialPointerId = null;   // жест ведёт РОВНО один палец
 let dialDownClient = null;  // точка касания (в координатах экрана) — опора текущего жеста
 let dialDownCum = 0;        // длительность на момент касания
 let dialPrevRaw = 0, dialTurns = 0;      // разворот угла в круги
 function dialPointerDown(e){
-  if(dialDragging) return;   // второй палец (или ладонь) в жест не вмешивается
+  if(dialDragging){ dialDiagLog.чужих++; if(dialDiag) dialDiagRender(); return; }   // второй палец (или ладонь) в жест не вмешивается
   dialDragging = true;
   dialPointerId = e.pointerId;
+  dialDiagLog = {событий:1, отмен:0, чужих:0, типы:e.pointerType||'?', сдвигЦентра:0,
+    палец:0, старт0:dialStartAngle, cum0:dialCumAngle, кадры:0};
+  dialDiagCtm0 = dialCtmOffset();
   dialDownClient = {x:e.clientX, y:e.clientY};
   dialDownCum = dialCumAngle;
   dialPrevRaw = 0; dialTurns = 0;
@@ -3118,15 +3166,24 @@ function dialPointerDown(e){
   e.preventDefault();
 }
 function dialPointerMove(e){
-  if(!dialDragging || e.pointerId !== dialPointerId) return;
+  if(!dialDragging) return;
+  if(e.pointerId !== dialPointerId){ dialDiagLog.чужих++; return; }
+  dialDiagLog.событий++;
+  const off = dialCtmOffset();
+  if(dialDiagCtm0){ const d = Math.hypot(off.x-dialDiagCtm0.x, off.y-dialDiagCtm0.y);
+    if(d > dialDiagLog.сдвигЦентра) dialDiagLog.сдвигЦентра = d; }
+  dialDiagLog.палец = dialAngleFromEvent(e.clientX, e.clientY);
+  if(dialDiagLog.типы.indexOf(e.pointerType) < 0) dialDiagLog.типы += '+' + e.pointerType;
   if(dialGrab === 'start') dialStartAngle = dialWrap360(dialSnap(dialAngleFromEvent(e.clientX, e.clientY)));
   else dialApplyDrag(e.clientX, e.clientY);
+  dialDiagLog.кадры++;
   renderDial();
   e.preventDefault();
 }
 function dialPointerUp(e){
   if(!dialDragging) return;
   if(e && e.pointerId != null && e.pointerId !== dialPointerId) return;
+  if(e && e.type === 'pointercancel') dialDiagLog.отмен++;
   dialPointerId = null;
   dialDragging = false;
   if(dialGrab === 'start') dialMoveStart = false;   // перенесли — режим сам выключается
@@ -3156,22 +3213,38 @@ function toggleDialStartPM(){
   dialStartPM = !dialStartPM;
   renderDial();
 }
+/* Режим переноса начала опасен тем, что следующее касание двигает ВСЮ дугу.
+   Поэтому включённый режим видно за версту: циферблат обводится акцентным кольцом.
+   И он сам гаснет через 8 секунд — случайно задетая кнопка не может тихо ждать. */
+let dialMoveStartTimer = null;
 function toggleDialMoveStart(){
   dialMoveStart = !dialMoveStart;
+  if(dialMoveStartTimer){ clearTimeout(dialMoveStartTimer); dialMoveStartTimer = null; }
+  if(dialMoveStart) dialMoveStartTimer = setTimeout(()=>{ dialMoveStart = false; renderDial(); }, 8000);
   renderDial();
 }
 function dialPolar(cx,cy,r,angleDeg){
   const rad = (angleDeg-90)*Math.PI/180;
   return {x: cx+r*Math.cos(rad), y: cy+r*Math.sin(rad)};
 }
-function dialWedgePath(cx,cy,r,startDeg,endDeg){
-  // Ограничиваем ДЛИНУ дуги, а не абсолютный конец: дуга теперь начинается
-  // в произвольной точке, и обрезка по 359.99° «в ноль циферблата» её бы перекосила.
-  let span = endDeg - startDeg;
-  if(span >= 359.99) span = 359.99;   // вырожденный полный круг ломает flag-логику дуги
+/* ===== Почему круги теперь КОЛЬЦАМИ, а не наложением секторов =====
+   Раньше каждый круг рисовался полупрозрачным сектором-пирогом поверх предыдущего.
+   Пока смена короче 12 часов, всё понятно. Но в момент перехода на второй круг
+   картинка менялась ЦЕЛИКОМ: только что был диск с прорезью у метки начала —
+   и вдруг сплошной диск, а прорезь «перепрыгнула» на другую сторону метки и стала
+   плотнее. Глаз читает это как «вся заливка уехала», хотя ни одна цифра не менялась.
+   Теперь каждый круг — своё кольцо, вложенное внутрь предыдущего. Первые 12 часов
+   набирают внешнее кольцо; пошёл тринадцатый час — внешнее просто замыкается,
+   а от метки начала начинает расти НОВОЕ кольцо внутри. Ничего никуда не переезжает,
+   и сколько кругов накручено, видно с одного взгляда. Кольца концентричны центру
+   рисунка по построению: у дуги нет вершины, которой можно было бы съехать. */
+const DIAL_RINGS = [108, 86, 64];   // радиусы колец: 1-й круг, 2-й, 3-й
+const DIAL_RING_W = 16;             // толщина кольца
+function dialRingPath(cx,cy,r,startDeg,spanDeg){
+  const span = Math.min(spanDeg, 359.9);
   const s = dialPolar(cx,cy,r,startDeg), e = dialPolar(cx,cy,r,startDeg+span);
   const large = span <= 180 ? 0 : 1;
-  return `M ${cx} ${cy} L ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)} Z`;
+  return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
 }
 function fmtHoursLabel(h){
   const totalMin = Math.round(h*60);
@@ -3203,10 +3276,14 @@ function dialBuildSvg(){
     <circle cx="${g.cx}" cy="${g.cy}" r="${g.track}" fill="var(--bg-raised)" stroke="var(--line)" stroke-width="1.5"></circle>
     ${ticks}${nums}
     <g id="dialDynG">
-      <path id="dialLap0" fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
-      <path id="dialLap1" fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
-      <path id="dialLap2" fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
-      <path id="dialRem"  fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
+      <circle id="dialRingBed0" cx="${g.cx}" cy="${g.cy}" r="${DIAL_RINGS[0]}" fill="none" stroke="var(--line)" stroke-opacity=".35" stroke-width="${DIAL_RING_W}"></circle>
+      <circle id="dialRingBed1" cx="${g.cx}" cy="${g.cy}" r="${DIAL_RINGS[1]}" fill="none" stroke="var(--line)" stroke-opacity=".35" stroke-width="${DIAL_RING_W}" style="display:none"></circle>
+      <circle id="dialRingBed2" cx="${g.cx}" cy="${g.cy}" r="${DIAL_RINGS[2]}" fill="none" stroke="var(--line)" stroke-opacity=".35" stroke-width="${DIAL_RING_W}" style="display:none"></circle>
+      <circle id="dialRingFull0" cx="${g.cx}" cy="${g.cy}" r="${DIAL_RINGS[0]}" fill="none" stroke="var(--ink-muted)" stroke-opacity=".55" stroke-width="${DIAL_RING_W}" style="display:none"></circle>
+      <circle id="dialRingFull1" cx="${g.cx}" cy="${g.cy}" r="${DIAL_RINGS[1]}" fill="none" stroke="var(--ink-muted)" stroke-opacity=".55" stroke-width="${DIAL_RING_W}" style="display:none"></circle>
+      <circle id="dialRingFull2" cx="${g.cx}" cy="${g.cy}" r="${DIAL_RINGS[2]}" fill="none" stroke="var(--ink-muted)" stroke-opacity=".55" stroke-width="${DIAL_RING_W}" style="display:none"></circle>
+      <path id="dialRingArc" fill="none" stroke="var(--ink-muted)" stroke-opacity=".9" stroke-width="${DIAL_RING_W}" style="display:none"></path>
+      <line id="dialStartLine" stroke="var(--accent)" stroke-width="1.5" stroke-opacity=".55" style="display:none"></line>
       <circle cx="${g.cx}" cy="${g.cy}" r="3" fill="var(--ink-muted)"></circle>
       <circle id="dialStartMark" r="6" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.5" style="display:none"></circle>
       <circle id="dialHandle" r="9" fill="var(--accent)" stroke="var(--bg)" stroke-width="2.5" style="display:none"></circle>
@@ -3226,25 +3303,35 @@ function renderDial(){
   const laps = Math.floor(dialCumAngle/360);
   const rem = dialCumAngle - laps*360;
   const start = dialStartAngle;   // дуга растёт от выбранного начала, а не всегда от 12 часов
-  // каждый полный круг — свой слой: наложение делает заливку плотнее
-  for(let i=0;i<3;i++){
-    const el = document.getElementById('dialLap'+i);
-    if(i < laps){ el.setAttribute('d', dialWedgePath(g.cx,g.cy,g.wedgeR,start,start+360)); el.style.display=''; }
-    else el.style.display='none';
+  // индекс кольца, которое сейчас набирается (и на котором сидит ручка)
+  const cur = Math.min(DIAL_RINGS.length-1, rem>0 ? laps : Math.max(0, laps-1));
+  for(let i=0;i<DIAL_RINGS.length;i++){
+    // ложе кольца показываем только у тех кругов, до которых уже дошли
+    document.getElementById('dialRingBed'+i).style.display = (i<=cur && (dialCumAngle>0 || i===0)) ? '' : 'none';
+    document.getElementById('dialRingFull'+i).style.display = (i < laps) ? '' : 'none';
   }
-  const remEl = document.getElementById('dialRem');
-  if(rem > 0){ remEl.setAttribute('d', dialWedgePath(g.cx,g.cy,g.wedgeR,start,start+rem)); remEl.style.display=''; }
-  else remEl.style.display='none';
-  // ручка — конец дуги; отдельная метка — начало смены
+  const arc = document.getElementById('dialRingArc');
+  if(rem > 0 && laps < DIAL_RINGS.length){
+    arc.setAttribute('d', dialRingPath(g.cx,g.cy,DIAL_RINGS[laps],start,rem));
+    arc.style.display = '';
+  } else arc.style.display = 'none';
+  // ручка — конец набираемого кольца; метка начала — на внешнем кольце, с лучом внутрь
   const handleAngle = start + (dialCumAngle>0 ? (rem>0 ? rem : 360) : 0);
-  const hp = dialPolar(g.cx,g.cy,g.wedgeR,handleAngle);
+  const hp = dialPolar(g.cx,g.cy,DIAL_RINGS[cur],handleAngle);
   const hEl = document.getElementById('dialHandle');
   if(dialCumAngle>0){ hEl.setAttribute('cx',hp.x.toFixed(2)); hEl.setAttribute('cy',hp.y.toFixed(2)); hEl.style.display=''; }
   else hEl.style.display='none';
-  const sp = dialPolar(g.cx,g.cy,g.wedgeR,start);
+  const sp = dialPolar(g.cx,g.cy,DIAL_RINGS[0],start);
   const sEl = document.getElementById('dialStartMark');
-  if(dialStartSet || dialCumAngle>0){ sEl.setAttribute('cx',sp.x.toFixed(2)); sEl.setAttribute('cy',sp.y.toFixed(2)); sEl.style.display=''; }
-  else sEl.style.display='none';
+  const lEl = document.getElementById('dialStartLine');
+  if(dialStartSet || dialCumAngle>0){
+    sEl.setAttribute('cx',sp.x.toFixed(2)); sEl.setAttribute('cy',sp.y.toFixed(2)); sEl.style.display='';
+    const a = dialPolar(g.cx,g.cy,DIAL_RINGS[Math.min(cur,DIAL_RINGS.length-1)]-DIAL_RING_W/2-2,start);
+    const b = dialPolar(g.cx,g.cy,DIAL_RINGS[0]+DIAL_RING_W/2+2,start);
+    lEl.setAttribute('x1',a.x.toFixed(2)); lEl.setAttribute('y1',a.y.toFixed(2));
+    lEl.setAttribute('x2',b.x.toFixed(2)); lEl.setAttribute('y2',b.y.toFixed(2));
+    lEl.style.display='';
+  } else { sEl.style.display='none'; lEl.style.display='none'; }
 
   dialSetText(document.getElementById('dialHoursNum'), fmtHoursLabel(dialCumAngle/360*12));
   /* Подпись — блок ПОСТОЯННОЙ высоты с постоянными узлами. Кнопки не пересоздаются,
@@ -3258,6 +3345,9 @@ function renderDial(){
   dialSetText(ampm, dialStartPM ? 'после полудня' : 'до полудня');
   const mv = document.getElementById('dialMoveStartBtn');
   if(mv) mv.classList.toggle('on', dialMoveStart);
+  const wrapEl = document.getElementById('dialWrap');
+  if(wrapEl) wrapEl.classList.toggle('moving-start', dialMoveStart);
+  if(dialDiag) dialDiagRender();
   dialSetText(document.getElementById('dialShiftHint'), !dialStartSet ? ''
     : dialMoveStart ? 'коснись циферблата — туда переедет начало смены'
     : 'больше 12 ч — просто крути дальше');
