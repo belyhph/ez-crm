@@ -213,7 +213,8 @@
     #calAddBtn .cal-add-label{display:none;}
     /* легенда под календарём — тоже в один ряд; базовое правило .legend стоит
        ниже по файлу и при равной специфичности победило бы — уточняем селектор */
-    .panel .legend{gap:.55rem;font-size:.62rem;flex-wrap:nowrap;white-space:nowrap;margin-top:.8rem;}
+    .panel .legend{gap:.3rem .55rem;font-size:.62rem;flex-wrap:wrap;white-space:nowrap;margin-top:.8rem;}
+    .panel .legend .coin-ico{width:9px;height:9px;}
     .panel .legend i{width:7px;height:7px;}
   }
 
@@ -235,6 +236,7 @@
   .cal-day-evs{display:flex;flex-direction:column;gap:1px;min-width:0;}
   .cal-ev{display:block;font-size:.52rem;line-height:1.5;font-weight:600;padding:0 3px;
     border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cal-ev .coin-ico{width:7px;height:7px;vertical-align:-0.5px;margin-right:2px;}
   .cal-ev-more{font-size:.5rem;color:var(--ink-muted);padding-left:3px;line-height:1.3;}
   .cal-day-mini.pad{visibility:hidden;}
   .cal-day-mini.today{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink);}
@@ -275,6 +277,7 @@
 
   .legend{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem;font-size:.74rem;color:var(--ink-muted);}
   .legend span{display:inline-flex;align-items:center;gap:.35rem;}
+  .coin-ico{flex:none;opacity:.85;}
   .legend i{width:8px;height:8px;border-radius:50%;display:inline-block;}
 
   .plist{display:flex;flex-direction:column;gap:.5rem;}
@@ -1258,11 +1261,20 @@
        разделы одной полосой под ними */
     #screen-dashboard.active{display:grid;grid-template-columns:minmax(420px,520px) minmax(0,1fr);
       gap:1rem;align-items:start;}
-    #screen-dashboard .cal-panel{position:sticky;top:122px;}
+    /* Календарь занимает всю высоту окна: сетка недель делит место поровну,
+       пустоты под месяцем больше нет. Пока открыта форма создания — высота
+       по содержимому, чтобы форму не резало на коротких окнах. */
+    #screen-dashboard .cal-panel{position:sticky;top:122px;display:flex;flex-direction:column;
+      height:calc(100dvh - 140px);min-height:540px;}
+    #screen-dashboard .cal-panel.creating{height:auto;min-height:0;}
+    #screen-dashboard .cal-panel #calBody{flex:1;display:flex;flex-direction:column;min-height:0;}
+    #screen-dashboard .cal-panel #calBody .cal-grid{flex:1;grid-auto-rows:1fr;}
+    #screen-dashboard .cal-panel #calBody .cal-week{flex:1;}
+    #screen-dashboard .cal-panel > .legend{margin-top:.8rem;}
     #screen-dashboard .tasks-panel-big{margin-top:0;}
     #screen-dashboard .quicklinks{grid-column:1 / -1;margin-top:.2rem;}
-    /* на большом экране клетке месяца даём больше воздуха и читаемые плашки */
-    #screen-dashboard .cal-day-mini{min-height:74px;}
+    /* высоту клеткам раздаёт сама сетка (1fr на ряд) — фикс не нужен */
+    #screen-dashboard .cal-day-mini{min-height:0;}
     #screen-dashboard .cal-ev{font-size:.6rem;line-height:1.55;padding:0 4px;}
     #screen-dashboard .cal-day-num{font-size:.72rem;}
 
@@ -1276,17 +1288,25 @@
        панели (display:none) в ней не участвуют. */
     #screen-project.active{display:grid;grid-template-columns:190px minmax(0,1fr);
       gap:0 1.2rem;align-items:start;}
+    /* Порядок раскладки задан явно (order), потому что курсор автопотока не
+       возвращается назад: положи навигацию в разметке после полосы команды —
+       и она падала рядом ниже. Сначала блоки во всю ширину, потом навигация,
+       потом полоса команды в правой колонке, следом активная панель. */
     #screen-project > .card-head,
     #screen-project > .checklist,
     #screen-project > .day-strip,
-    #screen-project > .crew-strip,
-    #screen-project > .cancelled-banner{grid-column:1 / -1;}
-    #screen-project > .tabs{grid-column:1;flex-direction:column;gap:.15rem;
-      border:1px solid var(--line);border-radius:12px;background:var(--bg-raised);
-      padding:.45rem;margin-bottom:0;overflow:visible;position:sticky;top:122px;}
+    #screen-project > .cancelled-banner{grid-column:1 / -1;order:-3;}
+    #screen-project > .crew-strip{grid-column:2;order:-1;}
+    /* Навигация — без коробки, в языке приложения: столбец вкладок с левой
+       чертой у активной, как подчёркивание у горизонтальных табов. Растянута
+       на все ряды колонки, чтобы автопоток не ронял панели под неё. */
+    #screen-project > .tabs{grid-column:1;grid-row:span 40;order:-2;flex-direction:column;gap:.1rem;
+      border-bottom:none;background:none;margin-bottom:0;overflow:visible;
+      align-self:start;position:sticky;top:122px;}
     #screen-project > .tabs .tab{border-bottom:none;border-left:2px solid transparent;
-      border-radius:8px;text-align:left;padding:.5rem .7rem;}
-    #screen-project > .tabs .tab.active{border-color:var(--accent);background:var(--accent-soft);}
+      border-radius:0 8px 8px 0;text-align:left;padding:.45rem .7rem;}
+    #screen-project > .tabs .tab:hover{color:var(--accent-ink);}
+    #screen-project > .tabs .tab.active{border-color:var(--accent);background:none;}
     #screen-project > .tabpane{grid-column:2;}
 
     /* Финансы: четыре плитки и график и так растягиваются; спискам долгов
@@ -1402,7 +1422,8 @@
         <span><i style="background:var(--pending)"></i>В работе</span>
         <span><i style="background:var(--warn)"></i>Ждём оплату</span>
         <span><i style="background:var(--ok)"></i>Закрыт</span>
-        <span>₽ День оплаты</span>
+        <span>◆ Освоение</span>
+        <span><svg class="coin-ico" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>День оплаты</span>
       </div>
     </div>
 
@@ -4140,7 +4161,27 @@ function shiftCal(dir){
   else if(calMode==='month'){ calMonth += dir; if(calMonth<0){calMonth=11;calYear--;} if(calMonth>11){calMonth=0;calYear++;} }
   renderCalendar();
 }
+/* Свайп по календарю листает месяц/неделю: влево — вперёд, вправо — назад.
+   Слушатели висят на постоянном #calBody (innerHTML их не сносит). Вертикальное
+   движение отдаём прокрутке (touch-action:pan-y), клики не задеваются — без
+   смещения жест свайпом не считается. */
+let calSwipe = null;
+function calSwipeInit(){
+  const el = document.getElementById('calBody');
+  if(!el || el.dataset.swipe) return;
+  el.dataset.swipe = '1';
+  el.style.touchAction = 'pan-y';
+  el.addEventListener('pointerdown', e=>{ calSwipe = {id:e.pointerId, x:e.clientX, y:e.clientY}; });
+  window.addEventListener('pointerup', e=>{
+    if(!calSwipe || e.pointerId !== calSwipe.id) return;
+    const dx = e.clientX - calSwipe.x, dy = e.clientY - calSwipe.y;
+    calSwipe = null;
+    if(Math.abs(dx) > 56 && Math.abs(dx) > Math.abs(dy)*2) shiftCal(dx < 0 ? 1 : -1);
+  });
+  window.addEventListener('pointercancel', ()=>{ calSwipe = null; });
+}
 function renderCalendar(){
+  calSwipeInit();
   if(calMode==='month') renderCalendarMonth();
   else if(calMode==='week') renderCalendarWeek();
   else renderCalendarWork();
@@ -4280,9 +4321,10 @@ function renderCalendarMonth(){
       ...shootProjects.map(p=>{ const ph = projectPhase(p);
         return {t:p.name, bg:PHASE_SOFT[ph], fg:PHASE_TEXT[ph]}; }),
       ...scoutProjects.map(p=>({t:'◆ '+p.name, bg:'var(--accent-soft)', fg:'var(--accent-ink)'})),
-      ...paydayProjects.map(p=>({t:'₽ '+p.name, bg:'var(--warn-soft)', fg:'var(--warn)'})),
+      ...paydayProjects.map(p=>({t:p.name, ico:'coin', bg:'var(--warn-soft)', fg:'var(--warn)'})),
     ];
-    const shown = evs.slice(0,3).map(e=>`<span class="cal-ev" style="background:${e.bg};color:${e.fg};">${esc(e.t)}</span>`).join('');
+    const coinSvg = '<svg class="coin-ico" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>';
+    const shown = evs.slice(0,3).map(e=>`<span class="cal-ev" style="background:${e.bg};color:${e.fg};">${e.ico==='coin'?coinSvg:''}${esc(e.t)}</span>`).join('');
     const more = evs.length>3 ? `<span class="cal-ev-more">ещё ${evs.length-3}</span>` : '';
     const reasons = [
       ...shootProjects.map(p=>({id:p.id, r:'shoot'})),
@@ -4312,7 +4354,7 @@ function renderCalendarWeek(){
     const dim = q && dayProjects.length && !matching.length;
     const cls = 'cal-wday'+(isToday?' today':'')+(dayProjects.length?' has-project':'')+(dim?' dim':'');
     const payday = dayHasPayday(d.getDate(), d.getMonth(), d.getFullYear());
-    let html = `<div class="cal-wnum" style="position:relative;">${d.getDate()}${payday?'<span class="cal-payday-mark" style="top:-2px;right:-8px;">₽</span>':''}</div>`;
+    let html = `<div class="cal-wnum" style="position:relative;">${d.getDate()}${payday?'<span class="cal-payday-mark" style="top:-2px;right:-8px;"><svg class="coin-ico" viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg></span>':''}</div>`;
     dayProjects.forEach(p=>{
       const ph = projectPhase(p);
       const isMatch = !q || matching.includes(p);
