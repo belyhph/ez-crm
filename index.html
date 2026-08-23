@@ -2978,6 +2978,7 @@ const DIAL_SNAP = 7.5;        // 7.5° = 15 минут
    число полных кругов и положение ручки внутри круга. Ручка при каждом касании
    встаёт ровно под палец, накопленной ошибке взяться неоткуда: сдвинулась карточка
    во время протяжки — центр просто пересчитывается, и дуга остаётся под пальцем. */
+const DIAL_C = 160;   // центр рисунка в координатах viewBox (одна константа на отрисовку и на счёт угла)
 function dialCenterNow(){
   const rect = document.getElementById('dialWrap').getBoundingClientRect();
   return {cx: rect.left + rect.width/2, cy: rect.top + rect.height/2};
@@ -2987,8 +2988,23 @@ function dialAngleAt(c, x, y){
   if(deg < 0) deg += 360;
   return deg;
 }
-// центр берём живым на каждом событии — карточка может доехать анимацией прямо во время жеста
-function dialAngleFromEvent(clientX, clientY){ return dialAngleAt(dialCenterNow(), clientX, clientY); }
+/* Угол меряем НЕ от середины прямоугольника обёртки, а переводим точку пальца
+   в собственные координаты <svg> (getScreenCTM). Заливка рисуется вокруг точки
+   (160,160) этого же рисунка — значит палец и заливка считаются от ОДНОГО центра,
+   что бы ни случилось со страницей: анимация открытия, прокрутка карточки,
+   масштабирование пальцами, резиновый отскок Safari, нестандартная пропорция
+   элемента. Съехать друг относительно друга они физически не могут. */
+function dialAngleFromEvent(clientX, clientY){
+  const svg = document.getElementById('dialSvg');
+  const ctm = svg && svg.getScreenCTM ? svg.getScreenCTM() : null;
+  if(ctm){
+    const p = svg.createSVGPoint(); p.x = clientX; p.y = clientY;
+    const u = p.matrixTransform(ctm.inverse());
+    let deg = Math.atan2(u.x - DIAL_C, -(u.y - DIAL_C)) * 180/Math.PI;
+    return deg < 0 ? deg + 360 : deg;
+  }
+  return dialAngleAt(dialCenterNow(), clientX, clientY);   // запасной путь
+}
 function dialSnap(deg){ return Math.round(deg/DIAL_SNAP)*DIAL_SNAP; }
 function dialWrap360(deg){ return ((deg % 360) + 360) % 360; }
 function dialSyncCum(){ dialCumAngle = Math.min(DIAL_MAX_ANGLE, dialLaps*360 + dialNorm); }
@@ -3008,8 +3024,11 @@ function dialSetEnd(angle){
   if(dialLaps < 0){ dialLaps = 0; dialNorm = 0; }                    // назад дальше нуля не уводим
   if(dialLaps*360 + dialNorm > DIAL_MAX_ANGLE){ dialLaps = DIAL_MAX_ANGLE/360; dialNorm = 0; }
 }
+let dialPointerId = null;   // жест ведёт РОВНО один палец
 function dialPointerDown(e){
+  if(dialDragging) return;   // второй палец (или ладонь) в жест не вмешивается
   dialDragging = true;
+  dialPointerId = e.pointerId;
   const angle = dialAngleFromEvent(e.clientX, e.clientY);
   if(!dialStartSet){
     /* Начало ещё не выбрано — первое касание ставит его. Дальше начало держится
@@ -3027,12 +3046,17 @@ function dialPointerDown(e){
     dialSetEnd(angle);             // ручка сразу встаёт под палец, круг — по кратчайшему пути
   }
   dialSyncCum();
-  try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
+  /* Захват вешаем на саму обёртку, а НЕ на e.target: под пальцем обычно оказывается
+     кусок уже нарисованной заливки, а он живёт внутри dialDynG и умирает на первой же
+     перерисовке — вместе с ним терялся захват. После этого события переставали
+     приходить, стоило пальцу выйти за квадрат циферблата (при кручении по кругу это
+     происходит постоянно): дуга замирала, а на возврате пальца прыгала. */
+  try{ document.getElementById('dialWrap').setPointerCapture(e.pointerId); }catch(err){}
   renderDial();   // метка начала и подпись должны появиться сразу по касанию, без протяжки
   e.preventDefault();
 }
 function dialPointerMove(e){
-  if(!dialDragging) return;
+  if(!dialDragging || e.pointerId !== dialPointerId) return;
   const angle = dialAngleFromEvent(e.clientX, e.clientY);
   if(dialGrab === 'start') dialStartAngle = dialWrap360(dialSnap(angle));
   else dialSetEnd(angle);
@@ -3040,8 +3064,10 @@ function dialPointerMove(e){
   renderDial();
   e.preventDefault();
 }
-function dialPointerUp(){
+function dialPointerUp(e){
   if(!dialDragging) return;
+  if(e && e.pointerId != null && e.pointerId !== dialPointerId) return;
+  dialPointerId = null;
   dialDragging = false;
   if(dialGrab === 'start') dialMoveStart = false;   // перенесли — режим сам выключается
   dialSyncCum();
@@ -3093,7 +3119,7 @@ function fmtHoursLabel(h){
   return mm ? `${hh} ч ${mm} мин` : `${hh} ч`;
 }
 function renderDial(){
-  const cx=160, cy=160, track=132, wedgeR=118, tickIn=122, tickOut=132, numR=146;
+  const cx=DIAL_C, cy=DIAL_C, track=132, wedgeR=118, tickIn=122, tickOut=132, numR=146;
   const laps = Math.floor(dialCumAngle/360);
   const rem = dialCumAngle - laps*360;
   const start = dialStartAngle;   // дуга растёт от выбранного начала, а не всегда от 12 часов
@@ -3231,20 +3257,24 @@ function openHoursDial(btn){
   const wrap = document.getElementById('dialWrap');
   if(!wrap.dataset.bound){
     wrap.addEventListener('pointerdown', dialPointerDown);
-    wrap.addEventListener('pointermove', dialPointerMove);
-    wrap.addEventListener('pointerup', dialPointerUp);
-    wrap.addEventListener('pointercancel', dialPointerUp);
+    /* Движение и отпускание слушаем на окне, а не на обёртке: палец при кручении
+       по кругу регулярно выходит за квадрат циферблата, и события, привязанные
+       к обёртке, до нас бы не дошли. Обработчики отсекают чужие пальцы по id
+       и молчат, пока жеста нет. */
+    window.addEventListener('pointermove', dialPointerMove, {passive:false});
+    window.addEventListener('pointerup', dialPointerUp);
+    window.addEventListener('pointercancel', dialPointerUp);
     wrap.dataset.bound = '1';
   }
   renderDial(); renderDialRoles(); updateDialCostIfReady();
 }
 function closeHoursDial(){
-  dialDragging = false;
+  dialDragging = false; dialPointerId = null;
   hidePanel(document.getElementById('dialOverlay'));
   syncLayerLock();
 }
 function clearHoursDial(){
-  dialCumAngle = 0; dialLaps = 0; dialNorm = 0; dialDragging = false;
+  dialCumAngle = 0; dialLaps = 0; dialNorm = 0; dialDragging = false; dialPointerId = null;
   dialStartAngle = 0; dialStartSet = false; dialStartPM = true; dialGrab = 'end'; dialMoveStart = false;
   resetDialCounts();
   resetDialFlags();
