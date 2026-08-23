@@ -699,9 +699,9 @@
     #dialOverlay.panel-pop .panel-pop-card{width:min(92vw,560px);height:86vh;height:86dvh;}
   }
   /* Поля прикидочных сумм в калькуляторе */
-  .dial-extras{width:100%;max-width:380px;display:flex;gap:.5rem;margin-bottom:.9rem;}
-  .dial-extra{flex:1;}
-  .dial-extra label{display:block;font-family:var(--font-mono);font-size:.58rem;
+  .dial-extras{display:flex;flex-direction:column;gap:.3rem;margin-top:.15rem;}
+  .dial-extra{flex:none;}
+  .dial-extra label{display:block;font-family:var(--font-mono);font-size:.55rem;
     text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin-bottom:.2rem;}
   .dial-extra input{width:100%;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
     border-radius:9px;padding:.4rem .5rem;font-size:.82rem;font-family:var(--font-mono);outline:none;}
@@ -1003,42 +1003,65 @@
   .dial-close{position:absolute;top:1rem;right:1rem;width:36px;height:36px;border-radius:50%;
     border:1px solid var(--line);background:var(--bg-raised);color:var(--ink-muted);flex:none;}
   .dial-title{font-family:var(--font-display);font-size:1.1rem;font-weight:600;margin:.4rem 0 1.1rem;text-align:center;}
-  .dial-wrap{position:relative;width:min(300px,78vw);height:min(300px,78vw);touch-action:none;
+  /* Третья мерка — по высоте экрана: на коротком телефоне циферблат ужимается сам,
+     иначе калькулятор не помещается и приходится скроллить. */
+  .dial-wrap{position:relative;width:min(244px,64vw,32vh);height:min(244px,64vw,32vh);touch-action:none;
     cursor:grab;flex:none;}
   .dial-wrap:active{cursor:grabbing;}
   .dial-wrap svg{width:100%;height:100%;display:block;}
-  .dial-hours{font-family:var(--font-mono);font-size:1.7rem;font-weight:700;text-align:center;
-    margin:1.1rem 0 1.2rem;line-height:1.1;}
+  .dial-hours{font-family:var(--font-mono);font-size:1.4rem;font-weight:700;text-align:center;
+    margin:.35rem 0 .25rem;line-height:1.1;flex:none;}
   .dial-hours small{display:block;font-family:var(--font-body);font-size:.68rem;font-weight:500;
     color:var(--ink-muted);text-transform:uppercase;letter-spacing:.05em;margin-top:.25rem;}
   /* Начало и конец смены под циферблатом + переключатель день/ночь:
      циферблат 12-часовой, поэтому 15:00 и 3:00 — одна и та же точка. */
-  .dial-shift-label{display:flex;align-items:center;justify-content:center;gap:.45rem;
-    flex-wrap:wrap;font-size:.78rem;color:var(--ink-muted);margin:-.7rem 0 1rem;text-align:center;
-    min-height:1.5rem;
-    /* карточка панели — flex-колонка с прокруткой: без flex:none она сжимает подпись
-       до min-height, и вторая строка наезжает на список позиций */
-    flex:none;}
-  .dial-hint{flex-basis:100%;font-size:.66rem;opacity:.7;margin-top:.15rem;}
+  /* Высота ЗАФИКСИРОВАНА и не зависит от текста: строка «(следующий день)», кнопки
+     и подсказка появляются и исчезают прямо во время кручения, и если бы блок менял
+     высоту — карточка дёргалась бы под пальцем вместе с циферблатом. */
+  .dial-shift-label{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    gap:.15rem;font-size:.78rem;color:var(--ink-muted);margin:0 0 .55rem;text-align:center;
+    width:100%;height:3.7rem;flex:none;overflow:hidden;}
+  .dsl-line{max-width:100%;height:1.15rem;line-height:1.15rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dsl-row{display:flex;gap:.4rem;height:1.4rem;align-items:center;}
+  .dsl-hint{height:1rem;line-height:1rem;font-size:.66rem;opacity:.7;
+    max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .dial-ampm{border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink-muted);
     border-radius:99px;padding:.2rem .55rem;font-size:.66rem;font-family:inherit;cursor:pointer;}
   .dial-ampm:hover{border-color:var(--accent);color:var(--accent-ink);}
   .dial-ampm.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
-  .dial-roles{width:100%;max-width:380px;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.9rem;}
-  .dial-role-row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
-    border:1px solid var(--line);background:var(--bg-raised);border-radius:10px;padding:.5rem .7rem;}
-  .dial-role-row .drname{font-size:.86rem;font-weight:500;}
-  .dial-stepper{display:flex;align-items:center;gap:.6rem;}
-  .dial-stepper button{width:26px;height:26px;border-radius:7px;border:1px solid var(--line);
+  /* Позиции слева, тумблеры справа — один ряд вместо двух блоков подряд */
+  .dial-cols{display:flex;align-items:stretch;gap:.5rem;width:100%;max-width:380px;margin-bottom:.7rem;}
+  .dial-roles{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:.35rem;
+    max-height:min(46vh,258px);overflow-y:auto;overscroll-behavior:contain;}
+  .dial-role-row{display:flex;align-items:center;justify-content:space-between;gap:.4rem;
+    border:1px solid var(--line);background:var(--bg-raised);border-radius:9px;padding:.34rem .5rem;flex:none;}
+  .dial-role-row .drname{font-size:.78rem;font-weight:500;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dial-stepper{display:flex;align-items:center;gap:.35rem;flex:none;}
+  .dial-stepper button{width:24px;height:24px;border-radius:7px;border:1px solid var(--line);
     background:var(--bg-sunk);color:var(--ink);font-weight:700;font-size:.9rem;line-height:1;}
   .dial-stepper span{font-family:var(--font-mono);min-width:16px;text-align:center;font-size:.88rem;}
-  .dial-toggles{width:100%;max-width:380px;display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.9rem;}
-  .dial-toggle{flex:1;min-width:104px;border:1px solid var(--line);background:var(--bg-raised);
-    color:var(--ink-muted);border-radius:10px;padding:.5rem .4rem;font-size:.72rem;font-weight:600;
-    text-align:center;}
+  .dial-side{flex:0 0 118px;display:flex;flex-direction:column;gap:.35rem;}
+  .dial-toggles{display:flex;flex-direction:column;gap:.35rem;}
+  .dial-toggle{flex:none;width:100%;border:1px solid var(--line);background:var(--bg-raised);
+    color:var(--ink-muted);border-radius:9px;padding:.4rem .3rem;font-size:.66rem;font-weight:600;
+    text-align:center;line-height:1.15;}
   .dial-toggle.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
   .dial-result{width:100%;max-width:380px;}
-  .dial-actions{margin-top:.9rem;}
+  /* Результат — самый низ длинной карточки. Строки ужаты, а ИТОГ прилипает к нижней
+     кромке: сумму видно всегда, до неё не нужно доскроллить. */
+  #dialResult .pay-row{padding:.35rem .5rem;margin-bottom:.3rem;gap:.4rem;flex-wrap:nowrap;}
+  #dialResult .pay-row-label{font-size:.8rem;}
+  #dialResult .pay-row-amount{font-size:.66rem;margin-top:0;}
+  #dialResult .psum{font-size:.8rem;white-space:nowrap;}
+  /* Заголовок «Предварительная стоимость» в калькуляторе лишний — итог подписан сам,
+     а прилипшая строка итога его всё равно перекрывала */
+  #dialResult .pay-subhead{display:none;}
+  #dialResult .calc-result{position:sticky;bottom:-.9rem;background:var(--bg-raised);
+    padding-top:.4rem;border-top:1px solid var(--line);}
+  #dialResult .form-hint{font-size:.66rem;}
+  .dial-actions{margin-top:.6rem;}
 
   /* Универсальное модальное окно — дата оплаты, выбор проекта для заметки.
      z-index выше панелей (120) и их подложки (119): если панель (заметка/калькулятор/ИИ)
@@ -1550,9 +1573,20 @@
   <div class="dial-wrap" id="dialWrap">
     <svg id="dialSvg" viewBox="0 0 320 320"></svg>
   </div>
-  <div class="dial-hours" id="dialHoursDisplay">0 ч<small>смена</small></div>
-  <div class="dial-shift-label" id="dialShiftLabel"></div>
+  <div class="dial-hours"><span id="dialHoursNum">0 ч</span><small>смена</small></div>
+  <!-- Подпись — блок постоянной высоты и постоянных узлов: см. комментарий в renderDial -->
+  <div class="dial-shift-label" id="dialShiftLabel">
+    <div class="dsl-line" id="dialShiftText"></div>
+    <div class="dsl-row" id="dialShiftBtns" style="visibility:hidden;">
+      <button class="dial-ampm" id="dialAmPmBtn" onclick="toggleDialStartPM()" title="Циферблат 12-часовой — уточни, день это или ночь">после полудня</button>
+      <button class="dial-ampm" id="dialMoveStartBtn" onclick="toggleDialMoveStart()">сдвинуть начало</button>
+    </div>
+    <div class="dsl-hint" id="dialShiftHint"></div>
+  </div>
+  <!-- Позиции и тумблеры — в один ряд: так весь калькулятор влезает без прокрутки -->
+  <div class="dial-cols">
   <div class="dial-roles" id="dialRoles"></div>
+  <div class="dial-side">
   <div class="dial-toggles">
     <button class="dial-toggle" id="toggleLunch" onclick="dialToggleFlag('lunch')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v6M9.3 2v6M11.5 2v6"/><path d="M17 2c-1.6 0-2.8 1.7-2.8 4.5S15.4 11 17 11v11"/></svg>Текущий обед</button>
     <button class="dial-toggle" id="toggleNight" onclick="dialToggleFlag('night')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>Ночная смена</button>
@@ -1560,13 +1594,15 @@
   </div>
   <div class="dial-extras">
     <div class="dial-extra">
-      <label>Оборудование, ₽</label>
+      <label>Оборуд., ₽</label>
       <input type="number" min="0" step="1000" id="dialGear" placeholder="0" oninput="setDialExtra('gear',this.value)">
     </div>
     <div class="dial-extra">
       <label>Логистика, ₽</label>
       <input type="number" min="0" step="1000" id="dialLogistics" placeholder="0" oninput="setDialExtra('logistics',this.value)">
     </div>
+  </div>
+  </div>
   </div>
   <div class="dial-result" id="dialResult"></div>
   <div class="dial-actions"><button class="btn ghost" onclick="clearHoursDial()">Очистить</button></div>
@@ -2288,6 +2324,7 @@ const BASE_RATES = {
     {name:'Кей грип',    shift:15400, p1:3500, p2:7000,  p3:14000},
     {name:'Бест бой',    shift:15400, p1:3500, p2:7000,  p3:14000},
     {name:'Диммер борд', shift:17000, p1:3500, p2:7000,  p3:14000},
+    {name:'Пультовик',   shift:17000, p1:3500, p2:7000,  p3:14000},
     {name:'Осветитель',  shift:13200, p1:2900, p2:5800,  p3:11600},
     {name:'Грип',        shift:13200, p1:2900, p2:5800,  p3:11600},
   ],
@@ -2919,7 +2956,7 @@ function toggleTheme(){
 /* ============= Быстрый расчёт команды (циферблат) =============
    Полноэкранный круговой ввод часов смены + счётчики по позициям (без имён) →
    предварительная стоимость по тем же ставкам/переработкам, что и «Расчёт персонала». */
-const DIAL_ROLES = ['Гафер','Кей грип','Бест бой','Диммер борд','Осветитель'];
+const DIAL_ROLES = ['Гафер','Кей грип','Бест бой','Диммер борд','Пультовик','Осветитель'];
 let dialCounts = {};
 function resetDialCounts(){
   DIAL_ROLES.forEach(r=>dialCounts[r]=0);
@@ -3008,27 +3045,53 @@ function dialAngleFromEvent(clientX, clientY){
 function dialSnap(deg){ return Math.round(deg/DIAL_SNAP)*DIAL_SNAP; }
 function dialWrap360(deg){ return ((deg % 360) + 360) % 360; }
 function dialSyncCum(){ dialCumAngle = Math.min(DIAL_MAX_ANGLE, dialLaps*360 + dialNorm); }
+
 function dialArc(){ const l = Math.floor(dialCumAngle/360), r = dialCumAngle - l*360;
   return {laps:l, rem:r, handle: dialStartAngle + (dialCumAngle>0 ? (r>0 ? r : 360) : 0)}; }
 
-/* Конец смены = абсолютный угол пальца, а круг выбирается по КРАТЧАЙШЕМУ пути от
-   того места, где ручка стояла. Правило одно и для протяжки, и для нового касания:
-   иначе повторное касание за меткой начала (без него второй круг не накрутить)
-   сбрасывало целый круг — 12 ч превращались в полчаса. */
-function dialSetEnd(angle){
-  const norm = dialSnap(dialWrap360(angle - dialStartAngle)) % 360;
-  const d = norm - dialNorm;
-  if(d < -180) dialLaps++;        // прошли метку начала по часовой
-  else if(d > 180) dialLaps--;    // и против часовой
-  dialNorm = norm;
-  if(dialLaps < 0){ dialLaps = 0; dialNorm = 0; }                    // назад дальше нуля не уводим
-  if(dialLaps*360 + dialNorm > DIAL_MAX_ANGLE){ dialLaps = DIAL_MAX_ANGLE/360; dialNorm = 0; }
+/* ===== Как считается длительность во время жеста =====
+   Никаких «прыжков под палец». В момент касания запоминаем ТОЧКУ ПАЛЬЦА и текущую
+   длительность — дальше меняем длительность ровно на тот угол, на который палец
+   повернулся вокруг центра. Касание само по себе не двигает заливку ВООБЩЕ:
+   промахнулся мимо ручки, задел циферблат случайно, взялся поудобнее, чтобы
+   докрутить второй круг — дуга стоит на месте, пока не начал вращать.
+   Именно «прыжок к пальцу» и читался как «заливка иногда уезжает сама».
+
+   И вторая половина: опорную точку каждый раз переводим в координаты рисунка
+   ЗАНОВО, текущей матрицей. Если циферблат за время жеста куда-то поехал
+   (доехала анимация, подскочила прокрутка, отскок Safari) — опора и палец
+   сдвигаются вместе, разница между ними не меняется, значит и длительность
+   не дёргается. Накапливать ошибку тоже негде: точек всегда ровно две. */
+function dialSetCum(v){
+  const c = Math.max(0, Math.min(DIAL_MAX_ANGLE, v));
+  dialLaps = Math.floor(c/360);
+  dialNorm = c - dialLaps*360;
+  dialCumAngle = c;
+}
+function dialApplyDrag(clientX, clientY){
+  const a0 = dialAngleFromEvent(dialDownClient.x, dialDownClient.y);   // опора, пересчитанная сейчас
+  const a1 = dialAngleFromEvent(clientX, clientY);
+  const raw = dialWrap360(a1 - a0);
+  /* В точке касания разворот равен нулю — с него и начинаем считать круги.
+     Если стартовать с «неизвестно» (null), то первое же движение против часовой
+     давало raw≈353° и читалось как поворот вперёд почти на круг: смена
+     подскакивала на 12 часов. */
+  if(raw - dialPrevRaw < -180) dialTurns++;        // прокрутили мимо опоры по часовой
+  else if(raw - dialPrevRaw > 180) dialTurns--;    // и против часовой
+  dialPrevRaw = raw;
+  dialSetCum(dialSnap(dialDownCum + dialTurns*360 + raw));
 }
 let dialPointerId = null;   // жест ведёт РОВНО один палец
+let dialDownClient = null;  // точка касания (в координатах экрана) — опора текущего жеста
+let dialDownCum = 0;        // длительность на момент касания
+let dialPrevRaw = 0, dialTurns = 0;      // разворот угла в круги
 function dialPointerDown(e){
   if(dialDragging) return;   // второй палец (или ладонь) в жест не вмешивается
   dialDragging = true;
   dialPointerId = e.pointerId;
+  dialDownClient = {x:e.clientX, y:e.clientY};
+  dialDownCum = dialCumAngle;
+  dialPrevRaw = 0; dialTurns = 0;
   const angle = dialAngleFromEvent(e.clientX, e.clientY);
   if(!dialStartSet){
     /* Начало ещё не выбрано — первое касание ставит его. Дальше начало держится
@@ -3036,16 +3099,15 @@ function dialPointerDown(e){
        был нулевой угол, и случайно отмотанная в ноль смена теряла своё время. */
     dialStartAngle = dialWrap360(dialSnap(angle));
     dialStartSet = true;
-    dialLaps = 0; dialNorm = 0; dialGrab = 'end';
+    dialGrab = 'end';
+    dialSetCum(0); dialDownCum = 0;
   } else if(dialMoveStart){
     // режим «сдвинуть начало» включён кнопкой: вся смена переезжает, длительность сохраняется
     dialGrab = 'start';
     dialStartAngle = dialWrap360(dialSnap(angle));
   } else {
-    dialGrab = 'end';
-    dialSetEnd(angle);             // ручка сразу встаёт под палец, круг — по кратчайшему пути
+    dialGrab = 'end';   // длительность не трогаем — она изменится только от поворота
   }
-  dialSyncCum();
   /* Захват вешаем на саму обёртку, а НЕ на e.target: под пальцем обычно оказывается
      кусок уже нарисованной заливки, а он живёт внутри dialDynG и умирает на первой же
      перерисовке — вместе с ним терялся захват. После этого события переставали
@@ -3057,10 +3119,8 @@ function dialPointerDown(e){
 }
 function dialPointerMove(e){
   if(!dialDragging || e.pointerId !== dialPointerId) return;
-  const angle = dialAngleFromEvent(e.clientX, e.clientY);
-  if(dialGrab === 'start') dialStartAngle = dialWrap360(dialSnap(angle));
-  else dialSetEnd(angle);
-  dialSyncCum();
+  if(dialGrab === 'start') dialStartAngle = dialWrap360(dialSnap(dialAngleFromEvent(e.clientX, e.clientY)));
+  else dialApplyDrag(e.clientX, e.clientY);
   renderDial();
   e.preventDefault();
 }
@@ -3070,7 +3130,7 @@ function dialPointerUp(e){
   dialPointerId = null;
   dialDragging = false;
   if(dialGrab === 'start') dialMoveStart = false;   // перенесли — режим сам выключается
-  dialSyncCum();
+  dialDownClient = null; dialPrevRaw = 0; dialTurns = 0;
   renderDial();
   updateDialCostIfReady();
 }
@@ -3118,66 +3178,89 @@ function fmtHoursLabel(h){
   const hh = Math.floor(totalMin/60), mm = totalMin%60;
   return mm ? `${hh} ч ${mm} мин` : `${hh} ч`;
 }
-function renderDial(){
-  const cx=DIAL_C, cy=DIAL_C, track=132, wedgeR=118, tickIn=122, tickOut=132, numR=146;
-  const laps = Math.floor(dialCumAngle/360);
-  const rem = dialCumAngle - laps*360;
-  const start = dialStartAngle;   // дуга растёт от выбранного начала, а не всегда от 12 часов
-  // прозрачная десатурированная заливка: каждый круг — свой слой, наложение делает его плотнее
-  let wedges = '';
-  for(let i=0;i<laps;i++) wedges += `<path d="${dialWedgePath(cx,cy,wedgeR,start,start+360)}" fill="var(--ink-muted)" fill-opacity=".28"></path>`;
-  if(rem>0) wedges += `<path d="${dialWedgePath(cx,cy,wedgeR,start,start+rem)}" fill="var(--ink-muted)" fill-opacity=".28"></path>`;
-  // засечки и цифры циферблата
+/* ===== Отрисовка =====
+   Раньше каждый кадр протяжки пересобирал innerHTML: заново парсились узлы SVG,
+   заново строились КНОПКИ в подписи. На телефоне это давало микрорывки — браузер
+   на каждом движении пальца выбрасывал и создавал элементы. Теперь узлы создаются
+   ОДИН раз, а кадр меняет только атрибуты и текст (да и текст — лишь когда он
+   действительно изменился). Ни одного пересоздания элемента во время жеста. */
+const DIAL_GEOM = {cx:DIAL_C, cy:DIAL_C, track:132, wedgeR:118, tickIn:122, tickOut:132, numR:146};
+let dialLastText = {};
+function dialBuildSvg(){
+  const g = DIAL_GEOM;
+  const svg = document.getElementById('dialSvg');
+  if(document.getElementById('dialDynG')) return;
   let ticks = '', nums = '';
   for(let h=0; h<12; h++){
     const a = h*30;
-    const p1 = dialPolar(cx,cy,tickIn,a), p2 = dialPolar(cx,cy,tickOut,a);
+    const p1 = dialPolar(g.cx,g.cy,g.tickIn,a), p2 = dialPolar(g.cx,g.cy,g.tickOut,a);
     ticks += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="var(--line)" stroke-width="2"></line>`;
-    const np = dialPolar(cx,cy,numR,a);
-    const label = h===0 ? 12 : h;
+    const np = dialPolar(g.cx,g.cy,g.numR,a);
     nums += `<text x="${np.x.toFixed(1)}" y="${np.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central"
-      font-family="var(--font-mono)" font-size="12" fill="var(--ink-muted)">${label}</text>`;
+      font-family="var(--font-mono)" font-size="12" fill="var(--ink-muted)">${h===0?12:h}</text>`;
   }
+  svg.innerHTML = `
+    <circle cx="${g.cx}" cy="${g.cy}" r="${g.track}" fill="var(--bg-raised)" stroke="var(--line)" stroke-width="1.5"></circle>
+    ${ticks}${nums}
+    <g id="dialDynG">
+      <path id="dialLap0" fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
+      <path id="dialLap1" fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
+      <path id="dialLap2" fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
+      <path id="dialRem"  fill="var(--ink-muted)" fill-opacity=".28" style="display:none"></path>
+      <circle cx="${g.cx}" cy="${g.cy}" r="3" fill="var(--ink-muted)"></circle>
+      <circle id="dialStartMark" r="6" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.5" style="display:none"></circle>
+      <circle id="dialHandle" r="9" fill="var(--accent)" stroke="var(--bg)" stroke-width="2.5" style="display:none"></circle>
+    </g>`;
+}
+function dialSetText(el, txt){   // трогаем DOM только когда текст правда поменялся
+  if(!el) return;
+  if(dialLastText[el.id] === txt) return;
+  dialLastText[el.id] = txt;
+  // правим сам текстовый узел: textContent сносил бы его и создавал заново каждый кадр
+  if(el.firstChild && el.firstChild.nodeType === 3) el.firstChild.nodeValue = txt;
+  else el.textContent = txt;
+}
+function renderDial(){
+  const g = DIAL_GEOM;
+  dialBuildSvg();
+  const laps = Math.floor(dialCumAngle/360);
+  const rem = dialCumAngle - laps*360;
+  const start = dialStartAngle;   // дуга растёт от выбранного начала, а не всегда от 12 часов
+  // каждый полный круг — свой слой: наложение делает заливку плотнее
+  for(let i=0;i<3;i++){
+    const el = document.getElementById('dialLap'+i);
+    if(i < laps){ el.setAttribute('d', dialWedgePath(g.cx,g.cy,g.wedgeR,start,start+360)); el.style.display=''; }
+    else el.style.display='none';
+  }
+  const remEl = document.getElementById('dialRem');
+  if(rem > 0){ remEl.setAttribute('d', dialWedgePath(g.cx,g.cy,g.wedgeR,start,start+rem)); remEl.style.display=''; }
+  else remEl.style.display='none';
   // ручка — конец дуги; отдельная метка — начало смены
   const handleAngle = start + (dialCumAngle>0 ? (rem>0 ? rem : 360) : 0);
-  const hp = dialPolar(cx,cy,wedgeR,handleAngle);
-  const handle = `<circle cx="${hp.x.toFixed(2)}" cy="${hp.y.toFixed(2)}" r="9" fill="var(--accent)" stroke="var(--bg)" stroke-width="2.5"></circle>`;
-  const sp = dialPolar(cx,cy,wedgeR,start);
-  // начало показываем всегда, как только его выбрали, — даже до протяжки
-  const startMark = (dialStartSet || dialCumAngle>0)
-    ? `<circle cx="${sp.x.toFixed(2)}" cy="${sp.y.toFixed(2)}" r="6" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.5"></circle>`
-    : '';
-  /* Подложка (круг, засечки, цифры) рисуется один раз, на каждом кадре обновляется
-     только динамика: дуга, точка центра, метка начала и ручка. Меньше перерисовки —
-     нет дрожания при быстрой протяжке на телефоне. */
-  const svg = document.getElementById('dialSvg');
-  if(!document.getElementById('dialDynG')){
-    svg.innerHTML = `
-      <circle cx="${cx}" cy="${cy}" r="${track}" fill="var(--bg-raised)" stroke="var(--line)" stroke-width="1.5"></circle>
-      ${ticks}
-      ${nums}
-      <g id="dialDynG"></g>`;
-  }
-  document.getElementById('dialDynG').innerHTML =
-    `${wedges}<circle cx="${cx}" cy="${cy}" r="3" fill="var(--ink-muted)"></circle>${startMark}${dialCumAngle>0?handle:''}`;
-  const hours = dialCumAngle/360*12;
-  document.getElementById('dialHoursDisplay').innerHTML =
-    `${fmtHoursLabel(hours)}<small>смена</small>`;
-  const label = document.getElementById('dialShiftLabel');
-  if(label){
-    label.innerHTML = `<span>${esc(dialShiftLabel())}</span>` +
-      ((dialStartSet || dialCumAngle>0)
-        ? `<button class="dial-ampm" onclick="toggleDialStartPM()" title="Циферблат 12-часовой — уточни, день это или ночь">${dialStartPM?'после полудня':'до полудня'}</button>`
-        : '') +
-      (dialStartSet
-        ? `<button class="dial-ampm${dialMoveStart?' on':''}" onclick="toggleDialMoveStart()">сдвинуть начало</button>`
-        : '') +
-      (dialStartSet
-        ? `<span class="dial-hint">${dialMoveStart
-            ? 'коснись циферблата — туда переедет начало смены'
-            : 'больше 12 ч — просто крути дальше'}</span>`
-        : '');
-  }
+  const hp = dialPolar(g.cx,g.cy,g.wedgeR,handleAngle);
+  const hEl = document.getElementById('dialHandle');
+  if(dialCumAngle>0){ hEl.setAttribute('cx',hp.x.toFixed(2)); hEl.setAttribute('cy',hp.y.toFixed(2)); hEl.style.display=''; }
+  else hEl.style.display='none';
+  const sp = dialPolar(g.cx,g.cy,g.wedgeR,start);
+  const sEl = document.getElementById('dialStartMark');
+  if(dialStartSet || dialCumAngle>0){ sEl.setAttribute('cx',sp.x.toFixed(2)); sEl.setAttribute('cy',sp.y.toFixed(2)); sEl.style.display=''; }
+  else sEl.style.display='none';
+
+  dialSetText(document.getElementById('dialHoursNum'), fmtHoursLabel(dialCumAngle/360*12));
+  /* Подпись — блок ПОСТОЯННОЙ высоты с постоянными узлами. Кнопки не пересоздаются,
+     скрытое прячется через visibility. Если бы блок менял высоту (а он менял: строка
+     «(следующий день)» появляется и исчезает прямо во время кручения), карточка
+     подпрыгивала бы под пальцем — и вместе с ней уезжал бы циферблат. */
+  dialSetText(document.getElementById('dialShiftText'), dialShiftLabel());
+  const row = document.getElementById('dialShiftBtns');
+  if(row) row.style.visibility = (dialStartSet || dialCumAngle>0) ? 'visible' : 'hidden';
+  const ampm = document.getElementById('dialAmPmBtn');
+  dialSetText(ampm, dialStartPM ? 'после полудня' : 'до полудня');
+  const mv = document.getElementById('dialMoveStartBtn');
+  if(mv) mv.classList.toggle('on', dialMoveStart);
+  dialSetText(document.getElementById('dialShiftHint'), !dialStartSet ? ''
+    : dialMoveStart ? 'коснись циферблата — туда переедет начало смены'
+    : 'больше 12 ч — просто крути дальше');
 }
 function renderDialRoles(){
   document.getElementById('dialRoles').innerHTML = DIAL_ROLES.map(r=>`
@@ -3233,7 +3316,7 @@ function updateDialCostIfReady(){
     const sum = (base+otPay)*cnt;
     total += sum;
     return `<div class="pay-row"><div class="pay-row-info"><div class="pay-row-label">${r} × ${cnt}</div>
-      <div class="pay-row-amount">${fmtMoney(base)}${otPay>0?' + переработка '+fmtMoney(otPay):''} на человека</div></div>
+      <div class="pay-row-amount">${fmtMoney(base)}${otPay>0?' + П/Р '+fmtMoney(otPay):''}${cnt>1?' за человека':''}</div></div>
       <div class="psum mono">${fmtMoney(sum)}</div></div>`;
   }).join('');
   const grand = total + extrasTotal;
@@ -3275,6 +3358,7 @@ function closeHoursDial(){
 }
 function clearHoursDial(){
   dialCumAngle = 0; dialLaps = 0; dialNorm = 0; dialDragging = false; dialPointerId = null;
+  dialDownClient = null; dialDownCum = 0; dialPrevRaw = 0; dialTurns = 0;
   dialStartAngle = 0; dialStartSet = false; dialStartPM = true; dialGrab = 'end'; dialMoveStart = false;
   resetDialCounts();
   resetDialFlags();
@@ -6919,6 +7003,21 @@ function ensureUniqueUnitIds(p){
    служебные начисления команде за П/Р (client:false) из сметы убираем — их место
    в «Оплатах», а раньше они попадали во внутренний итог поверх фикса; остальные
    спрятанные строки заводились руками и остаются позициями единственной сметы. */
+/* Роли, добавленные после того, как пользователь уже завёл свои ставки, надо
+   доложить в действующий набор — иначе позиция считалась бы по нулевой ставке.
+   Снимки ставок внутри проектов НЕ трогаем: старый проект живёт по тем ставкам,
+   о которых договаривались. Ставку новой роли пользователь правит в «Базе данных». */
+function ensureRoleRates(){
+  if(!CURRENT_RATES || !Array.isArray(CURRENT_RATES.roles)) return;
+  let added = false;
+  BASE_RATES.roles.forEach((row, i)=>{
+    if(!CURRENT_RATES.roles.some(r=>r.name===row.name)){
+      CURRENT_RATES.roles.splice(Math.min(i, CURRENT_RATES.roles.length), 0, JSON.parse(JSON.stringify(row)));
+      added = true;
+    }
+  });
+  if(added) rebuildRateLookups();
+}
 function migrateEstimateClientFlag(){
   PROJECTS.forEach(p => {
     let touched = false;
@@ -6938,6 +7037,7 @@ function migrateAllSettlements(){
   PROJECTS.forEach(p=>{ ensureUniqueUnitIds(p); allUnits(p).forEach(u=>u.crew.forEach(migrateSettlement)); });
   RENTAL_DEBTS.forEach(migrateSettlement);
   migrateEstimateClientFlag();
+  ensureRoleRates();
 }
 
 /* ============= Финансовая сводка по проекту =============
@@ -11033,6 +11133,7 @@ const SELF_CHECK_CASES = [
         units:[], notes:[], payments:[]};
       PROJECTS.push(p);
       migrateEstimateClientFlag();
+  ensureRoleRates();
       const v = p.estimate.length * 1000 + (p.estimate[0].client === true ? 100 : 0) + p.sum;
       PROJECTS.splice(PROJECTS.indexOf(p), 1);
       return v;
