@@ -703,6 +703,43 @@
   .dial-extra input:focus{border-color:var(--accent);}
 
   /* Полоса съёмочных дней у многодневного проекта */
+  /* ===== Командировка ===== */
+  .trip-card{border:1px solid var(--line);border-radius:12px;padding:.7rem .75rem;margin-top:.6rem;
+    background:var(--bg-raised);}
+  .trip-card-head{display:grid;grid-template-columns:1fr auto;gap:.15rem .5rem;margin-bottom:.5rem;}
+  .trip-card-name{font-weight:600;font-size:.9rem;}
+  .trip-card-sub{font-size:.68rem;color:var(--ink-muted);grid-column:1;}
+  .trip-card-amt{font-family:var(--font-mono);font-size:.9rem;white-space:nowrap;
+    grid-column:2;grid-row:1 / span 2;align-self:center;}
+  .trip-card-amt.muted{color:var(--ink-muted);}
+  .trip-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none;}
+  .trip-seg button{border:none;background:transparent;color:var(--ink-muted);font:inherit;font-size:.74rem;
+    padding:.3rem .6rem;cursor:pointer;white-space:nowrap;}
+  .trip-seg button.on{background:var(--accent);color:var(--bg);font-weight:600;}
+  .trip-line{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.45rem;}
+  .trip-line label{font-size:.74rem;color:var(--ink-muted);}
+  .trip-card input, .trip-card select{border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+    border-radius:8px;padding:.42rem .6rem;font-size:.84rem;outline:none;font-family:inherit;}
+  .trip-card input:focus{border-color:var(--accent);}
+  .trip-line input[type=number]{width:130px;}
+  .trip-line input[type=text]{flex:1;min-width:110px;}
+  .trip-pers-row{display:flex;align-items:center;gap:.4rem;margin-top:.35rem;}
+  .trip-pers-row input[type=text]{flex:1;min-width:0;}
+  .trip-pers-row input[type=number]{width:104px;flex:none;}
+  .trip-total{border:1px solid var(--line);border-radius:12px;margin-top:.7rem;overflow:hidden;}
+  .trip-total-row{display:flex;justify-content:space-between;gap:.6rem;padding:.42rem .75rem;font-size:.82rem;}
+  .trip-total-row span:last-child{font-family:var(--font-mono);white-space:nowrap;}
+  .trip-total-row.minus span:last-child{color:var(--warn);}
+  .trip-total-row.net{border-top:1px solid var(--line);background:var(--bg-sunk);font-weight:600;font-size:.92rem;
+    padding:.55rem .75rem;}
+  .trip-pill{display:inline-block;font-size:.62rem;letter-spacing:.03em;text-transform:uppercase;
+    font-family:var(--font-mono);padding:.1rem .4rem;border-radius:5px;border:1px solid var(--line);
+    color:var(--ink-muted);}
+  .day-chip.transfer .day-chip-n:after{content:' ✈';opacity:.75;}
+  .day-transfer-bar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:-.25rem;
+    margin-bottom:.5rem;font-size:.72rem;color:var(--ink-muted);}
+  .day-transfer-bar .dtb-copy{margin-left:0;}
+  @media(min-width:560px){ .day-transfer-bar .dtb-copy{margin-left:auto;} }
   .day-strip{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;
     border:1px solid var(--line);border-radius:12px;background:var(--bg-raised);
     padding:.5rem .6rem;margin-bottom:.7rem;}
@@ -1228,6 +1265,9 @@
           <input id="np-director" placeholder="Режиссёр">
         </div>
         <input id="np-location" placeholder="Место проведения">
+        <label class="settle-check" style="margin-top:.45rem;"><input type="checkbox" id="np-trip">
+          <span><b>Командировка</b> — отдельный интерфейс: гонорар, билеты, жильё, личные расходы и налог.
+          Дни и команду можно не заводить.</span></label>
         <div class="np-dates-block">
           <div class="np-dates-head">
             <button class="icon-btn" onclick="npCalShift(-1)">‹</button>
@@ -1322,6 +1362,7 @@
 
     <div class="tabs">
       <button class="tab active" data-tab="info" onclick="showTab('info')">Инфо</button>
+      <button class="tab" data-tab="trip" onclick="showTab('trip')" style="display:none;">Поездка</button>
       <button class="tab" data-tab="tasks" onclick="showTab('tasks')">Задачи</button>
       <button class="tab" data-tab="estimate" onclick="showTab('estimate')">Расчёт</button>
       <button class="tab" data-tab="notes" onclick="showTab('notes')">Заметки</button>
@@ -1331,6 +1372,7 @@
     </div>
 
     <div class="tabpane active" data-pane="info" id="pane-info"></div>
+    <div class="tabpane" data-pane="trip" id="pane-trip"></div>
     <div class="tabpane" data-pane="tasks" id="pane-tasks"></div>
     <div class="tabpane" data-pane="estimate" id="pane-estimate"></div>
     <div class="tabpane" data-pane="notes" id="pane-notes"></div>
@@ -3236,7 +3278,27 @@ function projectCrew(p){ return allUnits(p).flatMap(u=>u.crew); }
 function lineShifts(i){
   return (i && i.payDays != null && i.payDays !== '') ? Number(i.payDays) : (Number(i && i.days) || 0);
 }
-function lineTotal(i){ return (Number(i.qty) || 0) * lineShifts(i) * (Number(i.price) || 0); }
+/* Трансферный день — переезд до точки съёмки: день оплачивается вполовину,
+   кроме транспорта (машина едет целиком, и такси тоже). Коэффициент живёт
+   в самой строке (i.k) и проставляется одной функцией syncTransferK, чтобы
+   любая позиция — из прайса, из расчёта персонала, заведённая руками —
+   попадала под правило одинаково. */
+const TRANSFER_K = 0.5;
+function lineK(i){ return (i && i.k != null) ? Number(i.k) : 1; }
+function lineIsTransport(i){ return (i && i.sec === 'Логистика') || !!(i && i.taxiLine); }
+function lineTotal(i){ return Math.round((Number(i.qty) || 0) * lineShifts(i) * (Number(i.price) || 0) * lineK(i)); }
+// Смен в документе показываем уже с коэффициентом: цена × кол-во × смен = стоимость
+function shownShifts(i){ const v = lineShifts(i) * lineK(i); return Number.isInteger(v) ? v : v.toFixed(1).replace('.', ','); }
+function syncTransferK(p){
+  allDays(p).forEach(d=>{
+    const half = !!d.transfer;
+    (d.estimate || []).forEach(i=>{
+      if(half && !lineIsTransport(i) && !i.noK) i.k = TRANSFER_K;
+      else if(i.k != null) delete i.k;
+    });
+  });
+}
+function transferDaysCount(p){ return allDays(p).filter(d=>d.transfer).length; }
 /* Смета одна — она же внутренняя, она же клиентская: что лежит в ней, то и уходит
    заказчику, из того же считается сумма проекта. Раньше видов было два, и на фиксе
    за погрузку/разгрузку итоги расходились: начисление команде (расход) и фикс
@@ -3245,7 +3307,12 @@ function lineTotal(i){ return (Number(i.qty) || 0) * lineShifts(i) * (Number(i.p
 function estItems(list){ return (list||[]).filter(i => i.client !== false); }
 function autoSumFromEstimate(p){ return estPayable(p, estItems(allEstimate(p))).payable; }
 function refreshProjectSum(p){
-  if(!p.sumManual) p.sum = autoSumFromEstimate(p);
+  syncTransferK(p);   // половинные дни: коэффициент строк всегда соответствует пометкам
+  // соло-командировка: сумма проекта — это и есть гонорар, позиций сметы у неё нет.
+  // Кроме отменённой: там в смете лежит неустойка, и считать надо по ней
+  // (preCancelSum появляется ровно на время отмены и исчезает при восстановлении)
+  if(isSoloTrip(p) && !p.preCancelSum) p.sum = tripFee(p);
+  else if(!p.sumManual) p.sum = autoSumFromEstimate(p);
   // поступления тоже собираем со всех дней
   p.paidAmount = allPayments(p).reduce((s,x)=>s+(x.amount||0), 0);
 }
@@ -3364,7 +3431,7 @@ function openCancelProj(pid, afterDone){
       /* «Я на смене» — мой гонорар живёт в смете, а не в выплатах, поэтому и неустойка
          по нему отдельной строкой: без неё свои деньги за отмену просто терялись.
          Если гафером в юните стоит человек из команды, моей строки нет — он уже выше. */
-      if(unitMeOn(u, uIdx) && !(u.crew||[]).some(c => (c.role||'') === 'Гафер')){
+      if(unitMeOn(u, uIdx) && !isSoloTrip(p) && !(u.crew||[]).some(c => (c.role||'') === 'Гафер')){
         gaffer.push({unitId:u.id, dayIso:iso, name:'Я — гафер', role:'Гафер',
           note: [where, 'я на смене'].filter(Boolean).join(' · '),
           base: roleShiftRate(rates, 'Гафер'), mode:'100', custom:0, locked:false, paidSum:0});
@@ -3383,6 +3450,14 @@ function openCancelProj(pid, afterDone){
         .filter(Boolean).join(' · '),
       base: scoutLine ? Math.round(lineTotal(scoutLine)) : 0,
       mode:'100', custom:0, locked:false, paidSum:0});
+  }
+  /* Командировка: гонорар — мои деньги (в соло-режиме он и есть вся сумма проекта),
+     поэтому неустойка по нему — своя строка. Без неё отмена командировки обнуляла
+     проект целиком: платить некому, а свои деньги пропадали. */
+  if(isTrip(p) && tripFee(p) > 0){
+    gaffer.unshift({what:'tripFee', dayIso:(days[0].iso || p.date), name:'Гонорар за командировку',
+      note: isSoloTrip(p) ? 'фикс за поездку' : 'фикс за поездку · строкой в смете',
+      base: tripFee(p), mode:'100', custom:0, locked:false, paidSum:0});
   }
   const rentals = RENTAL_DEBTS.filter(r=>r.projectId===p.id).map(r=>({
     name:r.rental, note:'', base: Math.round(r.amount||0), mode:'100', custom:0,
@@ -3548,19 +3623,22 @@ function penWriteEstimate(p, st){
   p.sumManual = false;
   if(st.pay){
     const dayOf = iso => days.find(d => (d.iso || p.date) === iso) || days[0];
+    // noK: доля уже выбрана руками в окне отмены — половинный день её больше не режет
     const line = (d, name, price, extra) => {
-      if(price > 0) d.estimate.push(Object.assign({sec:'Персонал', name, qty:1, days:1, price, client:true}, extra||{}));
+      if(price > 0) d.estimate.push(Object.assign({sec:'Персонал', name, qty:1, days:1, price, client:true, noK:true}, extra||{}));
     };
     (st.gaffer||[]).forEach(r => r.what==='scout'
       // освоение обычно реально проведено — в смете оно и остаётся освоением
       ? line(dayOf(r.dayIso), `Освоение${r.mode==='100'?'':penModeSuffix(r)}`, penRowAmount(r), {scoutLine:true})
+      : r.what==='tripFee'
+      ? line(dayOf(r.dayIso), `Неустойка · гонорар командировки${penModeSuffix(r)}`, penRowAmount(r), {gaffer:true})
       : line(dayOf(r.dayIso), `Неустойка · гафер (я)${penModeSuffix(r)}`, penRowAmount(r), {gaffer:true}));
     st.crew.forEach(r => line(dayOf(r.dayIso), `Неустойка · ${r.name}${r.role?' — '+r.role:''}${penModeSuffix(r)}`,
       penRowAmount(r)));
     st.rentals.forEach(r => {
       const amt = penRowAmount(r);
       // рентал берётся на проект целиком, поэтому его строка живёт в первом дне
-      if(amt > 0) days[0].estimate.push({sec:'Услуги', qty:1, days:1, price:amt, client:true,
+      if(amt > 0) days[0].estimate.push({sec:'Услуги', qty:1, days:1, price:amt, client:true, noK:true,
         name:`Неустойка · рентал ${r.name}${penModeSuffix(r)}`});
     });
   }
@@ -4031,7 +4109,10 @@ function toggleCreateProject(){
   const opening = f.style.display==='none';
   f.style.display = opening ? 'flex' : 'none';
   document.getElementById('np-error').style.display='none';
-  if(opening){ resetNpDates(); npCalMonth = TODAY.getMonth(); npCalYear = TODAY.getFullYear(); renderNpCal(); }
+  if(opening){
+    resetNpDates(); npCalMonth = TODAY.getMonth(); npCalYear = TODAY.getFullYear(); renderNpCal();
+    const tb = document.getElementById('np-trip'); if(tb) tb.checked = false;
+  }
 }
 
 /* ============= Мини-календарь с множественным выбором дней (создание проекта) =============
@@ -4196,6 +4277,8 @@ function createProject(){
     err.style.display='block'; return;
   }
   let id = 'p'+Date.now();
+  const tripBox = document.getElementById('np-trip');
+  const tripOn = !!(tripBox && tripBox.checked);
   const dates = [...npSelectedDates].sort();
   if(!dates.length) dates.push(TODAY_ISO);
   PROJECTS.push({
@@ -4208,10 +4291,12 @@ function createProject(){
     scoutDate:null, expectedPaymentDate:null,
     estimate:[], units:[{id:1, name:'Юнит 1', loadStart:'', shiftStart:'', shiftEnd:'', loadEnd:'', crew:[]}],
     notes:[], files:[], projectTasks:[],
+    trip: tripOn, tripData: tripOn ? newTripData() : null,
     // снимок действующих ставок: дальше проект считается по ним, даже если в «Базе данных» всё поменяется
     rates: cloneRates(CURRENT_RATES),
   });
   ['np-name','np-client','np-operator','np-producer','np-director','np-location'].forEach(i=>document.getElementById(i).value='');
+  if(tripBox) tripBox.checked = false;
   resetNpDates();
   toggleCreateProject();
   refreshAll();
@@ -4252,13 +4337,20 @@ function generateAutoTasks(){
 
     // «Сформировать первичную смету» — с момента создания проекта и до галочки «Смета» в чек-листе.
     // Именно эта галочка её и закрывает: фактическая смета — отдельная задача, уже после съёмки.
-    if(!p.steps[1][1]){
+    // соло-командировка живёт без сметы и команды — эти задачи в ней только мешают
+    const soloTrip = isSoloTrip(p);
+    if(!p.steps[1][1] && !soloTrip){
       tasks.push({label:'Сформировать первичную смету', projectId:p.id, tab:'estimate', date:p.date});
+    }
+    if(soloTrip && !tripFee(p)){
+      tasks.push({label:'Указать гонорар за командировку', projectId:p.id, tab:'trip', date:p.date});
     }
     // «Собрать команду» (замена «Команда») — меньше 5 дней без команды, или было освоение без команды.
     // У многодневного проекта каждый день считается отдельно: команда на один день
     // не закрывает потребность в остальных.
-    if(isMultiDay(p)){
+    if(soloTrip){
+      // ничего не собираем: в соло-командировке ни дней, ни команды
+    } else if(isMultiDay(p)){
       // Порог «за 5 дней» здесь не применяем: день добавлен руками, значит по нему
       // сразу нужны свои смета и команда — иначе задача всплыла бы только перед съёмкой.
       allDays(p).forEach((d,i)=>{
@@ -4285,7 +4377,7 @@ function generateAutoTasks(){
     }
     // «Отправить фактическую смету» — только когда отснят последний съёмочный день
     const lastShootDay = projectDates(p).slice().sort().pop();
-    if(lastShootDay<=TODAY_ISO && !p.steps[3][1]){
+    if(lastShootDay<=TODAY_ISO && !p.steps[3][1] && !soloTrip){
       tasks.push({label:'Отправить фактическую смету', projectId:p.id, tab:'estimate', date:p.date});
     }
     // «Выставить счёт / дать реквизиты» (замена «Счёт») — как только готова факт. смета
@@ -4298,7 +4390,7 @@ function generateAutoTasks(){
     }
     // «Отправить кредитсы» — появляется, как только выставлен счёт; своего чек-листа под неё
     // нет, поэтому завершается вручную кликом по галочке (как кастомная задача)
-    if(p.steps[4][1] && !p.creditsSent){
+    if(p.steps[4][1] && !p.creditsSent && !soloTrip){
       tasks.push({label:'Отправить кредитсы', projectId:p.id, tab:'crew', date:p.date,
         onComplete:`completeCredits('${p.id}')`});
     }
@@ -4544,6 +4636,8 @@ function openProject(id, tab){
   refreshProjectSum(p);   // сумма сметы всегда свежая, если не включён ручной ввод
   syncEstimateToFiles(p); // смета в текущем виде всегда свежая при открытии «Файлов»
   renderInfo(p); renderProjectTasks(p); renderEstimate(p); renderNotes(p); renderCrewTab(p); renderPayTab(p); renderFiles(p);
+  renderTrip(p);
+  applyTripUI(p);
   showTab(tab || 'info');
   showScreen('screen-project');
 }
@@ -4552,20 +4646,105 @@ function openProject(id, tab){
 function renderDayStrip(p){
   const el = document.getElementById('pDayStrip');
   if(!el) return;
-  if(!isMultiDay(p)){ el.innerHTML = ''; return; }
+  if(!isMultiDay(p) || isSoloTrip(p)){ el.innerHTML = ''; return; }
   ensureDays(p);
   el.innerHTML = `<div class="day-strip">
     <span class="day-strip-label">Съёмочные дни</span>
     ${p.days.map((d,i)=>{
       const f = dayFinance(p, d);
       const filled = d.estimate.length || d.units.some(u=>u.crew.length);
-      return `<button class="day-chip ${d.iso===currentDayIso?'on':''}" onclick="selectDay('${d.iso}')">
+      return `<button class="day-chip ${d.iso===currentDayIso?'on':''}${d.transfer?' transfer':''}" onclick="selectDay('${d.iso}')">
         <span class="day-chip-n">День ${i+1}</span>
         <span class="day-chip-date">${fmtDate(d.iso)}</span>
         ${filled?`<span class="day-chip-sum mono">${fmtMoney(f.declared)}</span>`:'<span class="day-chip-sum empty">пусто</span>'}
       </button>`;
     }).join('')}
+  </div>` + dayToolsHTML(p);
+}
+/* Инструменты выбранного дня: пометка «трансферный» и перенос дня на весь проект.
+   Второе — под многодневные командировки: состав и смета там из дня в день
+   одинаковые, вносить их по семь раз незачем. */
+function dayToolsHTML(p){
+  const d = activeDay(p);
+  const n = transferDaysCount(p);
+  return `<div class="day-transfer-bar">
+    <button class="unit-toggle ${d.transfer?'on':''}" onclick="toggleDayTransfer()"
+      title="День переезда: всё, кроме транспорта, считается по половине — и клиенту, и команде">✈ Трансферный день</button>
+    <span>${d.transfer
+      ? 'Этот день идёт по 50% — кроме транспорта и такси.'
+      : (n ? `Половинных дней в проекте: ${n}.` : 'Дни переезда отмечаются здесь.')}</span>
+    <button class="btn ghost tiny dtb-copy" onclick="copyDayToAll()">Продублировать на все дни</button>
   </div>`;
+}
+/* Позиции рентала в половинном дне стоят вполовину — значит и оплата ему
+   пересобирается, иначе долг остался бы от полной сметы. */
+function resyncRentalDebts(p){
+  [...new Set(allEstimate(p).map(i=>i.rental).filter(Boolean))]
+    .forEach(r => syncRentalDebtFromEstimate(p, r));
+}
+function toggleDayTransfer(){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  if(!p || !isMultiDay(p)) return;
+  const d = activeDay(p);
+  const from = d.transfer ? TRANSFER_K : 1;
+  d.transfer = !d.transfer;
+  const to = d.transfer ? TRANSFER_K : 1;
+  // начисленное команде за этот день двигаем в ту же сторону, что и смету;
+  // уже закрытые выплаты не трогаем — деньги отданы
+  (d.units || []).forEach(u => (u.crew || []).forEach(c=>{
+    if(c.paid) return;
+    c.amount  = Math.round((Number(c.amount)  || 0) * to / from);
+    c.loadPay = Math.round((Number(c.loadPay) || 0) * to / from);
+  }));
+  refreshProjectSum(p);
+  resyncRentalDebts(p);
+  renderDayStrip(p); renderEstimate(p); renderCrewTab(p); renderPayTab(p); renderInfo(p);
+  syncEstimateToFiles(p); refreshAll(); scheduleSave();
+}
+/* Копия дня на все остальные: команда с временами и флагами, позиции сметы.
+   Выплаты не переносим — начисления считаются заново, а дни с уже закрытыми
+   выплатами не трогаем вовсе, чтобы не переписать то, что уже оплачено. */
+function copyDayToAll(){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  if(!p || !isMultiDay(p)) return;
+  const src = activeDay(p);
+  const others = p.days.filter(d=>d.iso!==src.iso);
+  if(!others.length){ askNotice('В проекте всего один день — дублировать некуда.'); return; }
+  const locked = others.filter(d=>(d.units||[]).some(u=>(u.crew||[]).some(c=>c.paid || settlementPaid(c)>0)));
+  const targets = others.filter(d=>!locked.includes(d));
+  if(!targets.length){ askNotice('Во всех остальных днях уже есть закрытые выплаты — они не переписываются.'); return; }
+  const filled = targets.filter(d=>!dayIsEmpty(d)).length;
+  askConfirm({
+    title:'Продублировать день',
+    text:`Команда, время смен и позиции сметы за ${fmtDate(src.iso)} уйдут на ${targets.length} ${plural(targets.length,'день','дня','дней')}`
+      + (filled?`, из них ${filled} ${plural(filled,'день','дня','дней')} с уже внесёнными данными — они будут заменены`:'')
+      + (locked.length?`. Дней с закрытыми выплатами: ${locked.length} — их не трогаем`:'') + '.',
+    okText:'Продублировать'
+  }, ()=>{
+    const clone = o => JSON.parse(JSON.stringify(o || []));
+    const kSrc = src.transfer ? TRANSFER_K : 1;
+    targets.forEach(dst=>{
+      const kDst = dst.transfer ? TRANSFER_K : 1;
+      dst.units = clone(src.units).map(u=>{
+        u.crew = (u.crew || []).map(c=>{
+          c.paid = false; c.payments = []; c.paymentDate = null; c.paymentType = null;
+          c.amount  = Math.round((Number(c.amount)  || 0) * kDst / kSrc);
+          c.loadPay = Math.round((Number(c.loadPay) || 0) * kDst / kSrc);
+          return c;
+        });
+        return u;
+      });
+      dst.estimate = clone(src.estimate).map(i=>{ delete i.k; return i; });
+    });
+    ensureUniqueUnitIds(p);
+    syncTripFeeLine(p);            // гонорар командировки живёт в одном экземпляре
+    refreshProjectSum(p);
+    resyncRentalDebts(p);
+    renderDayStrip(p); renderEstimate(p); renderCrewTab(p); renderCrewStrip(p); renderPayTab(p); renderInfo(p);
+    syncEstimateToFiles(p); refreshAll(); scheduleSave();
+    askNotice(`День перенесён на ${targets.length} ${plural(targets.length,'день','дня','дней')}.`
+      + (locked.length?` Пропущено с закрытыми выплатами: ${locked.length}.`:''), 'Готово');
+  });
 }
 function selectDay(iso){
   currentDayIso = iso;
@@ -4587,6 +4766,301 @@ function dayFinance(p, d){
   const taxi = (d.units||[]).reduce((s,u)=>s+(u.taxi||0), 0);
   return {declared, received, toCrew, paidCrew, crewLoad, crewExtra, taxi,
           left: declared - paidCrew - taxi};
+}
+
+
+/* ============= Командировка =============
+   Командировка — тот же проект, но с другой экономикой: платят фиксом за поездку
+   целиком, а не по сменам с переработками. Поэтому у неё свой лист денег:
+   гонорар, дорога, жильё, личные траты и налог, который иногда приходится
+   отдать с гонорара. Всё, что клиент берёт на себя, в мои расходы не идёт —
+   у билетов и жилья ровно две позиции: «за счёт клиента» или «мои».
+   Два режима: «Только я» (гонорар и есть сумма проекта, дни и команда не нужны)
+   и «С командой» (гонорар — моя строка внутри обычной сметы). */
+const TRIP_TAX_DEFAULT = 6;
+function isTrip(p){ return !!(p && p.trip); }
+function newTripData(){
+  return {mode:'solo', fee:0,
+          flight:{byClient:true, sum:0}, stay:{byClient:true, sum:0},
+          personal:[], tax:{on:false, mode:'pct', value:TRIP_TAX_DEFAULT}};
+}
+// Достаём лист поездки, попутно дополняя старые сохранения недостающими полями
+function tripD(p){
+  if(!p.tripData) p.tripData = newTripData();
+  const t = p.tripData;
+  if(t.mode !== 'crew') t.mode = 'solo';
+  if(!t.flight) t.flight = {byClient:true, sum:0};
+  if(!t.stay)   t.stay   = {byClient:true, sum:0};
+  if(!Array.isArray(t.personal)) t.personal = [];
+  if(!t.tax) t.tax = {on:false, mode:'pct', value:TRIP_TAX_DEFAULT};
+  return t;
+}
+function isSoloTrip(p){ return isTrip(p) && tripD(p).mode === 'solo'; }
+function tripFee(p){ return Math.max(0, Math.round(Number(tripD(p).fee) || 0)); }
+function tripLegCost(p, kind){
+  const leg = tripD(p)[kind];
+  return leg.byClient ? 0 : Math.max(0, Math.round(Number(leg.sum) || 0));
+}
+function tripPersonalTotal(p){
+  return (tripD(p).personal || []).reduce((s,x)=>s + Math.max(0, Math.round(Number(x.sum) || 0)), 0);
+}
+function tripTaxSum(p){
+  const t = tripD(p).tax;
+  if(!t.on) return 0;
+  const v = Math.max(0, Number(t.value) || 0);
+  return t.mode === 'pct' ? Math.round(tripFee(p) * v / 100) : Math.round(v);
+}
+// Всё, что уходит из моего кармана: налог + то, что клиент на себя не взял
+function tripSpend(p){
+  if(!isTrip(p)) return 0;
+  return tripLegCost(p,'flight') + tripLegCost(p,'stay') + tripPersonalTotal(p) + tripTaxSum(p);
+}
+function tripNet(p){ return tripFee(p) - tripSpend(p); }
+
+/* Гонорар в режиме «с командой» живёт строкой сметы — как «я на смене» в обычном
+   проекте: деньги мои, в выплаты не идут (flag gaffer), в смету клиенту идут.
+   В соло-режиме позиций нет вовсе: сумма проекта равна гонорару. */
+function syncTripFeeLine(p){
+  const days = allDays(p);
+  days.forEach(d => { d.estimate = (d.estimate || []).filter(i => !i.tripFee); });
+  if(!isTrip(p) || isSoloTrip(p)) return;
+  const fee = tripFee(p);
+  if(fee <= 0) return;
+  const first = days[0];
+  first.estimate = first.estimate || [];
+  first.estimate.push({sec:'Персонал', name:'Гонорар за командировку', qty:1, days:1,
+                       price:fee, client:true, gaffer:true, tripFee:true, noK:true});
+}
+// Включение/выключение галочки «командировка» у существующего проекта
+function setProjectTrip(p, on){
+  p.trip = !!on;
+  if(p.trip) tripD(p); else { allDays(p).forEach(d => { d.estimate = (d.estimate||[]).filter(i=>!i.tripFee); }); }
+  if(p.trip) syncTripFeeLine(p);
+  refreshProjectSum(p);
+}
+
+/* ===== Вкладка «Поездка» ===== */
+function tripProj(){ return PROJECTS.find(x=>x.id===currentProjectId); }
+function renderTrip(p){
+  const pane = document.getElementById('pane-trip');
+  if(!pane) return;
+  if(!isTrip(p)){ pane.innerHTML = ''; return; }
+  const t = tripD(p);
+  const solo = t.mode === 'solo';
+  const legCard = (kind, name, sub) => {
+    const leg = t[kind];
+    return `<div class="trip-card">
+      <div class="trip-card-head">
+        <span class="trip-card-name">${esc(name)}</span>
+        <span class="trip-card-sub">${esc(sub)}</span>
+        <span class="trip-card-amt ${leg.byClient?'muted':''}">${leg.byClient ? '—' : fmtMoney(tripLegCost(p, kind))}</span>
+      </div>
+      <div class="trip-line">
+        <span class="trip-seg">
+          <button class="${leg.byClient?'on':''}" onclick="tripSetWho('${kind}',true)">За счёт клиента</button>
+          <button class="${leg.byClient?'':'on'}" onclick="tripSetWho('${kind}',false)">Мои расходы</button>
+        </span>
+        ${leg.byClient ? '' : `<input type="number" min="0" step="1000" value="${leg.sum||''}"
+            placeholder="сумма, ₽" onchange="tripSetLegSum('${kind}', this.value)">`}
+      </div>
+    </div>`;
+  };
+  const pers = t.personal || [];
+  const cancelledNote = p.cancelled
+    ? `<div class="form-hint" style="margin-bottom:.5rem;"><b>Проект отменён.</b> Сумма проекта —
+        ${fmtMoney(p.sum||0)}${p.cancelInfo && p.cancelInfo.penalty ? ' (неустойка)' : ' — отмена без неустойки'}.
+        Гонорар ниже остаётся как справка, на деньги проекта он больше не влияет.
+        Расходы, которые всё-таки случились, оставь — они считаются в прибыли.</div>`
+    : '';
+  pane.innerHTML = cancelledNote + `
+    <div class="form-slot" style="margin-top:0;">
+      <div class="trip-line" style="margin-top:0;">
+        <span class="trip-seg">
+          <button class="${solo?'on':''}" onclick="tripSetMode('solo')">Только я</button>
+          <button class="${solo?'':'on'}" onclick="tripSetMode('crew')">С командой</button>
+        </span>
+        <span class="trip-card-sub" style="flex:1;min-width:120px;">${solo
+          ? 'Гонорар — и есть сумма проекта. Дни, команда и смета не нужны.'
+          : 'Гонорар уходит строкой в смету проекта, рядом работают команда, дни и оборудование.'}</span>
+      </div>
+    </div>
+
+    <div class="trip-card">
+      <div class="trip-card-head">
+        <span class="trip-card-name">Гонорар за проект</span>
+        <span class="trip-card-sub">фикс за всю поездку, без переработок и часов</span>
+        <span class="trip-card-amt">${fmtMoney(tripFee(p))}</span>
+      </div>
+      <div class="trip-line">
+        <input type="number" min="0" step="5000" value="${t.fee||''}" placeholder="сумма гонорара, ₽"
+               onchange="tripSetFee(this.value)">
+        ${solo ? '' : '<span class="trip-pill">идёт в смету</span>'}
+      </div>
+      ${tripMeWarnHTML(p)}
+    </div>
+
+    ${legCard('flight', 'Дорога', 'авиабилеты, поезд')}
+    ${legCard('stay', 'Жильё', 'отель, квартира')}
+
+    <div class="trip-card">
+      <div class="trip-card-head">
+        <span class="trip-card-name">Личные расходы</span>
+        <span class="trip-card-sub">еда, такси, всё своё — можно дописывать по ходу</span>
+        <span class="trip-card-amt ${tripPersonalTotal(p)?'':'muted'}">${tripPersonalTotal(p)?fmtMoney(tripPersonalTotal(p)):'—'}</span>
+      </div>
+      ${pers.map(x=>`<div class="trip-pers-row">
+          <input type="text" value="${esc(x.name||'')}" placeholder="на что"
+                 onchange="tripSetPersonal('${x.id}','name',this.value)">
+          <input type="number" min="0" step="500" value="${x.sum||''}" placeholder="₽"
+                 onchange="tripSetPersonal('${x.id}','sum',this.value)">
+          <button class="btn ghost tiny" onclick="tripDelPersonal('${x.id}')">✕</button>
+        </div>`).join('')}
+      <div class="trip-line">
+        <button class="btn ghost tiny" onclick="tripAddPersonal()">+ Добавить расход</button>
+      </div>
+    </div>
+
+    <div class="trip-card">
+      <div class="trip-card-head">
+        <span class="trip-card-name">Налог</span>
+        <span class="trip-card-sub">часть гонорара, которую придётся отдать</span>
+        <span class="trip-card-amt ${t.tax.on?'':'muted'}">${t.tax.on?fmtMoney(tripTaxSum(p)):'—'}</span>
+      </div>
+      <div class="trip-line">
+        <span class="trip-seg">
+          <button class="${t.tax.on?'':'on'}" onclick="tripSetTaxOn(false)">Нет налога</button>
+          <button class="${t.tax.on?'on':''}" onclick="tripSetTaxOn(true)">Есть</button>
+        </span>
+        ${t.tax.on ? `<span class="trip-seg">
+            <button class="${t.tax.mode==='pct'?'on':''}" onclick="tripSetTaxMode('pct')">%</button>
+            <button class="${t.tax.mode==='sum'?'on':''}" onclick="tripSetTaxMode('sum')">₽</button>
+          </span>
+          <input type="number" min="0" step="${t.tax.mode==='pct'?'1':'1000'}" value="${t.tax.value!=null?t.tax.value:''}"
+                 placeholder="${t.tax.mode==='pct'?'процент':'сумма, ₽'}" onchange="tripSetTaxValue(this.value)">
+          ${t.tax.mode==='pct' ? `<label>от гонорара — ${fmtMoney(tripTaxSum(p))}</label>` : ''}` : ''}
+      </div>
+    </div>
+
+    <div id="tripTotals">${tripTotalsHTML(p)}</div>`;
+}
+/* Фикс за поездку и посменный гонорар гафера — это одни и те же мои деньги.
+   Если включено и то, и другое, в смете они сложатся: предупреждаем прямо здесь,
+   потому что заметить это по итогу трудно. */
+function tripMeWarnHTML(p){
+  if(isSoloTrip(p) || !tripFee(p)) return '';
+  const days = allDays(p).filter(d => (d.units||[]).some((u,i)=>unitMeOn(u,i) && !(u.crew||[]).some(c=>(c.role||'')==='Гафер')));
+  if(!days.length) return '';
+  return `<div class="form-hint" style="margin-top:.4rem;">В ${days.length} ${plural(days.length,'дне','днях','днях')}
+    включено «Я на смене» — там в смету идёт ещё и посменный гонорар гафера, поверх этого фикса.
+    Если за поездку платят одной суммой, выключи тумблер во вкладке «Команда».</div>`;
+}
+function tripTotalsHTML(p){
+  const t = tripD(p);
+  const row = (label, val, cls) => `<div class="trip-total-row ${cls||''}"><span>${label}</span><span>${val}</span></div>`;
+  const spendRow = (label, kind) => {
+    const leg = t[kind];
+    return leg.byClient
+      ? row(label, '<span class="trip-pill">за счёт клиента</span>')
+      : (tripLegCost(p, kind) ? row(label, '− ' + fmtMoney(tripLegCost(p, kind)), 'minus') : '');
+  };
+  const net = tripNet(p);
+  return `<div class="trip-total">
+    ${row('Гонорар', fmtMoney(tripFee(p)))}
+    ${t.tax.on && tripTaxSum(p) ? row('Налог' + (t.tax.mode==='pct' ? ` ${Number(t.tax.value)||0}%` : ''), '− ' + fmtMoney(tripTaxSum(p)), 'minus') : ''}
+    ${spendRow('Дорога', 'flight')}
+    ${spendRow('Жильё', 'stay')}
+    ${tripPersonalTotal(p) ? row('Личные расходы', '− ' + fmtMoney(tripPersonalTotal(p)), 'minus') : ''}
+    ${row('На руки', (net<0?'− ':'') + fmtMoney(Math.abs(net)), 'net')}
+  </div>
+  ${isSoloTrip(p) ? '' : `<div class="form-hint" style="margin-top:.5rem;">Это только моя часть.
+    Смета проекта, выплаты команде и ренталам считаются как обычно — во вкладках «Расчёт» и «Оплаты».</div>`}`;
+}
+// Пересчёт после правки: сумму проекта и итоги трогаем всегда, тяжёлую
+// перерисовку сметы — только когда гонорар и правда живёт её строкой
+function tripAfterEdit(p, feeChanged){
+  if(feeChanged && !isSoloTrip(p)) syncTripFeeLine(p);
+  refreshProjectSum(p);
+  const box = document.getElementById('tripTotals');
+  if(box) box.innerHTML = tripTotalsHTML(p);
+  renderInfo(p);
+  if(feeChanged){ renderEstimate(p); syncEstimateToFiles(p); }
+  refreshAll();
+  scheduleSave();
+}
+function tripSetMode(mode){
+  const p = tripProj(); if(!p) return;
+  tripD(p).mode = mode === 'crew' ? 'crew' : 'solo';
+  syncTripFeeLine(p);
+  refreshProjectSum(p);
+  applyTripUI(p);
+  renderTrip(p); renderInfo(p); renderEstimate(p); renderDayStrip(p); renderCrewStrip(p);
+  syncEstimateToFiles(p); refreshAll(); scheduleSave();
+}
+function tripSetFee(v){
+  const p = tripProj(); if(!p) return;
+  tripD(p).fee = Math.max(0, Math.round(Number(v) || 0));
+  renderTrip(p);            // цифра в шапке карточки и налог от процента
+  tripAfterEdit(p, true);
+}
+function tripSetWho(kind, byClient){
+  const p = tripProj(); if(!p) return;
+  tripD(p)[kind].byClient = !!byClient;
+  renderTrip(p); tripAfterEdit(p, false);
+}
+function tripSetLegSum(kind, v){
+  const p = tripProj(); if(!p) return;
+  tripD(p)[kind].sum = Math.max(0, Math.round(Number(v) || 0));
+  renderTrip(p); tripAfterEdit(p, false);
+}
+function tripAddPersonal(){
+  const p = tripProj(); if(!p) return;
+  tripD(p).personal.push({id:'tp'+Date.now()+Math.floor(Math.random()*1000), name:'', sum:0});
+  renderTrip(p); tripAfterEdit(p, false);
+  const rows = document.querySelectorAll('#pane-trip .trip-pers-row input[type=text]');
+  if(rows.length) rows[rows.length-1].focus();
+}
+function tripSetPersonal(id, field, v){
+  const p = tripProj(); if(!p) return;
+  const row = tripD(p).personal.find(x=>x.id===id); if(!row) return;
+  row[field] = field === 'sum' ? Math.max(0, Math.round(Number(v) || 0)) : v;
+  if(field === 'sum') renderTrip(p);
+  tripAfterEdit(p, false);
+}
+function tripDelPersonal(id){
+  const p = tripProj(); if(!p) return;
+  tripD(p).personal = tripD(p).personal.filter(x=>x.id!==id);
+  renderTrip(p); tripAfterEdit(p, false);
+}
+function tripSetTaxOn(on){
+  const p = tripProj(); if(!p) return;
+  tripD(p).tax.on = !!on;
+  renderTrip(p); tripAfterEdit(p, false);
+}
+function tripSetTaxMode(mode){
+  const p = tripProj(); if(!p) return;
+  const t = tripD(p).tax;
+  t.mode = mode === 'sum' ? 'sum' : 'pct';
+  t.value = t.mode === 'pct' ? TRIP_TAX_DEFAULT : 0;   // проценты и рубли — разные величины
+  renderTrip(p); tripAfterEdit(p, false);
+}
+function tripSetTaxValue(v){
+  const p = tripProj(); if(!p) return;
+  tripD(p).tax.value = Math.max(0, Number(v) || 0);
+  renderTrip(p); tripAfterEdit(p, false);
+}
+/* Соло-командировка прячет всё, что в ней не нужно: дни, команду и смету.
+   Ровно то, ради чего галочка и заводилась — интерфейс проще. */
+function applyTripUI(p){
+  const tab = t => document.querySelector('#screen-project .tab[data-tab="'+t+'"]');
+  const trip = isTrip(p), solo = isSoloTrip(p);
+  const tripTab = tab('trip');
+  if(tripTab) tripTab.style.display = trip ? '' : 'none';
+  ['estimate','crew'].forEach(name=>{
+    const b = tab(name);
+    if(b) b.style.display = (trip && solo) ? 'none' : '';
+  });
+  const active = document.querySelector('#screen-project .tab.active');
+  if(active && active.style.display === 'none') showTab(trip ? 'trip' : 'info');
 }
 
 function renderChecklist(p){
@@ -4665,6 +5139,7 @@ function removeScoutFromEstimate(p){
 }
 function renderCrewStrip(p){
   const el = document.getElementById('pCrewStrip');
+  if(isSoloTrip(p)){ el.innerHTML = ''; return; }   // еду один — некого показывать
   // показываем команду выбранного дня — иначе на многодневном проекте
   // в полосе висели бы все смены разом
   const crew = (activeDay(p).units||[]).flatMap(u=>u.crew);
@@ -4709,6 +5184,8 @@ function renderInfo(p){
           <input id="ei-location" value="${esc(p.location)}" placeholder="Место проведения">
           <input id="ei-date" type="date" value="${p.date}" title="Дата съёмки" aria-label="Дата съёмки">
         </div>
+        <label class="settle-check"><input type="checkbox" id="ei-trip" ${isTrip(p)?'checked':''}>
+          <span><b>Командировка</b> — своя вкладка «Поездка»: гонорар, дорога, жильё, личные расходы, налог.</span></label>
         <div style="display:flex;gap:.5rem;">
           <button class="btn" onclick="saveInfoEdit()">Сохранить</button>
           <button class="btn ghost" onclick="infoEditMode=false;renderInfo(PROJECTS.find(x=>x.id===currentProjectId))">Отмена</button>
@@ -4813,6 +5290,11 @@ function saveInfoEdit(){
   // многодневные переносятся отдельной кнопкой «Перенести даты»
   if(newDate !== p.date && projectDates(p).length<=1){ p.dates = [newDate]; syncDaysAfterDateChange(p); }
   p.date = newDate;
+  const tripBox = document.getElementById('ei-trip');
+  if(tripBox && !!tripBox.checked !== isTrip(p)){
+    setProjectTrip(p, tripBox.checked);
+    applyTripUI(p); renderTrip(p); renderEstimate(p); renderDayStrip(p); renderCrewStrip(p);
+  }
   infoEditMode = false;
   document.getElementById('pTitle').textContent = p.name;
   document.getElementById('pSub').textContent = [p.client, fmtDate(p.date), p.location].filter(v=>v&&v!=='—').join(' · ');
@@ -4856,8 +5338,8 @@ function renderEstimate(p){
     return `<div class="twrap"><table>
       <thead><tr><th>Наименование</th><th class="r">Кол-во × смен</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
       <tbody>${items.map(i=>{
-        const sh = lineShifts(i);
-        return `<tr><td>${esc(i.name)}</td><td class="r num">${i.qty}${sh > 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
+        const sh = shownShifts(i);
+        return `<tr><td>${esc(i.name)}</td><td class="r num">${i.qty}${sh != 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`;
   }
@@ -4883,7 +5365,7 @@ function renderEstimate(p){
     const payable = estPayable(p, estItems(allEstimate(p))).payable;
     const multi = isMultiDay(p);
     pane.querySelector('.est-body').innerHTML = `
-      ${multi ? `<div class="form-hint" style="margin-bottom:.45rem;">Свод за ${fmtDate(day.iso)}. Смета по форме собирается по всем дням проекта.</div>` : ''}
+      ${multi ? `<div class="form-hint" style="margin-bottom:.45rem;">Свод за ${fmtDate(day.iso)}${day.transfer?' · <b>трансферный день, 50%</b> кроме транспорта':''}. Смета по форме собирается по всем дням проекта.</div>` : ''}
       <div class="est-sum">
         ${estSummaryBuckets(items).map(groupRowHTML).join('')}
         <div class="est-sum-total"><span>Итого${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(dayTotal)}</span></div>
@@ -5219,7 +5701,7 @@ function estimateTableHTML(items, t){
     const rows = items.filter(i => estFormGroup(i.sec || 'Оборудование') === gr);
     const sub = rows.reduce((s, i) => s + lineTotal(i), 0);
     return `<tr class="ep-sec"><td colspan="5">${gr}</td></tr>` +
-      rows.map(i => `<tr><td>${esc(i.name)}</td><td class="r">${fmtMoney(i.price)}</td><td class="r">${i.qty}</td><td class="r">${lineShifts(i)}</td><td class="r">${fmtMoney(lineTotal(i))}</td></tr>`).join('') +
+      rows.map(i => `<tr><td>${esc(i.name)}</td><td class="r">${fmtMoney(i.price)}</td><td class="r">${i.qty}</td><td class="r">${shownShifts(i)}</td><td class="r">${fmtMoney(lineTotal(i))}</td></tr>`).join('') +
       `<tr class="ep-sub"><td colspan="4" class="r">Подытог</td><td class="r">${fmtMoney(sub)}</td></tr>`;
   }).join('');
   const sumRow = (label, val, cls) => `<tr class="${cls || ''}"><td colspan="4" class="r">${label}</td><td class="r">${fmtMoney(val)}</td></tr>`;
@@ -6075,6 +6557,7 @@ function submitLoadPayProrata(){
 function runCalcPersonnel(loadOverrides){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   const rates = projectRates(p);   // проект считается по своему снимку ставок
+  const dayK = activeDay(p).transfer ? TRANSFER_K : 1;
   const dayUnits = activeDay(p).units;
   const multi = dayUnits.length>1;
   const newLines = [];
@@ -6137,8 +6620,9 @@ function runCalcPersonnel(loadOverrides){
       members.forEach(c=>{
         if(c.paid) return;
         c.loadHours = loadH;
-        c.loadPay = loadPay;
-        c.amount = base + otPay + (c.noGap ? 0 : gapPay) + loadPay + (c.extraPay||0);
+        c.loadPay = Math.round(loadPay * dayK);
+        // трансферный день — половина смены и всех её надбавок, ровно как в смете
+        c.amount = Math.round((base + otPay + (c.noGap ? 0 : gapPay) + loadPay) * dayK) + (c.extraPay||0);
       });
     });
 
@@ -6186,7 +6670,7 @@ function runCalcPersonnel(loadOverrides){
   // заменяем только раздел «Персонал», всё остальное в смете остаётся как есть
   // («Освоение» — тоже «Персонал», но это отдельная авто-строка, её не трогаем)
   const day = activeDay(p);
-  day.estimate = day.estimate.filter(i=>i.sec!=='Персонал' || i.scoutLine).concat(newLines);
+  day.estimate = day.estimate.filter(i=>i.sec!=='Персонал' || i.scoutLine || i.tripFee).concat(newLines);
   refreshProjectSum(p);
 
   const total = newLines.reduce((s,i)=>s+lineTotal(i),0);
@@ -9167,7 +9651,8 @@ function renderOwedToMeTab(){
 function projectProfit(p){
   const crewPaid = projectCrew(p).reduce((s,c)=>s+settlementPaid(c),0);
   const rentalPaid = RENTAL_DEBTS.filter(r=>r.projectId===p.id).reduce((s,r)=>s+settlementPaid(r),0);
-  return p.paidAmount - crewPaid - rentalPaid;
+  // в командировке из моих денег уходят ещё налог, дорога, жильё и личные траты
+  return p.paidAmount - crewPaid - rentalPaid - tripSpend(p);
 }
 function renderProfitTab(){
   const el = document.getElementById('fpane-profit');
@@ -10093,6 +10578,33 @@ function selfCheckProject(over){
     dates:['2026-01-01'], sum:0, sumManual:false, paidAmount:0, units:[], estimate:[],
     notes:[], payments:[], rates:selfCheckFixtureRates()}, over);
 }
+
+/* Командировка и половинные дни: тестовые заготовки. Проект собирается «с нуля»,
+   без обращения к сохранённым данным — самопроверка не должна зависеть от того,
+   что лежит у пользователя. */
+function selfCheckTrip(over){
+  const o = over || {};
+  const p = selfCheckProject({id:'__selfcheck_trip__', trip:true});
+  p.tripData = Object.assign(newTripData(), {
+    mode: o.mode || 'solo', fee: o.fee || 0,
+    flight: o.flight || {byClient:true, sum:0},
+    stay:   o.stay   || {byClient:true, sum:0},
+    personal: o.personal || [],
+    tax: o.tax || {on:false, mode:'pct', value:TRIP_TAX_DEFAULT}});
+  return p;
+}
+function selfCheckTransfer(){
+  const dates = ['2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-05','2026-10-06','2026-10-07'];
+  const p = selfCheckProject({id:'__selfcheck_tr__', date:dates[0], dates:dates.slice()});
+  p.days = dates.map((iso, i)=>({iso, units:[], notes:[], payments:[],
+    transfer: [0,1,5,6].includes(i),
+    estimate:[{sec:'Свет', name:'Комплект света', qty:1, days:1, price:100000, client:true},
+              {sec:'Логистика', name:'Фура', qty:1, days:1, price:20000, client:true},
+              {sec:'Персонал', name:'Такси', qty:1, days:1, price:5000, client:true, taxiLine:true}]}));
+  syncTransferK(p);
+  return p;
+}
+
 function approx(a,b){ return Math.abs(a-b) < 0.5; }
 
 const SELF_CHECK_CASES = [
@@ -10140,6 +10652,65 @@ const SELF_CHECK_CASES = [
   {group:'П/Р и разрыв', name:'Разрыв 5ч по 1-й ступени (Осветитель) — не 2-я и не 3-я',
     run:()=>{ const r=selfCheckFixtureRates(); return Math.round(5*rateRow(r,'Осветитель').p1); },
     expect:5*2900},
+
+
+  // ---- Командировка: гонорар, расходы, налог ----
+  {group:'Командировка', name:'Соло-командировка: сумма проекта равна гонорару',
+    run:()=>{ const p=selfCheckTrip({fee:350000}); refreshProjectSum(p); return p.sum; }, expect:350000},
+  {group:'Командировка', name:'Налог процентом — 6% от гонорара',
+    run:()=>{ const p=selfCheckTrip({fee:350000, tax:{on:true, mode:'pct', value:6}});
+      return tripTaxSum(p); }, expect:21000},
+  {group:'Командировка', name:'Налог суммой берётся как есть, процент не применяется',
+    run:()=>{ const p=selfCheckTrip({fee:350000, tax:{on:true, mode:'sum', value:30000}});
+      return tripTaxSum(p); }, expect:30000},
+  {group:'Командировка', name:'Билеты и жильё за счёт клиента в мои расходы не идут',
+    run:()=>{ const p=selfCheckTrip({fee:300000, flight:{byClient:true, sum:40000},
+      stay:{byClient:true, sum:60000}}); return tripSpend(p); }, expect:0},
+  {group:'Командировка', name:'Свои билеты + жильё + личные складываются в расход',
+    run:()=>{ const p=selfCheckTrip({fee:300000, flight:{byClient:false, sum:40000},
+      stay:{byClient:false, sum:60000}, personal:[{id:'a',sum:8000},{id:'b',sum:4000}]});
+      return tripSpend(p); }, expect:112000},
+  {group:'Командировка', name:'«На руки» = гонорар − налог − мои расходы',
+    run:()=>{ const p=selfCheckTrip({fee:300000, tax:{on:true, mode:'pct', value:6},
+      flight:{byClient:false, sum:40000}, stay:{byClient:true, sum:0},
+      personal:[{id:'a',sum:10000}]}); return tripNet(p); }, expect:300000-18000-40000-10000},
+  {group:'Командировка', name:'Гонорар в режиме «с командой» — одна строка сметы, не две',
+    run:()=>{ const p=selfCheckTrip({fee:200000, mode:'crew'});
+      syncTripFeeLine(p); syncTripFeeLine(p);   // повторный вызов не должен задвоить
+      return allEstimate(p).filter(i=>i.tripFee).length; }, expect:1},
+  {group:'Командировка', name:'Расходы поездки уменьшают прибыль проекта',
+    run:()=>{ const p=selfCheckTrip({fee:300000, flight:{byClient:false, sum:25000}});
+      p.paidAmount = 300000; return projectProfit(p); }, expect:275000},
+
+  // ---- Трансферные дни: половина всего, кроме транспорта ----
+  {group:'Трансферный день', name:'Оборудование в трансферный день — половина',
+    run:()=>{ const p=selfCheckTransfer(); return lineTotal(p.days[0].estimate[0]); }, expect:50000},
+  {group:'Трансферный день', name:'Транспорт в трансферный день — полная стоимость',
+    run:()=>{ const p=selfCheckTransfer(); return lineTotal(p.days[0].estimate[1]); }, expect:20000},
+  {group:'Трансферный день', name:'Такси в трансферный день не режется',
+    run:()=>{ const p=selfCheckTransfer(); return lineTotal(p.days[0].estimate[2]); }, expect:5000},
+  {group:'Трансферный день', name:'Обычный день считается полностью',
+    run:()=>{ const p=selfCheckTransfer(); return lineTotal(p.days[2].estimate[0]); }, expect:100000},
+  {group:'Трансферный день', name:'7 дней, 4 трансферных: 3×120к + 4×70к',
+    run:()=>{ const p=selfCheckTransfer(); refreshProjectSum(p); return p.sum; },
+    expect:3*120000 + 4*70000 + 3*5000 + 4*5000},
+  {group:'Трансферный день', name:'Снятая пометка возвращает полную стоимость',
+    run:()=>{ const p=selfCheckTransfer(); p.days[0].transfer = false; refreshProjectSum(p);
+      return lineTotal(p.days[0].estimate[0]); }, expect:100000},
+  {group:'Трансферный день', name:'Смена осветителя в трансферный день — половина ставки',
+    run:()=>{ const r=selfCheckFixtureRates(); return Math.round(roleShiftRate(r,'Осветитель') * TRANSFER_K); },
+    expect:6600},
+  {group:'Трансферный день', name:'Строка неустойки половинным днём не режется (noK)',
+    run:()=>{ const p = selfCheckTransfer();
+      const line = {sec:'Персонал', name:'Неустойка · гафер (я)', qty:1, days:1, price:80000, client:true, noK:true};
+      p.days[0].estimate.push(line);            // кладём в трансферный день
+      syncTransferK(p);
+      return lineTotal(line); }, expect:80000},
+  {group:'Трансферный день', name:'Гонорар командировки в трансферный день не делится',
+    run:()=>{ const p = selfCheckTransfer();
+      p.trip = true; p.tripData = Object.assign(newTripData(), {mode:'crew', fee:200000});
+      syncTripFeeLine(p); syncTransferK(p);
+      return lineTotal(allEstimate(p).find(i=>i.tripFee)); }, expect:200000},
 
   // ---- Ставки: снимок и неизменность ----
   {group:'Ставки', name:'Снимок ставок в проекте не зависит от смены действующих',
