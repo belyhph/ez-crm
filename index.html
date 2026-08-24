@@ -88,7 +88,7 @@
       min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
     .seg.sm button{padding-left:.7rem;padding-right:.7rem;}
     /* сегменты шапки календаря не раздуваем: там соразмерность важнее мишени */
-    .cal-toolbar .seg.sm button{min-height:22px;padding-left:.32rem;padding-right:.32rem;}
+    .cal-toolbar .seg.sm button{min-height:25px;padding-left:.37rem;padding-right:.37rem;}
     #calAddBtn{min-height:0;}
     .day-chip{min-height:42px;}
   }
@@ -160,18 +160,28 @@
      Ушёл лишний этаж и рваное распределение иконок по ширине. */
   @media (max-width:899px){
     .app-header{display:flex;align-items:center;gap:.45rem;}
-    .app-header .topbar{flex:1 1 auto;min-width:0;margin-bottom:0;gap:.4rem;}
-    .app-header .toolbar{flex:none;gap:.28rem;
-      max-width:60vw;opacity:1;overflow:hidden;
+    /* display:contents распускает верхний ряд, чтобы порядок задавался здесь:
+       бренд, метка режима, инструменты, а поиск — последним */
+    .app-header .topbar{display:contents;}
+    .app-header .brand{order:1;}
+    .app-header .mode-chip{order:2;}
+    .app-header .toolbar{order:3;flex:none;gap:.28rem;
+      max-width:70vw;opacity:1;overflow:hidden;
       transition:max-width .22s var(--ease), opacity .16s var(--ease);}
-    .app-header .search{flex:1 1 auto;min-width:50px;padding:.4rem .5rem;}
-    .app-header .search input{min-width:0;}
-    /* поле раскрыто: иконки уступают место */
+    /* Свёрнутый поиск — такая же клавиша, как остальные иконки: только лупа */
+    .app-header .search{order:4;flex:none;width:34px;height:34px;padding:0;
+      justify-content:center;overflow:hidden;
+      transition:width .2s var(--ease), padding .2s var(--ease);}
+    .app-header .search input{width:0;padding:0;opacity:0;transition:opacity .12s var(--ease);}
+    /* поле раскрыто: иконки уступают место, поле занимает ряд */
+    .app-header.searching .search{flex:1 1 auto;width:auto;padding:.4rem .55rem;justify-content:flex-start;}
+    .app-header.searching .search input{width:100%;opacity:1;}
     .app-header.searching .toolbar{max-width:0;opacity:0;pointer-events:none;}
   }
   @media (max-width:420px){
-    .app-header .toolbar .home-btn{width:30px;height:30px;}
+    .app-header .toolbar .home-btn{width:31px;height:31px;}
     .app-header .toolbar .home-btn svg{width:15px;height:15px;}
+    .app-header .search{width:31px;height:31px;}
   }
   /* Выдача поиска — поверх содержимого, не двигает вёрстку под собой */
   .search-results{display:none;position:absolute;left:1rem;right:1rem;top:100%;z-index:60;
@@ -240,19 +250,24 @@
     .cal-toolbar .seg.sm{flex:none;}
     /* Контролы нарочно мелкие и одного роста: пользователь просил соразмерность,
        а не крупные мишени — пальцем он не промахивается */
-    .cal-toolbar .seg.sm button{padding:.13rem .3rem;font-size:.56rem;}
+    .cal-toolbar .seg.sm button{padding:.15rem .35rem;font-size:.645rem;}
     .cal-toolbar-right{flex-wrap:nowrap;gap:.24rem;flex:0 1 auto;min-width:0;}
     .cal-toolbar .panel-title{font-size:.84rem;flex:0 1 auto;min-width:0;
       overflow:hidden;text-overflow:ellipsis;}
     .cal-toolbar .icon-btn{width:20px;height:20px;font-size:.72rem;flex:none;}
-    #calAddBtn{width:20px;height:20px;padding:0;display:flex;align-items:center;
-      justify-content:center;font-size:.85rem;flex:none;}
+    /* «+» — главное действие в шапке, поэтому заметно крупнее стрелок */
+    #calAddBtn{width:27px;height:27px;padding:0;display:flex;align-items:center;
+      justify-content:center;font-size:1.05rem;flex:none;}
     #calAddBtn .cal-add-label{display:none;}
     /* Ритм панели месяца: над сеткой чуть больше воздуха, под ней — меньше:
        разрыв между последним рядом и легендой резал глаз */
     .cal-toolbar{margin-bottom:1.05rem;}
-    .cal-panel{padding-bottom:.8rem;}
-    .panel .legend{gap:.3rem .55rem;font-size:.62rem;flex-wrap:wrap;white-space:nowrap;margin-top:.4rem;}
+    .cal-panel{padding-bottom:.6rem;}
+    /* легенда строго одной строкой и вплотную к сетке */
+    .panel .legend{gap:.34rem;font-size:.55rem;flex-wrap:nowrap;white-space:nowrap;margin-top:.15rem;}
+    .panel .legend span{gap:.22rem;}
+    .panel .legend i{width:6px;height:6px;}
+    .panel .legend .coin-ico{width:8px;height:8px;}
     .panel .legend .coin-ico{width:9px;height:9px;}
     .panel .legend i{width:7px;height:7px;}
   }
@@ -267,11 +282,14 @@
   /* «Подробный» месяц, как в календаре Эпл: в клетке видно, ЧТО за события,
      а не только точки. Клетка тянется под содержимое, плашки с названиями
      обрезаются многоточием; сверх трёх — счётчик «ещё N». */
-  .cal-day-mini{position:relative;min-width:0;min-height:clamp(48px,6.8vh,60px);display:flex;flex-direction:column;
+  .cal-day-mini{position:relative;min-width:0;min-height:clamp(40px,5.4vh,50px);display:flex;flex-direction:column;
     align-items:stretch;justify-content:flex-start;gap:1px;padding:2px 2px 3px;
     border-radius:7px;font-size:.7rem;
     color:var(--ink);border:1px solid transparent;transition:background-color .12s var(--ease);}
-  .cal-day-num{display:block;text-align:center;font-size:.7rem;line-height:1.3;}
+  .cal-day-num{display:flex;align-items:center;justify-content:center;gap:2px;
+    text-align:center;font-size:.7rem;line-height:1.3;}
+  .cal-coin{display:inline-flex;color:var(--warn);}
+  .cal-coin .coin-ico{width:8px;height:8px;}
   .cal-day-evs{display:flex;flex-direction:column;gap:1px;min-width:0;}
   .cal-ev{display:block;font-size:.52rem;line-height:1.5;font-weight:600;padding:0 3px;
     border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -456,7 +474,13 @@
   .tabpane.active{display:block;animation:fade .16s var(--ease);}
 
   .kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem 1.4rem;}
-  @media (max-width:600px){.kv{grid-template-columns:1fr;}}
+  /* Две колонки и на телефоне: по просьбе — так вся карточка видна разом,
+     без прокрутки. Значения переносятся по словам, подписи не режем. */
+  @media (max-width:600px){
+    .kv{gap:.55rem .8rem;}
+    .kv label{font-size:.6rem;letter-spacing:.03em;}
+    .kv .v{font-size:.82rem;overflow-wrap:anywhere;}
+  }
   .kv > div{border-bottom:1px solid var(--line);padding-bottom:.5rem;}
   .kv label{display:block;font-family:var(--font-mono);font-size:.68rem;text-transform:uppercase;
     letter-spacing:.05em;color:var(--ink-muted);margin-bottom:.2rem;}
@@ -1382,8 +1406,8 @@
       <div class="brand">EZ<span class="dot">.</span></div>
       <button class="mode-chip" id="modeChip" style="display:none;" onclick="openDataBase()"
         title="Это песочница с примерами. Настоящие проекты — в режиме «Работа»: открой Базу данных → Режим.">ДЕМО</button>
-      <div class="search">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <div class="search" onclick="document.getElementById('searchInput').focus()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none;"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="searchInput" placeholder="Проект, клиент, человек, рентал…" oninput="runSearch(this.value)"
                onfocus="searchExpand(true);runSearch(this.value)" onblur="searchExpand(false)" autocomplete="off">
         <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none;" title="Очистить">✕</button>
@@ -1402,14 +1426,14 @@
       <button class="home-btn" id="quickNoteBtn" onclick="openQuickNoteModal(this)" title="Быстрая заметка">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20.5V17l11-11 3.5 3.5-11 11H4z"/><path d="M13 7.5L17 11.5"/></svg>
       </button>
-      <button class="home-btn" id="syncBtn" onclick="openSyncPanel()" title="Сохранение и перенос данных">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M8 3v5h7V3"/><path d="M8 21v-7h8v7"/></svg>
-        <span class="cloud-dot" id="cloudDot"></span>
-      </button>
       <div class="tb-gap" style="flex:1;"></div>
       <button class="home-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Светлая/тёмная тема">
         <svg id="themeIconMoon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
         <svg id="themeIconSun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+      </button>
+      <button class="home-btn" id="syncBtn" onclick="openSyncPanel()" title="Сохранение и перенос данных">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M8 3v5h7V3"/><path d="M8 21v-7h8v7"/></svg>
+        <span class="cloud-dot" id="cloudDot"></span>
       </button>
       <button class="home-btn" onclick="openDataBase()" title="База данных — ставки и прайсы">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>
@@ -4393,7 +4417,9 @@ function closeDayPick(){ document.getElementById('dayPickModal').classList.remov
 function pickDayProject(pid, tab){ closeDayPick(); openProject(pid, tab); }
 
 function renderCalendarMonth(){
-  document.getElementById('calTitle').textContent = MONTHS[calMonth] + ' ' + calYear;
+  // год в заголовке — только когда он не текущий: иначе он зря съедает строку
+  document.getElementById('calTitle').textContent =
+    MONTHS[calMonth] + (calYear !== TODAY.getFullYear() ? ' ' + calYear : '');
   const q = calSearchQuery.toLowerCase().trim();
   const first = new Date(calYear, calMonth, 1);
   const startOffset = (first.getDay()+6)%7;
@@ -4416,16 +4442,19 @@ function renderCalendarMonth(){
       ? ` onclick="openDayPick(${d},${calMonth},${calYear})"`
       : ` onclick="newProjectOnDate('${npIsoFor(d,calMonth,calYear)}')"`;
     /* плашки событий: съёмки в цвет этапа, освоение и день оплаты со своими метками */
+    /* День оплаты не занимает строку события — он монеткой рядом с числом:
+       таких дней много, а места в клетке мало. Освоение — монохромной плашкой. */
     const evs = [
       ...shootProjects.map(p=>{ const ph = projectPhase(p);
         return {t:p.name, bg:PHASE_SOFT[ph], fg:PHASE_TEXT[ph]}; }),
-      ...scoutProjects.map(p=>({t:p.name, ico:'scout', bg:'var(--accent-soft)', fg:'var(--accent-ink)'})),
-      ...paydayProjects.map(p=>({t:p.name, ico:'coin', bg:'var(--warn-soft)', fg:'var(--warn)'})),
+      ...scoutProjects.map(p=>({t:p.name, ico:'scout', bg:'var(--accent-soft)', fg:'var(--ink)'})),
     ];
     const coinSvg = '<svg class="coin-ico" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>';
     const scoutSvg = '<svg class="coin-ico" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="5" r="3.4"></circle><path d="M7.6 7.6 L10.4 10.4"></path></svg>';
-    const shown = evs.slice(0,3).map(e=>`<span class="cal-ev" style="background:${e.bg};color:${e.fg};">${e.ico==='coin'?coinSvg:e.ico==='scout'?scoutSvg:''}${esc(e.t)}</span>`).join('');
-    const more = evs.length>3 ? `<span class="cal-ev-more">ещё ${evs.length-3}</span>` : '';
+    const shown = evs.slice(0,2).map(e=>`<span class="cal-ev" style="background:${e.bg};color:${e.fg};">${e.ico==='scout'?scoutSvg:''}${esc(e.t)}</span>`).join('');
+    const hidden = evs.length - 2 + (paydayProjects.length ? 0 : 0);
+    const more = evs.length>2 ? `<span class="cal-ev-more">ещё ${evs.length-2}</span>` : '';
+    const coinMark = paydayProjects.length ? `<span class="cal-coin">${coinSvg}</span>` : '';
     const reasons = [
       ...shootProjects.map(p=>({id:p.id, r:'shoot'})),
       ...paydayProjects.map(p=>({id:p.id, r:'payday'})),
@@ -4433,7 +4462,7 @@ function renderCalendarMonth(){
     ];
     const tipsJson = JSON.stringify(reasons).replace(/'/g,'&#39;');
     const hover = allProjects.length ? ` data-tips='${tipsJson}' onmouseenter="showCalTooltip(event)" onmousemove="positionCalTooltip(event)" onmouseleave="hideCalTooltip()"` : '';
-    cells += `<div class="${cls}"${onclick}${hover}><span class="cal-day-num">${d}</span>${evs.length?`<div class="cal-day-evs">${shown}${more}</div>`:''}</div>`;
+    cells += `<div class="${cls}"${onclick}${hover}><span class="cal-day-num">${d}${coinMark}</span>${evs.length?`<div class="cal-day-evs">${shown}${more}</div>`:''}</div>`;
   }
   document.getElementById('calBody').innerHTML = `
     <div class="cal-weekdays"><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div></div>
