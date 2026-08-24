@@ -20,7 +20,8 @@
 <link rel="icon" type="image/png" href="icon-192.png" data-site="1">
 <link rel="manifest" href="manifest.webmanifest" data-site="1">
 <style>
-  html, body { margin:0; padding:0; background:#0A0A0A; }
+  /* фон следует за темой приложения; #0A0A0A — только запасной, до загрузки стилей */
+  html, body { margin:0; padding:0; background:var(--bg,#0A0A0A); }
   * { -webkit-tap-highlight-color: transparent; }
 </style>
 </head>
@@ -106,8 +107,11 @@
      а исчезающая полоса больше не дёргает вёрстку при открытии окон. */
   *{scrollbar-width:none;-ms-overflow-style:none;}
   *::-webkit-scrollbar{width:0;height:0;display:none;}
+  /* html тоже красим: иначе на светлой теме область ниже содержимого
+     оставалась чёрной — фон страницы задан в обёртке сайта жёстко */
+  html{background:var(--bg);}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
-    line-height:1.45;-webkit-font-smoothing:antialiased;}
+    line-height:1.45;-webkit-font-smoothing:antialiased;min-height:100%;}
   button{font-family:inherit;cursor:pointer;
     transition:transform .12s var(--ease), opacity .12s var(--ease), background-color .15s var(--ease),
       border-color .15s var(--ease), color .15s var(--ease);}
@@ -344,6 +348,9 @@
     transition:border-color .12s var(--ease), transform .1s var(--ease);}
   .agenda-row:hover{border-color:var(--accent);}
   .agenda-row.today{border-color:var(--accent);background:var(--accent-soft);}
+  /* промежуток дат и раскрытые под ним дни */
+  .agenda-date.range b{font-size:.86rem;letter-spacing:-.02em;}
+  .agenda-row.child{margin-left:1.1rem;background:none;border-style:dashed;}
   .agenda-row:active{transform:scale(.99);}
   .agenda-date{display:flex;flex-direction:column;align-items:center;width:42px;flex:none;
     font-family:var(--font-mono);}
@@ -443,6 +450,9 @@
     font-size:.76rem;font-weight:500;white-space:nowrap;cursor:pointer;
     transition:border-color .12s var(--ease), transform .1s var(--ease);}
   .task-chip:hover{border-color:var(--accent);}
+  /* чип-разворот: тот же силуэт, но без заливки — он про список, а не про задачу */
+  .chip-more{background:none;color:var(--ink-muted);border-style:dashed;font-family:inherit;}
+  .chip-more:hover{color:var(--accent-ink);border-color:var(--accent);}
   .task-chip:active{transform:scale(.97);}
   .chip-done{width:15px;height:15px;border-radius:50%;border:1px solid var(--ink-muted);
     display:inline-flex;align-items:center;justify-content:center;font-size:.6rem;
@@ -1386,8 +1396,12 @@
     #screen-dashboard.active{display:grid;grid-template-columns:minmax(420px,520px) minmax(0,1fr);
       gap:1rem;align-items:start;}
     /* Календарь компактный: панель по содержимому. Полную высоту окна пробовали —
-       на высоких экранах месяц разъезжался, читать неудобно. */
+       на высоких экранах месяц разъезжался, читать неудобно.
+       Расписание бывает длинным — ограничиваем его своей прокруткой, иначе
+       панель уезжает вниз и накрывает разделы под собой. */
     #screen-dashboard .cal-panel{position:sticky;top:84px;}
+    #screen-dashboard .cal-panel #calBody{max-height:calc(100dvh - 280px);
+      overflow-y:auto;overscroll-behavior:contain;}
     #screen-dashboard .tasks-panel-big{margin-top:0;}
     /* на широком голова строки узкая, чипы идут справа от неё */
     #screen-dashboard .tpr-head{width:auto;max-width:230px;}
@@ -4546,39 +4560,86 @@ function renderCalendarWeek(){
     <div class="cal-weekdays">${head}</div>
     <div class="cal-week">${cells}</div>`;
 }
+/* Ленты подряд идущих смен схлопываются в одну строку с промежутком «6–14 июл»:
+   у восьмидневного проекта восемь одинаковых строк только мешают. Нажатие
+   разворачивает промежуток в отдельные дни, оттуда уже — в сам проект. */
+let scheduleOpen = new Set();
+function toggleScheduleRun(key){
+  if(scheduleOpen.has(key)) scheduleOpen.delete(key); else scheduleOpen.add(key);
+  renderCalendarWork();
+}
+// подряд ли идут даты: разница ровно сутки
+function isNextDay(prevIso, iso){
+  const a = new Date(prevIso + 'T12:00:00'), b = new Date(iso + 'T12:00:00');
+  return Math.round((b - a) / 86400000) === 1;
+}
+function agendaRowHTML(e, opts){
+  opts = opts || {};
+  const d = new Date(e.iso + 'T12:00:00');
+  const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getDay()];
+  const today = e.iso === TODAY_ISO;
+  const dateCell = opts.range
+    ? `<div class="agenda-date range"><b>${opts.range}</b><span>${MONTHS[d.getMonth()].slice(0,3).toLowerCase()}</span></div>`
+    : `<div class="agenda-date"><b>${d.getDate()}</b><span>${MONTHS[d.getMonth()].slice(0,3).toLowerCase()}</span><span>${wd}</span></div>`;
+  return `<div class="agenda-row${today?' today':''}${opts.child?' child':''}" onclick="${opts.onclick}">
+    ${dateCell}
+    <div class="stripe" style="background:${e.dot}"></div>
+    <div class="pinfo"><div class="pname">${esc(e.p.name)}</div><div class="pmeta">${esc(opts.kind || e.kind)}</div></div>
+    <div class="psum mono">${e.amount}</div>
+    <div class="pchev">${opts.chev || '›'}</div>
+  </div>`;
+}
 function renderCalendarWork(){
   /* «Расписание» — не список проектов, а лента ближайших событий: съёмочные дни,
-     освоения и ожидаемые поступления, вперемешку и по возрастанию даты.
-     Отвечает на вопрос «что у меня дальше», а не «какие вообще есть проекты». */
+     освоения и ожидаемые поступления, вперемешку и по возрастанию даты. */
   document.getElementById('calTitle').textContent = 'Расписание';
   const q = calSearchQuery.toLowerCase().trim();
-  const evs = [];
+  const items = [];   // {iso, sortIso, render}
   activeProjects().filter(p=>matchesQuery(p,q)).forEach(p=>{
-    projectDates(p).forEach(iso=>evs.push({iso, p, kind:'Съёмочный день', tab:'info', dot:phaseColor(p),
-      amount:p.sum?fmtMoney(p.sum):''}));
-    if(p.scoutDate) evs.push({iso:p.scoutDate, p, kind:'Освоение', tab:'estimate', dot:'var(--ink-muted)', amount:''});
-    if(p.expectedPaymentDate && (p.sum-p.paidAmount)>0)
-      evs.push({iso:p.expectedPaymentDate, p, kind:'Ждём оплату', tab:'pay', dot:'var(--warn)',
-        amount:fmtMoney(p.sum-p.paidAmount)});
+    const amount = p.sum ? fmtMoney(p.sum) : '';
+    // съёмочные дни режем на серии подряд идущих
+    const days = projectDates(p).slice().sort();
+    let run = [];
+    const flush = () => {
+      if(!run.length) return;
+      const first = run[0], last = run[run.length-1];
+      const base = {p, dot:phaseColor(p), amount, kind:'Съёмочный день'};
+      if(run.length === 1){
+        items.push({iso:first, html:agendaRowHTML({...base, iso:first}, {onclick:`openProject('${p.id}','info')`})});
+      } else {
+        const key = p.id + '|' + first;
+        const open = scheduleOpen.has(key);
+        const a = new Date(first+'T12:00:00'), b = new Date(last+'T12:00:00');
+        const sameMonth = a.getMonth() === b.getMonth();
+        const range = sameMonth ? `${a.getDate()}–${b.getDate()}`
+          : `${a.getDate()} ${MONTHS[a.getMonth()].slice(0,3).toLowerCase()} – ${b.getDate()}`;
+        let html = agendaRowHTML({...base, iso:first}, {range, kind:`Съёмочные дни · ${run.length}`,
+          onclick:`toggleScheduleRun('${key}')`, chev: open ? '⌄' : '›'});
+        if(open) html += run.map(iso=>agendaRowHTML({...base, iso, amount:''},
+          {child:true, onclick:`openProject('${p.id}','info')`})).join('');
+        items.push({iso:first, html});
+      }
+      run = [];
+    };
+    days.forEach(iso=>{
+      if(run.length && !isNextDay(run[run.length-1], iso)) flush();
+      run.push(iso);
+    });
+    flush();
+    if(p.scoutDate) items.push({iso:p.scoutDate,
+      html:agendaRowHTML({iso:p.scoutDate, p, kind:'Освоение', dot:'var(--ink-muted)', amount:''},
+        {onclick:`openProject('${p.id}','estimate')`})});
+    if(p.expectedPaymentDate && (p.sum-p.paidAmount)>0) items.push({iso:p.expectedPaymentDate,
+      html:agendaRowHTML({iso:p.expectedPaymentDate, p, kind:'Ждём оплату', dot:'var(--warn)',
+        amount:fmtMoney(p.sum-p.paidAmount)}, {onclick:`openProject('${p.id}','pay')`})});
   });
-  const upcoming = evs.filter(e=>e.iso >= TODAY_ISO).sort((a,b)=> a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
-  const rows = upcoming.length ? upcoming : evs.sort((a,b)=> a.iso > b.iso ? -1 : 1).slice(0,12);
+  const upcoming = items.filter(e=>e.iso >= TODAY_ISO).sort((a,b)=> a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0);
+  const rows = upcoming.length ? upcoming : items.sort((a,b)=> a.iso > b.iso ? -1 : 1).slice(0,12);
   const el = document.getElementById('calBody');
   if(!rows.length){ el.innerHTML = '<div class="empty-hint">Пока ничего не запланировано.</div>'; return; }
   const head = upcoming.length ? '' :
     '<div class="empty-hint" style="padding-top:0;">Впереди пусто — показываю последнее, что было.</div>';
-  el.innerHTML = head + rows.slice(0,40).map(e=>{
-    const d = new Date(e.iso);
-    const wd = ['вс','пн','вт','ср','чт','пт','сб'][d.getDay()];
-    const today = e.iso === TODAY_ISO;
-    return `<div class="agenda-row${today?' today':''}" onclick="openProject('${e.p.id}','${e.tab}')">
-      <div class="agenda-date"><b>${d.getDate()}</b><span>${MONTHS[d.getMonth()].slice(0,3).toLowerCase()}</span><span>${wd}</span></div>
-      <div class="stripe" style="background:${e.dot}"></div>
-      <div class="pinfo"><div class="pname">${esc(e.p.name)}</div><div class="pmeta">${esc(e.kind)}</div></div>
-      <div class="psum mono">${e.amount}</div>
-      <div class="pchev">›</div>
-    </div>`;
-  }).join('');
+  el.innerHTML = head + rows.slice(0,40).map(e=>e.html).join('');
 }
 // Debounce: не пересчитываем весь календарь на каждое нажатие клавиши — иначе при
 // зажатой клавише (быстрый повтор символов) синхронный ре-рендер может сбивать повтор.
@@ -5073,6 +5134,25 @@ function buildProjectTaskGroups(){
   });
   return {groups, unassigned};
 }
+/* Длинные списки задач сворачиваются: у проекта на восемь дней их бывает
+   полтора десятка, и дэшборд превращался в простыню. Показываем три,
+   остальное — по нажатию, тем же чипом, чтобы не плодить новых элементов. */
+let tasksOpen = new Set();
+const TASKS_SHOWN = 3;
+function toggleTasksOpen(pid){
+  if(tasksOpen.has(pid)) tasksOpen.delete(pid); else tasksOpen.add(pid);
+  renderTasksList();
+}
+function taskChipsHTML(key, tasks){
+  if(tasks.length <= TASKS_SHOWN || tasksOpen.has(key)) {
+    const all = tasks.map(taskChipHTML).join('');
+    return tasks.length > TASKS_SHOWN
+      ? all + `<button class="task-chip chip-more" onclick="toggleTasksOpen('${key}')">свернуть</button>`
+      : all;
+  }
+  return tasks.slice(0,TASKS_SHOWN).map(taskChipHTML).join('')
+    + `<button class="task-chip chip-more" onclick="toggleTasksOpen('${key}')">ещё ${tasks.length-TASKS_SHOWN}</button>`;
+}
 function renderTasksList(){
   const {groups, unassigned} = buildProjectTaskGroups();
   const total = groups.reduce((s,g)=>s+g.tasks.length,0) + unassigned.length;
@@ -5083,7 +5163,7 @@ function renderTasksList(){
         <span class="task-dot" style="background:${phaseColor(g.p)}"></span>
         <div class="tpr-info"><div class="tpr-name">${esc(g.p.name)}</div><div class="tpr-date">${fmtDate(g.p.date)}</div></div>
       </div>
-      <div class="tpr-chips">${g.tasks.map(taskChipHTML).join('')}</div>
+      <div class="tpr-chips">${taskChipsHTML(g.p.id, g.tasks)}</div>
     </div>`).join('');
   if(unassigned.length){
     html += `<div class="task-proj-row">
@@ -5091,7 +5171,7 @@ function renderTasksList(){
         <span class="task-dot" style="background:var(--ink-muted)"></span>
         <div class="tpr-info"><div class="tpr-name">Без проекта</div></div>
       </div>
-      <div class="tpr-chips">${unassigned.map(taskChipHTML).join('')}</div>
+      <div class="tpr-chips">${taskChipsHTML('_none', unassigned)}</div>
     </div>`;
   }
   document.getElementById('taskList').innerHTML = html || '<div class="empty-hint">Задач нет — всё под контролем.</div>';
@@ -5785,7 +5865,7 @@ function renderInfo(p){
     return;
   }
   const paymentDateCell = editingPaymentDate
-    ? `<input type="date" id="ei-expected-pay" value="${p.expectedPaymentDate||''}" onblur="commitPaymentDateEdit()" onkeydown="if(event.key==='Enter')this.blur();">`
+    ? `<input type="date" id="ei-expected-pay" value="${p.expectedPaymentDate||''}" onchange="commitPaymentDateEdit()" onblur="commitPaymentDateEdit()" onkeydown="if(event.key==='Enter')this.blur();">`
     : `<span style="cursor:pointer;border-bottom:1px dotted var(--ink-muted);" onclick="editingPaymentDate=true;renderInfo(PROJECTS.find(x=>x.id===currentProjectId))">${p.expectedPaymentDate?fmtDate(p.expectedPaymentDate):'не указана — нажми, чтобы задать'}</span>`;
   const dates = projectDates(p);
   const datesLabel = dates.length>1 ? `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])} · ${dates.length} дн.` : `${fmtDate(p.date)}, ${new Date(p.date).getFullYear()}`;
@@ -5845,9 +5925,13 @@ function commitManualSum(){
   refreshAll();
 }
 function commitPaymentDateEdit(){
-  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  /* Вызывается и по change (выбор в календаре — фокуса в поле могло не быть),
+     и по blur. Второй вызов после первого делать нечего: поля уже нет. */
   const f = document.getElementById('ei-expected-pay');
-  if(f) p.expectedPaymentDate = f.value || null;
+  if(!f || !editingPaymentDate) return;
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  if(!p) return;
+  p.expectedPaymentDate = f.value || null;
   editingPaymentDate = false;
   renderInfo(p);
   refreshAll();
