@@ -452,6 +452,7 @@
   .task-chip:hover{border-color:var(--accent);}
   /* чип-разворот: тот же силуэт, но без заливки — он про список, а не про задачу */
   .chip-more{background:none;color:var(--ink-muted);border-style:dashed;font-family:inherit;}
+  .dial-more{display:block;width:100%;margin:.1rem 0 .2rem;padding:.22rem .5rem;font-size:.68rem;}
   .chip-more:hover{color:var(--accent-ink);border-color:var(--accent);}
   .task-chip:active{transform:scale(.97);}
   .chip-done{width:15px;height:15px;border-radius:50%;border:1px solid var(--ink-muted);
@@ -472,7 +473,7 @@
   .task-row .tproj{font-size:.68rem;color:var(--ink-muted);margin-top:1px;}
 
   /* Быстрая заметка — теперь всплывающее окно из шапки, содержимое не чистим при закрытии */
-  .quicknote-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.6rem;}
+  .quicknote-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.45rem;}
   .quicknote-head h3{font-family:var(--font-display);font-size:1.05rem;font-weight:600;margin:0;}
   #quickNoteText{width:100%;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
     border-radius:8px;padding:.6rem .7rem;font-family:inherit;font-size:.88rem;resize:vertical;outline:none;}
@@ -828,14 +829,15 @@
     .panel-pop{left:50%!important;top:50%!important;transform:translate(-50%,-50%) scale(.98);}
     .panel-pop.show{transform:translate(-50%,-50%) scale(1);}
     .panel-pop-card{width:min(92vw,520px);height:70vh;height:70dvh;}
-    #dialOverlay.panel-pop .panel-pop-card{width:min(92vw,560px);height:86vh;height:86dvh;}
+    #dialOverlay.panel-pop .panel-pop-card{width:min(92vw,560px);height:92vh;height:92dvh;
+      padding-left:.75rem;padding-right:.75rem;}
   }
   /* Поля прикидочных сумм в калькуляторе */
-  .dial-extras{display:flex;flex-direction:column;gap:.3rem;margin-top:.15rem;}
-  .dial-extra{flex:none;}
-  .dial-extra label{display:block;font-family:var(--font-mono);font-size:.55rem;
+  .dial-extras{display:flex;flex-direction:row;gap:.4rem;width:100%;max-width:380px;margin-bottom:.5rem;}
+  .dial-extra{flex:1 1 0;min-width:0;}
+  .dial-extra label{display:block;line-height:1.1;margin-bottom:.15rem;font-family:var(--font-mono);font-size:.55rem;
     text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin-bottom:.2rem;}
-  .dial-extra input{width:100%;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+  .dial-extra input{width:100%;padding:.32rem .45rem;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
     border-radius:9px;padding:.4rem .5rem;font-size:.82rem;font-family:var(--font-mono);outline:none;}
   .dial-extra input:focus{border-color:var(--accent);}
 
@@ -1141,13 +1143,13 @@
   .dial-title{font-family:var(--font-display);font-size:1.1rem;font-weight:600;margin:.4rem 0 1.1rem;text-align:center;}
   /* Третья мерка — по высоте экрана: на коротком телефоне циферблат ужимается сам,
      иначе калькулятор не помещается и приходится скроллить. */
-  .dial-wrap{position:relative;width:min(244px,64vw,32vh);height:min(244px,64vw,32vh);touch-action:none;
+  .dial-wrap{position:relative;width:min(166px,44vw,20vh);height:min(166px,44vw,20vh);touch-action:none;
     cursor:grab;flex:none;}
   .dial-wrap:active{cursor:grabbing;}
   .dial-wrap.moving-start{border-radius:50%;box-shadow:0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft);}
   .dial-wrap svg{width:100%;height:100%;display:block;}
-  .dial-hours{font-family:var(--font-mono);font-size:1.4rem;font-weight:700;text-align:center;
-    margin:.35rem 0 .25rem;line-height:1.1;flex:none;}
+  .dial-hours{font-family:var(--font-mono);font-size:1.22rem;font-weight:700;text-align:center;
+    margin:.2rem 0 .15rem;line-height:1.05;flex:none;}
   .dial-hours small{display:block;font-family:var(--font-body);font-size:.68rem;font-weight:500;
     color:var(--ink-muted);text-transform:uppercase;letter-spacing:.05em;margin-top:.25rem;}
   /* Начало и конец смены под циферблатом + переключатель день/ночь:
@@ -1156,11 +1158,11 @@
      и подсказка появляются и исчезают прямо во время кручения, и если бы блок менял
      высоту — карточка дёргалась бы под пальцем вместе с циферблатом. */
   .dial-shift-label{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-    gap:.15rem;font-size:.78rem;color:var(--ink-muted);margin:0 0 .55rem;text-align:center;
-    width:100%;height:3.7rem;flex:none;overflow:hidden;}
+    gap:.08rem;font-size:.74rem;color:var(--ink-muted);margin:0 0 .3rem;text-align:center;
+    width:100%;height:3.62rem;flex:none;overflow:hidden;}
   .dsl-line{max-width:100%;height:1.15rem;line-height:1.15rem;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .dsl-row{display:flex;gap:.4rem;height:1.4rem;align-items:center;}
+  .dsl-row{display:flex;gap:.4rem;height:1.3rem;align-items:center;}
   .dial-diag{width:100%;max-width:380px;font-family:var(--font-mono);font-size:.58rem;
     line-height:1.35;color:var(--ink-muted);background:var(--bg-sunk);border:1px solid var(--line);
     border-radius:8px;padding:.35rem .5rem;margin-bottom:.5rem;white-space:pre-wrap;word-break:break-word;}
@@ -1170,38 +1172,45 @@
     border-radius:99px;padding:.2rem .55rem;font-size:.66rem;font-family:inherit;cursor:pointer;}
   .dial-ampm:hover{border-color:var(--accent);color:var(--accent-ink);}
   .dial-ampm.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
-  /* Позиции слева, тумблеры справа — один ряд вместо двух блоков подряд */
-  .dial-cols{display:flex;align-items:stretch;gap:.5rem;width:100%;max-width:380px;margin-bottom:.7rem;}
-  .dial-roles{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:.35rem;
-    max-height:min(46vh,258px);overflow-y:auto;overscroll-behavior:contain;}
-  .dial-role-row{display:flex;align-items:center;justify-content:space-between;gap:.4rem;
-    border:1px solid var(--line);background:var(--bg-raised);border-radius:9px;padding:.34rem .5rem;flex:none;}
-  .dial-role-row .drname{font-size:.78rem;font-weight:500;min-width:0;
+  /* Позиции — сетка 2×3: шесть строк столбиком не помещались на экран */
+  .dial-roles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem;
+    width:100%;max-width:380px;margin-bottom:.4rem;}
+  .dial-role-row{display:flex;align-items:center;justify-content:space-between;gap:.3rem;
+    border:1px solid var(--line);background:var(--bg-raised);border-radius:9px;padding:.2rem .4rem;
+    min-width:0;}
+  .dial-role-row .drname{font-size:.72rem;font-weight:500;min-width:0;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .dial-stepper{display:flex;align-items:center;gap:.35rem;flex:none;}
-  .dial-stepper button{width:24px;height:24px;border-radius:7px;border:1px solid var(--line);
+  .dial-stepper{display:flex;align-items:center;gap:.25rem;flex:none;}
+  .dial-stepper button{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);
     background:var(--bg-sunk);color:var(--ink);font-weight:700;font-size:.9rem;line-height:1;}
   .dial-stepper span{font-family:var(--font-mono);min-width:16px;text-align:center;font-size:.88rem;}
-  .dial-side{flex:0 0 118px;display:flex;flex-direction:column;gap:.35rem;}
-  .dial-toggles{display:flex;flex-direction:column;gap:.35rem;}
-  .dial-toggle{flex:none;width:100%;border:1px solid var(--line);background:var(--bg-raised);
-    color:var(--ink-muted);border-radius:9px;padding:.4rem .3rem;font-size:.66rem;font-weight:600;
-    text-align:center;line-height:1.15;}
+  /* Тумблеры — одной строкой, суммы — второй */
+  .dial-toggles{display:flex;flex-direction:row;gap:.35rem;width:100%;max-width:380px;margin-bottom:.4rem;}
+  .dial-toggle{flex:1 1 0;min-width:0;border:1px solid var(--line);background:var(--bg-raised);
+    color:var(--ink-muted);border-radius:9px;padding:.36rem .2rem;font-size:.62rem;font-weight:600;
+    text-align:center;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .dial-toggle.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
   .dial-result{width:100%;max-width:380px;}
   /* Результат — самый низ длинной карточки. Строки ужаты, а ИТОГ прилипает к нижней
      кромке: сумму видно всегда, до неё не нужно доскроллить. */
-  #dialResult .pay-row{padding:.35rem .5rem;margin-bottom:.3rem;gap:.4rem;flex-wrap:nowrap;}
-  #dialResult .pay-row-label{font-size:.8rem;}
-  #dialResult .pay-row-amount{font-size:.66rem;margin-top:0;}
+  /* Строка результата — одной линией: позиция, за ней ставка мелким, сумма справа.
+     В два этажа каждая строка съедала лишние девять пикселей, и на большой
+     команде расчёт переставал помещаться в экран. */
+  #dialResult .pay-row{padding:.2rem .45rem;margin-bottom:.16rem;gap:.4rem;flex-wrap:nowrap;}
+  #dialResult .pay-row-info{display:flex;align-items:baseline;gap:.35rem;min-width:0;flex:1;}
+  #dialResult .pay-row-label{font-size:.76rem;line-height:1.3;flex:none;}
+  #dialResult .pay-row-amount{font-size:.6rem;margin-top:0;line-height:1.3;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #dialResult .psum{font-size:.8rem;white-space:nowrap;}
   /* Заголовок «Предварительная стоимость» в калькуляторе лишний — итог подписан сам,
      а прилипшая строка итога его всё равно перекрывала */
   #dialResult .pay-subhead{display:none;}
-  #dialResult .calc-result{position:sticky;bottom:-.9rem;background:var(--bg-raised);
-    padding-top:.4rem;border-top:1px solid var(--line);}
+  /* Итог — обычным блоком: прилипающий перекрывал строку над собой,
+     а теперь всё и так помещается на экран без прокрутки */
+  #dialResult .calc-result{padding-top:.35rem;margin-top:.1rem;border-top:1px solid var(--line);}
+  #dialResult .form-hint{font-size:.62rem;line-height:1.3;}
   #dialResult .form-hint{font-size:.66rem;}
-  .dial-actions{margin-top:.6rem;}
+  .dial-actions{margin-top:.25rem;}
 
   /* Универсальное модальное окно — дата оплаты, выбор проекта для заметки.
      z-index выше панелей (120) и их подложки (119): если панель (заметка/калькулятор/ИИ)
@@ -1812,10 +1821,8 @@
     </div>
     <div class="dsl-hint" id="dialShiftHint"></div>
   </div>
-  <!-- Позиции и тумблеры — в один ряд: так весь калькулятор влезает без прокрутки -->
-  <div class="dial-cols">
+  <!-- Позиции сеткой 2×3, под ними тумблеры и суммы — по строке на каждое -->
   <div class="dial-roles" id="dialRoles"></div>
-  <div class="dial-side">
   <div class="dial-toggles">
     <button class="dial-toggle" id="toggleLunch" onclick="dialToggleFlag('lunch')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v6M9.3 2v6M11.5 2v6"/><path d="M17 2c-1.6 0-2.8 1.7-2.8 4.5S15.4 11 17 11v11"/></svg>Текущий обед</button>
     <button class="dial-toggle" id="toggleNight" onclick="dialToggleFlag('night')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>Ночная смена</button>
@@ -1823,15 +1830,13 @@
   </div>
   <div class="dial-extras">
     <div class="dial-extra">
-      <label>Оборуд., ₽</label>
+      <label>Оборудование, ₽</label>
       <input type="number" min="0" step="1000" id="dialGear" placeholder="0" oninput="setDialExtra('gear',this.value)">
     </div>
     <div class="dial-extra">
       <label>Логистика, ₽</label>
       <input type="number" min="0" step="1000" id="dialLogistics" placeholder="0" oninput="setDialExtra('logistics',this.value)">
     </div>
-  </div>
-  </div>
   </div>
   <div class="dial-result" id="dialResult"></div>
   <div class="dial-actions"><button class="btn ghost" onclick="clearHoursDial()">Очистить</button></div>
@@ -3598,6 +3603,7 @@ function setDialExtra(key, value){
 }
 function resetDialExtras(){
   dialExtras = {gear:0, logistics:0};
+  dialResultOpen = false;
   const g = document.getElementById('dialGear'), l = document.getElementById('dialLogistics');
   if(g) g.value = ''; if(l) l.value = '';
 }
@@ -3609,7 +3615,7 @@ function updateDialCostIfReady(){
   // без людей и часов, но с внесённым оборудованием/логистикой всё равно показываем сумму
   if((hours<=0 || totalPeople<=0) && extrasTotal>0){
     el.innerHTML = `<div class="pay-subhead"><span>Предварительная стоимость</span></div>
-      ${dialExtrasRowsHTML()}
+      ${dialExtrasRows().join('')}
       <div class="calc-result"><b>Итого: ${fmtMoney(extrasTotal)}</b>
         <div class="form-hint">Только оборудование и логистика — часы смены не заданы.</div></div>`;
     return;
@@ -3621,7 +3627,7 @@ function updateDialCostIfReady(){
   let ot = Math.max(0, hours - norm);
   if(dialFlags.lunch) ot += 1;
   let total = 0;
-  const rows = DIAL_ROLES.filter(r=>dialCounts[r]>0).map(r=>{
+  const rows = DIAL_ROLES.filter(r=>dialCounts[r]>0).map(r=>{   // массив строк, склеиваем ниже
     const cnt = dialCounts[r];
     const base = ROLE_RATES[r]||0;
     const otPay = dialFlags.progressive ? overtimePay(r, ot) : overtimePayFlat(r, ot);
@@ -3630,13 +3636,32 @@ function updateDialCostIfReady(){
     return `<div class="pay-row"><div class="pay-row-info"><div class="pay-row-label">${r} × ${cnt}</div>
       <div class="pay-row-amount">${fmtMoney(base)}${otPay>0?' + П/Р '+fmtMoney(otPay):''}${cnt>1?' за человека':''}</div></div>
       <div class="psum mono">${fmtMoney(sum)}</div></div>`;
-  }).join('');
+  });
   const grand = total + extrasTotal;
-  el.innerHTML = `<div class="pay-subhead"><span>Предварительная стоимость</span></div>${rows}
-    ${dialExtrasRowsHTML()}
+  /* Разбивка ограничена по высоте: с большой командой и заполненными суммами
+     она вытесняла итог за экран. Показываем четыре строки, остальное — по
+     нажатию, тем же чипом «ещё N», что и задачи на дэшборде. */
+  const all = [...rows, ...dialExtrasRows()];
+  const shown = (all.length > DIAL_ROWS_SHOWN && !dialResultOpen)
+    ? all.slice(0, DIAL_ROWS_SHOWN).join('')
+      + `<button class="task-chip chip-more dial-more" onclick="toggleDialResult()">ещё ${all.length-DIAL_ROWS_SHOWN}</button>`
+    : all.join('') + (all.length > DIAL_ROWS_SHOWN
+      ? `<button class="task-chip chip-more dial-more" onclick="toggleDialResult()">свернуть</button>` : '');
+  el.innerHTML = `<div class="pay-subhead"><span>Предварительная стоимость</span></div>${shown}
     <div class="calc-result"><b>Итого: ${fmtMoney(grand)}</b>
       <div class="form-hint">${fmtHoursLabel(hours)} смены (норма ${norm} ч)${ot>0?`, переработка ${fmtHoursLabel(ot)}${dialFlags.progressive?'':' по 1-й ступени'}`:''}${extrasTotal>0?`; команда ${fmtMoney(total)} + оборудование и логистика ${fmtMoney(extrasTotal)}`:''}</div>
     </div>`;
+}
+const DIAL_ROWS_SHOWN = 4;
+let dialResultOpen = false;
+function toggleDialResult(){ dialResultOpen = !dialResultOpen; updateDialCostIfReady(); }
+function dialExtrasRows(){   // массивом — чтобы считать вместе со строками команды
+  const row = (label, v) => v>0
+    ? `<div class="pay-row"><div class="pay-row-info"><div class="pay-row-label">${label}</div>
+         <div class="pay-row-amount">внесено вручную</div></div>
+       <div class="psum mono">${fmtMoney(v)}</div></div>`
+    : null;
+  return [row('Оборудование', dialExtras.gear), row('Логистика', dialExtras.logistics)].filter(Boolean);
 }
 function dialExtrasRowsHTML(){
   const row = (label, v) => v>0
