@@ -10327,9 +10327,22 @@ function saveState(){
        данными, а на ближайшем возврате фокуса тихо подтянем свежее. */
     const stored = storedSavedAt();
     if(stored && stateStamp && stored > stateStamp) return false;
-    backupBeforeWrite();
     const st = collectState();
-    localStorage.setItem(stateKey(), JSON.stringify(st));
+    const text = JSON.stringify(st);
+    /* Если данные те же, метку времени не трогаем. Иначе каждое открытие
+       приложения делало бы устройство «самым свежим» — и оно затирало бы
+       в облаке настоящие правки, сделанные на другом устройстве. */
+    const prev = localStorage.getItem(stateKey());
+    if(prev){
+      const strip = t => String(t).replace(/"savedAt":"[^"]*",?/, '');
+      if(strip(prev) === strip(text)){
+        stateStamp = (prev.match(/"savedAt":"([^"]+)"/) || [])[1] || stateStamp;
+        lastSaveError = '';
+        return true;
+      }
+    }
+    backupBeforeWrite();
+    localStorage.setItem(stateKey(), text);
     stateStamp = st.savedAt;
     lastSaveError = '';
     cloudSchedulePush();   // на устройстве уже лежит — теперь не спеша в облако
@@ -10525,6 +10538,8 @@ function cloudSetMark(stamp, sha){
   try{ localStorage.setItem(cloudMarkKey(), JSON.stringify({stamp, sha})); }catch(e){}
 }
 
+let cloudBootStamp = null;    // метка состояния, каким оно пришло с диска при запуске
+let cloudFirstSyncDone = false;  // до первой сверки с облаком наружу ничего не уходит
 let cloudBusy = false;        // одновременно с облаком говорит только один вызов
 let cloudTimer = null;        // отложенная отправка после правки
 let cloudLastCheck = 0;       // чтобы не дёргать облако на каждый возврат фокуса
@@ -10663,6 +10678,10 @@ async function cloudWrite(text, sha, message){
 /* ---- отправка ---- */
 function cloudSchedulePush(){
   if(!cloudOn()) return;
+  /* Только что открытое устройство сначала СМОТРИТ, что в облаке, и лишь потом
+     отправляет своё. Иначе автоправки при запуске (добор новых позиций в ставки
+     и прочие приведения к формату) уезжали бы поверх чужой работы. */
+  if(!cloudFirstSyncDone) return;
   if(cloudTimer) clearTimeout(cloudTimer);
   cloudTimer = setTimeout(() => { cloudTimer = null; cloudPush(); }, 4000);
 }
@@ -10735,6 +10754,7 @@ function cloudAdopt(remote){
     stored = true;
   }catch(e){}
   if(!stored) saveState();
+  cloudBootStamp = stateStamp;      // забранное из облака — теперь наша точка отсчёта
   cloudSetMark(stateStamp, remote.sha);
   cloudSay('ok');
   goHome(); refreshAll();
@@ -10790,9 +10810,12 @@ async function cloudCheckRemote(){
   if(!cloudOn() || cloudBusy) return;
   if(Date.now() - cloudLastCheck < 20000) return;
   cloudLastCheck = Date.now();
+  const first = !cloudFirstSyncDone;
   try{
     const remote = await cloudRead();
-    const localAt = stateStamp || '';
+    /* На первой сверке после запуска сравниваем с меткой, которая лежала на диске:
+       автоправки при старте не должны выдавать устройство за самое свежее. */
+    const localAt = (first ? (cloudBootStamp || stateStamp) : stateStamp) || '';
     if(!remote){ await cloudPush(); return; }        // облако пустое — заселяем
     const rAt = (remote.data && remote.data.savedAt) || '';
     if(cloudSameData(remote.data)){        // содержимое совпало — вопросов нет
@@ -10819,6 +10842,12 @@ async function cloudCheckRemote(){
     cloudSay('ok');
   }catch(e){
     cloudSay('error', cloudHuman(e));
+  }finally{
+    if(first){
+      cloudFirstSyncDone = true;
+      // автоправки при запуске всё-таки что-то изменили — досылаем их теперь
+      if(stateStamp && stateStamp !== (cloudBootStamp || '')) cloudSchedulePush();
+    }
   }
 }
 
@@ -11638,6 +11667,7 @@ new MutationObserver(setupHomeScreenIcon)
 
 migrateAllSettlements();   // демо-данные приводим к модели с платежами
 const hadSave = loadState();   // поднимаем сохранённое ДО первой отрисовки
+cloudBootStamp = stateStamp;   // с чем пришли — с тем и сверяемся при первой встрече с облаком
 // копия «на момент входа»: если эта сессия что-то испортит, будет точка возврата
 try{ const raw0 = localStorage.getItem(stateKey()); if(raw0) localStorage.setItem(stateKey() + '-boot', raw0); }catch(e){}
 // просим систему закрепить хранилище: где разрешат — данные переживут чистки
