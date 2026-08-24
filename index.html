@@ -150,8 +150,29 @@
      бренд + поиск + шесть иконок в одну строку не помещались физически.
      Иконки распределяются равномерно — четыре слева и две справа с дырой
      посередине выглядели несоразмерно. */
-  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
+  .toolbar{display:flex;align-items:center;gap:.5rem;}
   .toolbar .tb-gap{display:none;}
+
+  /* ===== Телефон: шапка одной строкой =====
+     Раньше было два этажа: бренд с поиском во всю ширину и ряд иконок под ним.
+     Теперь всё в один ряд, а поиск ужат до лупы с местом на пару букв. Как только
+     в него встаёт курсор — иконки схлопываются, и поле разворачивается на их место.
+     Ушёл лишний этаж и рваное распределение иконок по ширине. */
+  @media (max-width:899px){
+    .app-header{display:flex;align-items:center;gap:.45rem;}
+    .app-header .topbar{flex:1 1 auto;min-width:0;margin-bottom:0;gap:.4rem;}
+    .app-header .toolbar{flex:none;gap:.28rem;
+      max-width:60vw;opacity:1;overflow:hidden;
+      transition:max-width .22s var(--ease), opacity .16s var(--ease);}
+    .app-header .search{flex:1 1 auto;min-width:50px;padding:.4rem .5rem;}
+    .app-header .search input{min-width:0;}
+    /* поле раскрыто: иконки уступают место */
+    .app-header.searching .toolbar{max-width:0;opacity:0;pointer-events:none;}
+  }
+  @media (max-width:420px){
+    .app-header .toolbar .home-btn{width:30px;height:30px;}
+    .app-header .toolbar .home-btn svg{width:15px;height:15px;}
+  }
   /* Выдача поиска — поверх содержимого, не двигает вёрстку под собой */
   .search-results{display:none;position:absolute;left:1rem;right:1rem;top:100%;z-index:60;
     background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;
@@ -1287,12 +1308,16 @@
   @media (min-width:900px){
     .app{max-width:1600px;}
 
-    /* Шапка в один ряд: лого и поиск слева, инструменты справа — второй этаж
-       на широком экране только съедал высоту */
-    .app-header{display:flex;align-items:center;gap:1rem;padding-bottom:.7rem;}
-    .app-header .topbar{flex:1;min-width:0;margin-bottom:0;}
-    .app-header .toolbar{flex:none;justify-content:flex-end;gap:.5rem;}
-    .app-header .search-results{left:auto;right:auto;width:min(560px,46vw);}
+    /* Шапка в один ряд. Порядок: бренд, инструменты, а поиск — справа во всю
+       оставшуюся ширину. display:contents распускает .topbar, чтобы его детьми
+       можно было управлять наравне с панелью иконок. */
+    .app-header{display:flex;align-items:center;gap:.8rem;padding-bottom:.7rem;}
+    .app-header .topbar{display:contents;}
+    .app-header .brand{order:1;}
+    .app-header .mode-chip{order:2;}
+    .app-header .toolbar{order:3;flex:none;gap:.5rem;}
+    .app-header .search{order:4;flex:1 1 auto;min-width:0;}
+    .app-header .search-results{left:auto;right:1rem;width:min(520px,44vw);}
 
     /* Дашборд: календарь слева и прилипает при прокрутке, задачи справа,
        разделы одной полосой под ними */
@@ -1360,7 +1385,7 @@
       <div class="search">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <input id="searchInput" placeholder="Проект, клиент, человек, рентал…" oninput="runSearch(this.value)"
-               onfocus="runSearch(this.value)" autocomplete="off">
+               onfocus="searchExpand(true);runSearch(this.value)" onblur="searchExpand(false)" autocomplete="off">
         <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display:none;" title="Очистить">✕</button>
       </div>
     </div>
@@ -4513,7 +4538,23 @@ function searchEverywhere(qRaw){
   });
   return res.slice(0, 12);
 }
+/* Раскрытие компактного поиска на телефоне: пока в поле курсор или в нём что-то
+   набрано, шапка держит класс .searching — иконки уступают место полю. */
+function searchExpand(on){
+  const h = document.querySelector('.app-header');
+  if(!h) return;
+  const inp = document.getElementById('searchInput');
+  h.classList.toggle('searching', !!(on || (inp && inp.value)));
+}
+// на узком экране подсказка в поле короткая — длинная всё равно обрезалась бы
+function syncSearchPlaceholder(){
+  const inp = document.getElementById('searchInput');
+  if(!inp) return;
+  inp.placeholder = window.innerWidth < 900 ? 'Поиск' : 'Проект, клиент, человек, рентал…';
+}
+window.addEventListener('resize', syncSearchPlaceholder);
 function runSearch(v){
+  searchExpand(true);
   filterProjects(v);   // подсветка в календаре остаётся как была
   const box = document.getElementById('searchResults');
   const clearBtn = document.getElementById('searchClear');
@@ -4540,6 +4581,7 @@ function pickSearchResult(code){
 function clearSearch(){
   const input = document.getElementById('searchInput');
   input.value = '';
+  searchExpand(false);
   document.getElementById('searchClear').style.display = 'none';
   document.getElementById('searchResults').classList.remove('show');
   document.getElementById('searchResults').innerHTML = '';
@@ -11685,6 +11727,7 @@ if(APP_MODE === 'live' && !hadSave){
   saveState();
 }
 updateModeChip();
+syncSearchPlaceholder();
 refreshAll();
 saveState();     // первый запуск — сразу фиксируем стартовое состояние
 // подстраховка: не терять правки, если вкладку закрыли раньше, чем сработал таймер
