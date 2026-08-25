@@ -546,6 +546,19 @@
      На экране — только порядок цифр: оборудование, логистика, П/Р, такси, персонал.
      Позиции внутри группы раскрываются по тапу, а полный документ со всеми
      строками и людьми — по кнопке «Открыть смету», по формуляру. */
+  /* Загруженные файлы ренталов — прямо в расчёте: видно, из чего собран список,
+     и оттуда же файл убирается вместе со своими позициями. */
+  .est-files{display:flex;flex-direction:column;gap:.4rem;margin:.6rem 0 0;}
+  .est-file{display:flex;align-items:center;gap:.55rem;border:1px solid var(--line);
+    border-radius:10px;background:var(--bg-raised);padding:.5rem .6rem;}
+  .ef-kind{font-family:var(--font-mono);font-size:.58rem;letter-spacing:.04em;color:var(--ink-muted);
+    background:var(--mono-bg);border-radius:6px;padding:.28rem .38rem;flex:none;}
+  .ef-info{flex:1;min-width:0;}
+  .ef-name{font-size:.82rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ef-meta{font-size:.68rem;color:var(--ink-muted);margin-top:1px;}
+  .est-open-row{display:flex;justify-content:flex-start;align-items:center;gap:.5rem;
+    flex-wrap:wrap;margin:.9rem 0 .8rem;}
+
   .est-sum{display:flex;flex-direction:column;gap:.4rem;}
   .est-sum-row{border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);overflow:hidden;}
   .esr-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
@@ -6009,17 +6022,42 @@ function renderEstimate(p){
   const pane = document.getElementById('pane-estimate');
   const importBlock = `
     <div class="form-slot" style="margin-top:0;">
-      <div class="form-hint">Путь простой: загрузи файл рентала — можно несколько, из разных мест.
-        Приложение спросит, чей это файл, положит позиции в смету и заведёт оплату этому ренталу.
-        Персонал считается сам во вкладке «Команда». Кнопка «Открыть смету» соберёт
-        всё по твоему формуляру — позиции и людей.</div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
         <button class="btn" onclick="openEstImport()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>Загрузить файл рентала</button>
         <button class="btn ghost" onclick="genEstimate('${p.id}','primary')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>Сформировать первичную смету</button>
       </div>
     </div>`;
   const day = activeDay(p);
-  if(!day.estimate.length){ pane.innerHTML = importBlock + '<div class="empty-hint">Считать пока нечего — загрузи файл рентала или посчитай команду.</div>'; return; }
+  /* Файлы ренталов, из которых собран список. Рядом с каждым — сколько позиций
+     он дал и на какую сумму, чтобы удаление не было вслепую. */
+  function rentalFilesHTML(){
+    const files = (p.files || []).filter(f => f.sourceType === 'rental-estimate');
+    if(!files.length) return '';
+    return `<div class="est-files">${files.map(f => {
+      const lines = allEstimate(p).filter(l => l.src === f.name);
+      const sum = lines.reduce((acc, l) => acc + lineTotal(l), 0);
+      const idx = p.files.indexOf(f);
+      const meta = [
+        f.rental ? esc(f.rental) : '',
+        lines.length ? `${lines.length} ${plural(lines.length, 'позиция', 'позиции', 'позиций')} · ${fmtMoney(sum)}`
+                     : 'позиций в смете нет',
+      ].filter(Boolean).join(' · ');
+      return `<div class="est-file">
+        <span class="ef-kind">${esc(f.kind || 'файл')}</span>
+        <div class="ef-info">
+          <div class="ef-name">${esc(f.name)}</div>
+          <div class="ef-meta">${meta}</div>
+        </div>
+        ${f.dataUrl ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
+        <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  if(!day.estimate.length){
+    pane.innerHTML = importBlock + rentalFilesHTML()
+      + '<div class="empty-hint">Считать пока нечего — загрузи файл рентала или посчитай команду.</div>';
+    return;
+  }
   let printOpen = false;
   function total(items){ return items.reduce((s,i)=>s+lineTotal(i),0); }
   /* Начисление команде за погрузку/разгрузку — это выплата, а не позиция сметы.
@@ -6076,8 +6114,8 @@ function renderEstimate(p){
   }
   // «Открыть смету» — весь документ по формуляру: позиции и люди, сразу целиком.
   const docIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>`;
-  pane.innerHTML = importBlock + `
-    <div style="display:flex;justify-content:flex-start;align-items:center;gap:.5rem;flex-wrap:wrap;">
+  pane.innerHTML = importBlock + rentalFilesHTML() + `
+    <div class="est-open-row">
       <button class="btn" id="btnPrint">${docIcon}Открыть смету</button>
     </div>
     <div class="est-body"></div>
@@ -6110,6 +6148,38 @@ function renderEstimate(p){
   draw();
 }
 
+/* ============= Убрать файл рентала из расчёта =============
+   Файл и позиции, которые он принёс, живут вместе: у каждой строки помечен
+   файл-источник (src), поэтому удаление чистит ровно его позиции и не трогает
+   ни персонал, ни строки других ренталов. Спрашиваем подтверждение и говорим
+   вслух, сколько позиций и денег уйдёт — вернуть можно только повторной загрузкой.
+   Закрытую оплату ренталу не трогаем: деньги уже отданы (syncRentalDebtFromEstimate). */
+function removeRentalFileFromEstimate(pid, idx){
+  const p = PROJECTS.find(x => x.id === pid);
+  if(!p) return;
+  const f = (p.files || [])[idx];
+  if(!f || f.sourceType !== 'rental-estimate'){ renderEstimate(p); return; }
+  const lines = allEstimate(p).filter(l => l.src === f.name);
+  const sum = lines.reduce((acc, l) => acc + lineTotal(l), 0);
+  const rental = f.rental || (lines[0] && lines[0].rental) || '';
+  const text = lines.length
+    ? `«${f.name}» — ${lines.length} ${plural(lines.length, 'позиция', 'позиции', 'позиций')} на ${fmtMoney(sum)}.\n\n`
+      + `Позиции уйдут из сметы${rental ? `, оплата ренталу «${rental}» пересчитается` : ''}. `
+      + 'Вернуть можно только повторной загрузкой файла.'
+    : `«${f.name}» — позиций из этого файла в смете нет, уйдёт только сам файл.`;
+  askConfirm({title:'Убрать файл и его позиции?', text, okText:'Убрать', cancelText:'Оставить', danger:true}, () => {
+    allDays(p).forEach(d => {
+      if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => l.src !== f.name);
+    });
+    const pos = p.files.indexOf(f);
+    if(pos > -1) p.files.splice(pos, 1);
+    if(rental) syncRentalDebtFromEstimate(p, rental);
+    refreshProjectSum(p);
+    syncEstimateToFiles(p);
+    renderEstimate(p); renderInfo(p); renderFiles(p); renderPayTab(p);
+    refreshAll();
+  });
+}
 /* ============= Загрузить файл рентала → смета =============
    Честно: xlsx/pdf мы не разбираем — для этого нужна библиотека, которой здесь нет.
    Файл прикрепляется к проекту как источник, а строки вписываются вручную сразу следом —
@@ -11686,6 +11756,26 @@ const SELF_CHECK_CASES = [
     ]).payable, expect:20000},
   {group:'Сметы', name:'Смета одна: в итог идут все её строки, ничего не прячется',
     run:()=>estItems([{price:1}, {price:2, client:true}]).length, expect:2},
+  {group:'Сметы', name:'Файл рентала убирается вместе со своими позициями, чужие остаются',
+    run:()=>{
+      const p = {id:'__rmfile', name:'__rmfile', dates:['2026-01-01'], sum:0, paidAmount:0,
+        estimate:[
+          {sec:'Свет', name:'A', qty:1, days:1, price:10000, client:true, rental:'Р1', src:'файл1.xlsx'},
+          {sec:'Свет', name:'B', qty:1, days:1, price:5000, client:true, rental:'Р2', src:'файл2.xlsx'},
+          {sec:'Персонал', name:'Осветитель — смена', qty:1, days:1, price:13200, client:true}],
+        files:[{name:'файл1.xlsx', kind:'XLSX', sourceType:'rental-estimate', rental:'Р1'}],
+        units:[], notes:[], payments:[]};
+      PROJECTS.push(p);
+      const prev = currentProjectId; currentProjectId = p.id;
+      removeRentalFileFromEstimate(p.id, 0);
+      document.getElementById('askOk').click();      // подтверждаем удаление
+      const left = p.estimate.map(l => l.name).join(',');
+      // в files остаётся авто-копия сметы — считаем только файлы ренталов
+      const rentalFiles = p.files.filter(f => f.sourceType === 'rental-estimate').length;
+      currentProjectId = prev;
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return (left === 'B,Осветитель — смена' ? 100 : 0) + rentalFiles;
+    }, expect:100},
   {group:'Сметы', name:'Свод «Расчёта»: группы делят позиции без потерь и задвоений',
     run:()=>{
       const items = [
@@ -11966,6 +12056,7 @@ window.addEventListener('online', ()=>{ if(cloudUi.state === 'error') cloudPush(
 cloudSay(cloudOn() ? 'ok' : 'off');
 if(cloudOn()) setTimeout(cloudCheckRemote, 900);
 </script>
+
 
 
 <script>
