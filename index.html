@@ -6335,10 +6335,14 @@ function renderEstimate(p){
       const lines = allEstimate(p).filter(l => l.src === f.name);
       const sum = lines.reduce((acc, l) => acc + lineTotal(l), 0);
       const idx = p.files.indexOf(f);
+      // если рентал дал скидку — показываем её здесь же: столько уйдёт в оплату
+      const debt = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === f.rental);
+      const dLabel = rentalDiscountLabel(debt);
       const meta = [
         f.rental ? esc(f.rental) : '',
         lines.length ? `${lines.length} ${plural(lines.length, 'позиция', 'позиции', 'позиций')} · ${fmtMoney(sum)}`
                      : 'позиций в смете нет',
+        (dLabel && debt && debt.amount >= 0) ? `${dLabel} → ${fmtMoney(debt.amount)}` : '',
       ].filter(Boolean).join(' · ');
       return `<div class="est-file">
         <span class="ef-kind">${esc(f.kind || 'файл')}</span>
@@ -8070,11 +8074,21 @@ function settlementRowHTML(o){
       ${closed ? '' : `<button class="db-del" title="Удалить платёж" onclick="settleRemovePayment(${ref},${i})">✕</button>`}
     </div>`).join('');
 
+  /* У рентала сумма приходит из его же сметы: показываем, из чего она вышла —
+     сумма позиций и скидка. Тогда цифра в приложении читается так же, как в файле. */
+  const discLabel = rentalDiscountLabel(o.item);
+  const grossNote = (o.item.rental && discLabel && o.item.gross > 0 && o.item.gross > due)
+    ? `<span class="pay-progress">${fmtMoney(o.item.gross)} · ${discLabel}</span>` : '';
+  const discBtn = (o.item.rental && !closed)
+    ? `<button class="btn ghost tiny" onclick="editRentalDiscount('${jsArg(o.item.projectId)}','${jsArg(o.item.rental)}')" title="Скидка рентала">%</button>`
+    : '';
   const amountCell = closed
-    ? `<div class="pay-row-amount mono">${fmtMoney(fact)}${Math.abs(fact-due)>0.5?` <span class="pill pill-muted">начислено ${fmtMoney(due)}</span>`:''}</div>`
+    ? `<div class="pay-row-amount mono">${fmtMoney(fact)}${Math.abs(fact-due)>0.5?` <span class="pill pill-muted">начислено ${fmtMoney(due)}</span>`:''}${grossNote}</div>`
     : `<div class="pay-row-amount mono">
          ${fmtMoney(due)}
          <button class="btn ghost tiny" onclick="settleEditAmount(${ref})" title="Изменить сумму">✎</button>
+         ${discBtn}
+         ${grossNote}
          ${paidSum>0 ? `<span class="pay-progress">внесено ${fmtMoney(paidSum)}, остаток ${fmtMoney(left)}</span>` : ''}
        </div>`;
 
@@ -9568,6 +9582,59 @@ function pbIsSectionRow(row, map){
 }
 /* Что получится из файла. Строки без названия или без цены не пропадают молча —
    они попадают в список с пометкой, чтобы было видно, что именно не взято. */
+/* ============= Скидка и итоги из файла рентала =============
+   Под позициями рентал ставит свои итоги: «Оборудование итого», строку скидки
+   и «Итого к оплате». Скидка — уступка РЕНТАЛА мне: позиции остаются по прайсу
+   (так и в файле), а платить надо меньше. Поэтому скидка идёт не в цены строк,
+   а в оплату этому ренталу — там же её видно и можно поправить.
+   Смотрим весь лист, а не только строки под шапкой: итоги бывают где угодно. */
+function pbTailNumber(row){
+  for(let i = (row || []).length - 1; i >= 0; i--){
+    const raw = String(row[i] == null ? '' : row[i]).trim();
+    if(!raw) continue;
+    const n = parseNum(raw);
+    if(n) return n;
+  }
+  return 0;
+}
+function pbScanTotals(rows){
+  const res = {discount:null, totals:{}};
+  (rows || []).forEach(row => {
+    const cells = (row || []).map(c => String(c == null ? '' : c).trim());
+    const label = cells.find(Boolean) || '';
+    if(!label) return;
+    const val = pbTailNumber(row);
+    if(/скидк/i.test(label)){
+      const pct = (label.match(/(\d+(?:[.,]\d+)?)\s*%/) || [])[1];
+      // и процент, и сумма: процент главнее — при правке позиций пересчитается сам
+      if(pct || val) res.discount = {label,
+        pct: pct ? parseFloat(pct.replace(',', '.')) : null,
+        sum: Math.abs(val) || 0};
+      return;
+    }
+    if(!val) return;
+    if(/итого\s*к\s*оплате|всего\s*к\s*оплате/i.test(label)) res.totals.grand = val;
+    else if(/итого\s*по\s*смете|сумма\s*сметы/i.test(label)) res.totals.afterDiscount = val;
+    else if(/оборудован\S*\s*итого|итого\s*(за\s*)?оборудован/i.test(label)) res.totals.equipment = val;
+  });
+  return res;
+}
+/* Сколько скидка снимает с суммы позиций рентала. Процент считается от суммы,
+   поэтому переживает правку позиций; фиксированная сумма остаётся как была. */
+function rentalDiscountOff(gross, e){
+  if(!e || !(gross > 0)) return 0;
+  // считаем сумму К ОПЛАТЕ и от неё скидку: 89 555 при 50% даёт 44 778 —
+  // ровно как в файле рентала. Вычитание округлённой половины дало бы 44 777.
+  if(e.discountPct > 0) return gross - Math.round(gross * (100 - e.discountPct) / 100);
+  if(e.discountSum > 0) return Math.min(gross, Math.round(e.discountSum));
+  return 0;
+}
+function rentalDiscountLabel(e){
+  if(!e) return '';
+  if(e.discountPct > 0) return `скидка ${e.discountPct}%`;
+  if(e.discountSum > 0) return `скидка ${fmtMoney(e.discountSum)}`;
+  return '';
+}
 function pbBuildRows(){
   const {rows, headerRow, map} = pbImp;
   const existing = rentalPrices(currentPriceRental);
@@ -9669,12 +9736,32 @@ function renderPbPreview(){
     const fileTot = newRows.reduce((acc, r) => acc + (r.fileSum || 0), 0);
     const warns = rows.filter(r => r.warn).length;
     const fromFileShifts = pbImp.map.shifts > -1 && newRows.some(r => r.shifts > 0);
+    /* Скидка и итоги рентала: читаем их из файла и сразу показываем, что уйдёт
+       в оплату. Пользователю важно, чтобы цифра приложения совпала с той,
+       что стоит в присланной смете, — поэтому сверяем вслух. */
+    pbImp.scan = pbScanTotals(pbImp.rows);
+    const disc = pbImp.scan.discount;
+    const tot = pbImp.scan.totals || {};
+    const off = disc ? (disc.pct > 0 ? sum - Math.round(sum * (100 - disc.pct) / 100) : Math.round(disc.sum || 0)) : 0;
+    const toPay = Math.max(0, sum - off);
+    const expect = tot.afterDiscount || (tot.equipment && off ? tot.equipment - off : 0);
+    const fits = expect ? Math.abs(expect - toPay) <= Math.max(1, expect * 0.005) : null;
+    const discLine = disc
+      ? `<div style="margin-top:.3rem;">В файле <b>${esc(disc.label)}</b> — уйдёт в оплату ренталу:
+           <b>${fmtMoney(sum)} − ${fmtMoney(off)} = ${fmtMoney(toPay)}</b>.
+           ${expect ? `<span style="color:${fits ? 'var(--ok)' : 'var(--warn)'}">${
+             fits ? 'Сходится с итогом файла.' : `В файле итог ${fmtMoney(expect)} — расходится на ${fmtMoney(Math.abs(expect - toPay))}.`}</span>` : ''}
+           ${tot.grand && Math.abs(tot.grand - toPay) > 1
+             ? `<br>«Итого к оплате» в файле — ${fmtMoney(tot.grand)}: туда входит ещё что-то помимо оборудования (обычно транспорт), это добавляется отдельной строкой.`
+             : ''}</div>`
+      : '';
     document.getElementById('pbPreviewSummary').innerHTML = `
       <div class="form-hint">${pbImp.known ? `<b>${pbImp.known === 'ez' ? 'EZ-СМЕТА' : 'Твой формуляр'}</b> — столбцы точные, догадок нет. ` : ''}Позиций в смету: <b>${add}</b> · не взято: <b>${skip}</b>${
         secs ? ` · разделов: <b>${secs}</b>` : ''}.
         Итого за оборудование: <b>${fmtMoney(sum)}</b>${fromFileShifts ? ' — смены взяты из файла' : ` при ${shifts} ${plural(shifts, 'смене', 'сменах', 'сменах')}`}.${
         fileTot > 0 ? ` Итог по файлу: <b style="color:${Math.abs(fileTot - sum) / fileTot > 0.02 ? 'var(--warn)' : 'var(--ok)'}">${fmtMoney(fileTot)}</b>.` : ''}
-        ${warns ? `<span style="color:var(--warn);">Строк с расхождением: ${warns} — подсвечены ниже.</span> ` : ''}Персонал приложение посчитает отдельно. Ничего не записано — только по кнопке ниже.</div>`;
+        ${warns ? `<span style="color:var(--warn);">Строк с расхождением: ${warns} — подсвечены ниже.</span> ` : ''}Персонал приложение посчитает отдельно. Ничего не записано — только по кнопке ниже.
+        ${discLine}</div>`;
   } else
   document.getElementById('pbPreviewSummary').innerHTML = `
     <div class="form-hint">Новых позиций: <b>${add}</b> · обновится: <b>${upd}</b> · не взято: <b>${skip}</b>${
@@ -9766,7 +9853,7 @@ function pbApplyToEstimate(rows){
       sourceType: 'rental-estimate', rental, size: pbImp.fileData.size, added: TODAY_ISO,
       dataUrl: pbImp.fileData.dataUrl});
   }
-  const debt = syncRentalDebtFromEstimate(p, rental);
+  const debt = syncRentalDebtFromEstimate(p, rental, (pbImp.scan || {}).discount || null);
   saveRentalRule(rental);   // шапка и столбцы этого файла закрепляются за ренталом
   refreshProjectSum(p);
   syncEstimateToFiles(p);
@@ -9774,7 +9861,12 @@ function pbApplyToEstimate(rows){
   renderEstimate(p); renderInfo(p); renderFiles(p); renderPayTab(p);
   refreshAll();
   const debtMsg = debt.kept ? 'Оплата этому ренталу уже закрыта — её сумму не менял.'
-    : debt.amount > 0 ? `Оплата ренталу «${rental}»: ${fmtMoney(debt.amount)} — уже в «Оплатах».` : '';
+    : debt.amount > 0
+      ? `Оплата ренталу «${rental}»: ${fmtMoney(debt.amount)}`
+        + (debt.off > 0 ? ` (${fmtMoney(debt.gross)} минус ${rentalDiscountLabel(
+            RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === rental) || {})})` : '')
+        + ' — уже в «Оплатах».'
+      : '';
   askNotice(`Добавлено позиций: ${rows.length}${pbImp.fileData ? ', файл приложен к проекту' : ''}. ${debtMsg}`, 'Оборудование в смете');
 }
 /* Новый рентал можно завести прямо из окна загрузки — чтобы не бегать в «Ренталы» */
@@ -9795,20 +9887,64 @@ function pbSetEstRental(v){
 }
 /* Оплата ренталу по проекту = сумма его позиций в смете. Пересчитывается
    при каждой загрузке файла; закрытую оплату не трогаем — про это скажем прямо. */
-function syncRentalDebtFromEstimate(p, rental){
-  const amount = Math.round(allEstimate(p).filter(l => l.rental === rental)
+/* discount — скидка, вычитанная из файла рентала (или переданная руками).
+   К оплате уходит сумма позиций за вычетом скидки: ровно та цифра, что стоит
+   в присланной смете под строкой «Итого». Сумму до скидки держим в gross,
+   чтобы в «Оплатах» было видно, из чего она сложилась. */
+function syncRentalDebtFromEstimate(p, rental, discount){
+  const gross = Math.round(allEstimate(p).filter(l => l.rental === rental)
     .reduce((sum, l) => sum + lineTotal(l), 0));
   const e = RENTAL_DEBTS.find(r => r.rental === rental && r.projectId === p.id);
-  if(e && e.paid) return {kept:true, amount:e.amount};
+  if(e && e.paid) return {kept:true, amount:e.amount, gross:e.gross || e.amount};
+  const applyDiscount = target => {
+    if(!discount) return;
+    if(discount.pct > 0){ target.discountPct = discount.pct; target.discountSum = null; }
+    else if(discount.sum > 0){ target.discountSum = discount.sum; target.discountPct = null; }
+    else { target.discountPct = null; target.discountSum = null; }
+    target.discountNote = discount.label || '';
+  };
   if(!e){
-    if(amount <= 0) return {none:true, amount:0};
-    RENTAL_DEBTS.push({rental, projectId:p.id, amount, paid:false,
-      paymentType:null, paymentDate:null, payments:[]});
-    return {created:true, amount};
+    if(gross <= 0) return {none:true, amount:0, gross:0};
+    const rec = {rental, projectId:p.id, amount:gross, gross, paid:false,
+      paymentType:null, paymentDate:null, payments:[]};
+    applyDiscount(rec);
+    const off = rentalDiscountOff(gross, rec);
+    rec.amount = gross - off;
+    RENTAL_DEBTS.push(rec);
+    return {created:true, amount:rec.amount, gross, off};
   }
-  if(amount <= 0){ RENTAL_DEBTS.splice(RENTAL_DEBTS.indexOf(e), 1); return {removed:true, amount:0}; }
-  e.amount = amount;
-  return {updated:true, amount};
+  if(gross <= 0){ RENTAL_DEBTS.splice(RENTAL_DEBTS.indexOf(e), 1); return {removed:true, amount:0, gross:0}; }
+  applyDiscount(e);
+  const off = rentalDiscountOff(gross, e);
+  e.gross = gross;
+  e.amount = gross - off;
+  return {updated:true, amount:e.amount, gross, off};
+}
+/* Скидку можно поправить руками: «50» или «50%» — процент, «44778» — сумма,
+   пусто — скидки нет. Пересчитываем и оплату, и всё, что от неё зависит. */
+function editRentalDiscount(pid, rental){
+  const p = PROJECTS.find(x => x.id === pid);
+  const e = RENTAL_DEBTS.find(r => r.projectId === pid && r.rental === rental);
+  if(!p || !e) return;
+  if(e.paid){ askNotice('Оплата этому ренталу закрыта — сумму уже не меняем.', 'Закрыто'); return; }
+  const cur = e.discountPct > 0 ? e.discountPct + '%' : (e.discountSum > 0 ? String(e.discountSum) : '');
+  askInput({title:`Скидка рентала «${rental}»`,
+    text:'Процент — «50» или «50%». Сумма — числом, например «44778». Пусто — скидки нет.',
+    value:cur, okText:'Применить'}, v => {
+    const raw = String(v || '').trim().replace(',', '.');
+    let disc = null;
+    if(raw){
+      const num = parseFloat(raw.replace(/[^\d.]/g, ''));
+      if(Number.isFinite(num) && num > 0){
+        disc = /%/.test(raw) || num <= 100 ? {pct:num, sum:0, label:`скидка ${num}%`}
+                                           : {pct:null, sum:num, label:`скидка ${fmtMoney(num)}`};
+      }
+    }
+    if(!disc) disc = {pct:null, sum:0, label:''};
+    syncRentalDebtFromEstimate(p, rental, disc);
+    renderPayTab(p); renderEstimate(p); renderInfo(p);
+    refreshAll();
+  });
 }
 
 /* ============= Первичная и фактическая сметы =============
@@ -12056,6 +12192,42 @@ const SELF_CHECK_CASES = [
     ]).payable, expect:20000},
   {group:'Сметы', name:'Смета одна: в итог идут все её строки, ничего не прячется',
     run:()=>estItems([{price:1}, {price:2, client:true}]).length, expect:2},
+  {group:'Сметы', name:'Скидка рентала читается из файла: «Скидка 50%» → 50',
+    run:()=>{
+      const scan = pbScanTotals([
+        ['1', 'Прибор', '1', '16000', '16000'],
+        ['Оборудование итого', '', '', '', '89555'],
+        ['Скидка 50%', '', '', '', '-44777.5'],
+        ['Итого по смете', '', '', '', '44777.5'],
+        ['ИТОГО К ОПЛАТЕ', '', '', '', '56777.5'],
+      ]);
+      return (scan.discount ? scan.discount.pct : 0) * 1000
+        + (scan.totals.equipment === 89555 ? 100 : 0)
+        + (scan.totals.grand === 56777.5 ? 10 : 0)
+        + (Math.round(scan.totals.afterDiscount) === 44778 ? 1 : 0);
+    }, expect:50111},
+  {group:'Сметы', name:'Оплата ренталу уходит со скидкой: 89 555 − 50% = 44 778',
+    run:()=>{
+      const p = {id:'__disc', name:'__disc', dates:['2026-01-01'], sum:0, paidAmount:0,
+        estimate:[{sec:'Свет', name:'A', qty:1, days:1, price:89555, client:true, rental:'Р'}],
+        files:[], units:[], notes:[], payments:[]};
+      PROJECTS.push(p);
+      const r1 = syncRentalDebtFromEstimate(p, 'Р', {pct:50, sum:44777.5, label:'скидка 50%'});
+      // позиции поменялись — процент пересчитывается сам
+      p.estimate[0].price = 100000;
+      const r2 = syncRentalDebtFromEstimate(p, 'Р');
+      const rec = RENTAL_DEBTS.find(x => x.projectId === '__disc');
+      const v = r1.amount * 10 + (r2.amount === 50000 ? 1 : 0);
+      for(let i = RENTAL_DEBTS.length - 1; i >= 0; i--)
+        if(RENTAL_DEBTS[i].projectId === '__disc') RENTAL_DEBTS.splice(i, 1);
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return v;
+    }, expect:447781},
+  {group:'Сметы', name:'Скидка суммой не пересчитывается процентом и не уходит в минус',
+    run:()=>{
+      const e = {discountSum: 5000};
+      return rentalDiscountOff(12000, e) * 10 + (rentalDiscountOff(3000, e) === 3000 ? 1 : 0);
+    }, expect:50001},
   {group:'Сметы', name:'Файл рентала убирается вместе со своими позициями, чужие остаются',
     run:()=>{
       const p = {id:'__rmfile', name:'__rmfile', dates:['2026-01-01'], sum:0, paidAmount:0,
