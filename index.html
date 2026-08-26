@@ -3153,6 +3153,8 @@ function dbReplaceFile(files){
   refreshAll();
 }
 function dbRemoveFile(i){
+  const gone = DB_FILES[i];
+  if(gone && gone.blobKey) ezBlobDel(gone.blobKey);
   DB_FILES.splice(i,1);
   renderDbFiles();
   refreshAll();
@@ -6392,6 +6394,7 @@ function renderEstimate(p){
       const dLabel = rentalDiscountLabel(debt);
       const meta = [
         f.rental ? esc(f.rental) : '',
+        ezFileHasData(f) ? '' : 'файл на другом устройстве',
         lines.length ? `${lines.length} ${plural(lines.length, 'позиция', 'позиции', 'позиций')} · ${fmtMoney(sum)}`
                      : 'позиций в смете нет',
         (dLabel && debt && debt.amount >= 0) ? `${dLabel} → ${fmtMoney(debt.amount)}` : '',
@@ -6403,7 +6406,7 @@ function renderEstimate(p){
           <div class="ef-meta">${meta}</div>
         </div>
         ${f.rental ? `<button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(f.rental)}')" title="Скидка этого рентала">%</button>` : ''}
-        ${f.dataUrl ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
+        ${ezFileHasData(f) ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
         <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
       </div>`;
     }).join('')}</div>`;
@@ -6548,7 +6551,7 @@ function removeRentalFileFromEstimate(pid, idx){
       if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => l.src !== f.name);
     });
     const pos = p.files.indexOf(f);
-    if(pos > -1) p.files.splice(pos, 1);
+    if(pos > -1){ p.files.splice(pos, 1); if(f.blobKey) ezBlobDel(f.blobKey); }
     if(rental) syncRentalDebtFromEstimate(p, rental);
     refreshProjectSum(p);
     syncEstimateToFiles(p);
@@ -6568,12 +6571,94 @@ function removeRentalFileFromEstimate(pid, idx){
 function openRentalFileForEstimate(){
   document.getElementById('estFileNewInput').click();
 }
+/* ============= Содержимое файлов — отдельно от состояния =============
+   Прикреплённый файл весит десятки, а то и сотни килобайт. Состояние приложения
+   живёт в localStorage, где на всё около 5 МБ, да ещё рядом лежат автокопии —
+   поэтому файл, добавленный в проект, мог не поместиться. Запись срывалась тихо:
+   на экране файл есть (он в памяти), а на диск не попал — и после перезагрузки
+   исчезал. Теперь содержимое хранится в IndexedDB, где места на порядки больше,
+   а в состоянии остаётся только ключ. Побочный эффект честный: содержимое живёт
+   на том устройстве, где файл загрузили, — в облако уходит имя, а не байты. */
+const EZ_BLOB_STORE = 'files';
+let ezBlobDbPromise = null;
+function ezBlobDb(){
+  if(ezBlobDbPromise) return ezBlobDbPromise;
+  ezBlobDbPromise = new Promise((resolve) => {
+    try{
+      if(!window.indexedDB) return resolve(null);
+      const req = indexedDB.open('ez-crm-blobs', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if(!db.objectStoreNames.contains(EZ_BLOB_STORE)) db.createObjectStore(EZ_BLOB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    }catch(e){ resolve(null); }
+  });
+  return ezBlobDbPromise;
+}
+function ezBlobTx(mode, fn){
+  return ezBlobDb().then(db => {
+    if(!db) return null;
+    return new Promise(resolve => {
+      try{
+        const tx = db.transaction(EZ_BLOB_STORE, mode);
+        const req = fn(tx.objectStore(EZ_BLOB_STORE));
+        if(req) req.onsuccess = () => resolve(req.result === undefined ? true : req.result);
+        tx.oncomplete = () => { if(!req) resolve(true); };
+        tx.onerror = () => resolve(null);
+      }catch(e){ resolve(null); }
+    });
+  });
+}
+let ezBlobSeq = 0;
+function ezBlobKey(name){
+  ezBlobSeq++;
+  return 'f' + Date.now().toString(36) + '-' + ezBlobSeq + '-' + String(name || '').slice(-24);
+}
+function ezBlobPut(key, dataUrl){ return ezBlobTx('readwrite', st => st.put(dataUrl, key)); }
+function ezBlobGet(key){ return ezBlobTx('readonly', st => st.get(key)); }
+function ezBlobDel(key){ return ezBlobTx('readwrite', st => st.delete(key)); }
+function ezBlobKeys(){ return ezBlobTx('readonly', st => st.getAllKeys()); }
+/* Содержимое файла: сначала новое хранилище, потом старое поле dataUrl —
+   файлы, добавленные до этой правки, продолжают открываться как раньше. */
+async function ezFileData(f){
+  if(!f) return null;
+  if(f.blobKey){
+    const v = await ezBlobGet(f.blobKey);
+    if(v) return v;
+  }
+  return f.dataUrl || null;
+}
+function ezFileHasData(f){ return !!(f && (f.blobKey || f.dataUrl)); }
+/* Перекладываем содержимое в отдельное хранилище и убираем его из состояния. */
+async function ezFileStash(entry){
+  if(!entry || !entry.dataUrl) return entry;
+  const key = entry.blobKey || ezBlobKey(entry.name);
+  const ok = await ezBlobPut(key, entry.dataUrl);
+  if(ok){ entry.blobKey = key; delete entry.dataUrl; }
+  return entry;
+}
+/* Разовый переезд: у кого файлы уже лежат внутри состояния — переносим их
+   в отдельное хранилище. Состояние сразу худеет, и сохранение перестаёт
+   срываться на переполнении. */
+async function migrateFilesToBlobStore(){
+  const all = [];
+  PROJECTS.forEach(p => (p.files || []).forEach(f => all.push(f)));
+  (DB_FILES || []).forEach(f => all.push(f));
+  const heavy = all.filter(f => f && f.dataUrl && f.dataUrl.length > 4096);
+  if(!heavy.length) return false;
+  for(const f of heavy) await ezFileStash(f);
+  saveState();
+  return true;
+}
 function attachFileToProject(entry){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   const idx = p.files.findIndex(x=>x.name===entry.name && x.sourceType==='rental-estimate');
   if(idx>-1) p.files[idx] = entry; else p.files.push(entry);
   renderFiles(p);
-  scheduleSave();
+  // байты — в отдельное хранилище, и только потом сохраняем состояние
+  ezFileStash(entry).then(() => { saveState(); renderFiles(p); renderEstimate(p); });
 }
 function pickNewFileForEstimate(files){
   const f = files && files[0];
@@ -6698,13 +6783,18 @@ function downloadProjectFile(pid, idx){
   const p = PROJECTS.find(x=>x.id===pid);
   const f = p && p.files[idx];
   if(!f) return;
-  if(!f.dataUrl){
-    askNotice('Этот файл был добавлен как отметка, без содержимого — скачивать нечего. Прикрепи его заново кнопкой «Загрузить смету от рентала».', 'Нечего скачивать');
+  if(!ezFileHasData(f)){
+    askNotice('Этот файл был добавлен как отметка, без содержимого — скачивать нечего. Прикрепи его заново кнопкой «Загрузить файл рентала».', 'Нечего скачивать');
     return;
   }
-  const blob = ezDataUrlToBlob(f.dataUrl);
-  if(!blob){ askNotice('Содержимое файла не читается — прикрепи его заново.', 'Файл повреждён'); return; }
-  ezSaveFile(f.name, blob);
+  ezFileData(f).then(data => {
+    const blob = data && ezDataUrlToBlob(data);
+    if(!blob){
+      askNotice('Содержимое файла не нашлось на этом устройстве — оно хранится там, где файл загружали. Прикрепи его заново.', 'Файла нет на устройстве');
+      return;
+    }
+    ezSaveFile(f.name, blob);
+  });
 }
 
 let estLinesDraft = [];
@@ -8630,7 +8720,7 @@ function renderFiles(p){
       <div class="fico">${esc(f.kind)}</div>
       <div style="flex:1;min-width:0;">${esc(f.name)}${f.auto?' <span class="pill pill-muted">авто</span>':''}${f.sourceType==='rental-estimate'?` <span class="pill pill-muted">${esc(f.rental||'от рентала')}</span>`:''}${f.sourceType==='generated-estimate'?` <span class="pill ${f.phase==='actual'?'pill-ok':'pill-muted'}">${f.phase==='actual'?'фактическая':'первичная'}</span>`:''}
         ${f.size?`<div class="db-file-meta">${esc(f.size)}</div>`:''}</div>
-      ${f.dataUrl?`<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
+      ${ezFileHasData(f)?`<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
     </div>`).join('');
 }
 
@@ -11169,6 +11259,7 @@ function applyState(s){
 
 let saveTimer = null;
 let lastSaveError = '';
+let saveErrorShown = false;
 let saveSuppressed = false;   // выставляется только при «Стереть всё», чтобы не записать данные обратно
 function scheduleSave(){
   if(saveSuppressed) return;
@@ -11228,8 +11319,14 @@ function saveState(){
   }catch(e){
     // чаще всего это переполнение: фотографии в заметках хранятся прямо в данных
     lastSaveError = (e && e.name==='QuotaExceededError')
-      ? 'Хранилище устройства переполнено — скорее всего из-за фотографий в заметках. Выгрузи данные файлом и удали лишние фото.'
-      : 'Браузер не дал сохранить данные на этом устройстве.';
+      ? 'Хранилище устройства переполнено — правки не записались. Выгрузи данные файлом, удали лишние фото из заметок и лишние файлы из проектов.'
+      : 'Браузер не дал сохранить данные на этом устройстве — правки не записались.';
+    /* Молчать здесь нельзя: на экране всё выглядит сохранённым, а после
+       перезагрузки правок нет. Говорим один раз за сеанс, чтобы не долбить. */
+    if(!saveErrorShown){
+      saveErrorShown = true;
+      try{ askNotice(lastSaveError, 'Не сохранилось'); }catch(err){}
+    }
     return false;
   }
 }
@@ -11253,7 +11350,11 @@ function storageInfo(){
     const time = when ? when.toLocaleString('ru-RU', {day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'}) : '—';
     const standalone = (navigator.standalone === true) ||
       (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
-    return `Режим «${APP_MODE === 'live' ? 'Работа' : 'Демо'}» · сохранено ${time} · ${kb} КБ · открыто ${standalone ? 'со значка экрана' : 'в браузере'}`;
+    const filesInState = PROJECTS.reduce((n, p) => n + (p.files || []).filter(f => f.dataUrl).length, 0);
+    return `Режим «${APP_MODE === 'live' ? 'Работа' : 'Демо'}» · сохранено ${time} · ${kb} КБ`
+      + (filesInState ? ` (из них файлов в данных: ${filesInState})` : '')
+      + ` · открыто ${standalone ? 'со значка экрана' : 'в браузере'}`
+      + (lastSaveError ? ` · ⚠ ${lastSaveError}` : '');
   }catch(e){ return 'Не удалось прочитать сохранение.'; }
 }
 
@@ -12746,6 +12847,9 @@ updateModeChip();
 syncSearchPlaceholder();
 refreshAll();
 saveState();     // первый запуск — сразу фиксируем стартовое состояние
+/* Файлы, лежавшие внутри состояния, переносим в отдельное хранилище — это
+   разгружает localStorage, из-за переполнения которого сохранение срывалось. */
+setTimeout(() => { migrateFilesToBlobStore().then(moved => { if(moved) refreshAll(); }); }, 800);
 // подстраховка: не терять правки, если вкладку закрыли раньше, чем сработал таймер
 window.addEventListener('beforeunload', ()=>{ if(saveTimer) saveState(); });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && saveTimer) saveState(); });
