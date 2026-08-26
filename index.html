@@ -443,7 +443,8 @@
     .tpr-chips{min-width:100%;}
     /* чипы компактнее: в строку влезает больше, список короче */
     .task-chip{padding:.26rem .6rem;font-size:.72rem;gap:.3rem;}
-    .chip-done{width:14px;height:14px;}
+    .chip-done, .chip-plan{width:14px;height:14px;}
+    .dash-modes button{padding-left:.42rem;padding-right:.42rem;font-size:.665rem;}
   }
   .task-chip{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--line);
     background:var(--bg-sunk);color:var(--ink);border-radius:99px;padding:.32rem .75rem;
@@ -459,6 +460,52 @@
     display:inline-flex;align-items:center;justify-content:center;font-size:.6rem;
     color:var(--ink-muted);flex:none;}
   .chip-done:hover{border-color:var(--ok);color:var(--ok);background:var(--ok-soft);}
+
+  /* Вкладки дэшборда: «Общий» / «На сегодня» / «Прошедшие» — своя строка под шапкой,
+     иначе на 393px переключатель и кнопки шапки не уживаются в одной строке. */
+  .dash-modes-row{display:flex;align-items:center;justify-content:space-between;
+    gap:.4rem;flex-wrap:wrap;margin:.15rem 0 .5rem;}
+  .dash-modes button{display:inline-flex;align-items:center;gap:.28rem;}
+  .seg-cnt{font-size:.62rem;opacity:.65;font-variant-numeric:tabular-nums;}
+  /* Стрелка «в план» — ровно тот же кружок, что и галочка «готово»:
+     чип не должен раздуваться от второго значка. */
+  .chip-plan{width:15px;height:15px;border-radius:50%;border:1px solid var(--ink-muted);
+    display:inline-flex;align-items:center;justify-content:center;font-size:.58rem;
+    color:var(--ink-muted);flex:none;line-height:1;}
+  .chip-plan:hover{border-color:var(--accent);color:var(--accent-ink);}
+  .chip-plan.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
+  .task-chip.planned{border-color:var(--accent);}
+  /* План дня — вертикальные строки: со стрелками порядка чипы были бы нечитаемы */
+  .plan-day-title{font-size:.7rem;color:var(--ink-muted);letter-spacing:.04em;
+    text-transform:uppercase;margin:.7rem 0 .25rem;}
+  .plan-day-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;}
+  .plan-day-head .plan-day-title{margin:.25rem 0;}
+  .plan-row{display:flex;align-items:center;gap:.5rem;padding:.4rem 0;
+    border-bottom:1px solid var(--line);}
+  .plan-row:last-child{border-bottom:none;}
+  .plan-ord{display:flex;flex-direction:column;gap:2px;flex:none;}
+  .plan-ord-empty{width:22px;}
+  .plan-ord button{width:22px;height:15px;padding:0;border:1px solid var(--line);
+    background:var(--bg-sunk);color:var(--ink-muted);border-radius:5px;
+    font-size:.5rem;line-height:1;cursor:pointer;font-family:inherit;}
+  .plan-ord button:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink);}
+  .plan-ord button:disabled{opacity:.3;cursor:default;}
+  .plan-main{flex:1;min-width:0;cursor:pointer;}
+  .plan-label{font-size:.82rem;font-weight:500;}
+  .plan-meta{font-size:.67rem;color:var(--ink-muted);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;}
+  .plan-acts{display:flex;align-items:center;gap:.35rem;flex:none;}
+  .plan-pin{font-size:.7rem;color:var(--warn);flex:none;}
+  .plan-row.pinned .plan-label{color:var(--warn-ink,var(--ink));}
+  .plan-menu-btns{display:flex;flex-direction:column;gap:.4rem;margin-top:.7rem;}
+  .planner-group{font-size:.7rem;color:var(--ink-muted);text-transform:uppercase;
+    letter-spacing:.04em;margin:.6rem 0 .25rem;}
+  .planner-row{display:flex;align-items:center;gap:.5rem;padding:.32rem 0;
+    border-bottom:1px solid var(--line);}
+  .planner-row:last-child{border-bottom:none;}
+  .planner-label{flex:1;min-width:0;font-size:.78rem;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;}
+  .planner-seg{flex:none;}
 
   /* Список задач внутри отдельного проекта (вкладка «Задачи») — простой вертикальный, без чипов */
   .tasklist{display:flex;flex-direction:column;gap:.4rem;}
@@ -1599,6 +1646,13 @@
           <button class="btn ghost tiny" onclick="toggleAddTask()">+ Задача</button>
         </div>
       </div>
+      <div class="dash-modes-row">
+        <div class="seg sm dash-modes">
+          <button class="on" id="dashAll" onclick="setDashMode('all')">Общий<span class="seg-cnt" id="cntAll"></span></button>
+          <button id="dashToday" onclick="setDashMode('today')">На сегодня<span class="seg-cnt" id="cntToday"></span></button>
+          <button id="dashPast" onclick="setDashMode('past')">Прошедшие<span class="seg-cnt" id="cntPast"></span></button>
+        </div>
+      </div>
       <div class="form-slot" id="addTaskForm" style="display:none;">
         <input id="new-task-text" placeholder="Что нужно сделать?">
         <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
@@ -2513,6 +2567,28 @@
 </div>
 
 <!-- Выбор проекта — для «Прикрепить к проекту» у быстрой заметки и архива заметок -->
+<div class="modal-overlay" id="planMenuModal">
+  <div class="modal-card">
+    <h3>В план дня</h3>
+    <div class="form-hint" id="planMenuLabel"></div>
+    <div class="plan-menu-btns">
+      <button class="btn" onclick="planMenuPick('today')">Сегодня</button>
+      <button class="btn ghost" onclick="planMenuPick('tomorrow')">Завтра</button>
+      <button class="btn ghost" id="planMenuClear" onclick="planMenuPick(null)">Убрать из плана</button>
+    </div>
+    <div style="margin-top:.8rem;"><button class="btn ghost" onclick="closePlanMenu()">Отмена</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="plannerModal">
+  <div class="modal-card">
+    <h3>Спланировать день</h3>
+    <div class="form-hint">Отметь, что делаешь сегодня, а что завтра. Невыполненное само переедет на следующий день.</div>
+    <div id="plannerList" style="max-height:58vh;overflow-y:auto;margin-top:.7rem;"></div>
+    <div style="margin-top:.8rem;"><button class="btn" onclick="closePlanner()">Готово</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="attachPickerModal">
   <div class="modal-card">
     <h3>Прикрепить к проекту</h3>
@@ -5030,10 +5106,10 @@ function generateAutoTasks(){
     // соло-командировка живёт без сметы и команды — эти задачи в ней только мешают
     const soloTrip = isSoloTrip(p);
     if(!p.steps[1][1] && !soloTrip){
-      tasks.push({label:'Сформировать первичную смету', projectId:p.id, tab:'estimate', date:p.date});
+      tasks.push({key:'est1', label:'Сформировать первичную смету', projectId:p.id, tab:'estimate', date:p.date});
     }
     if(soloTrip && !tripFee(p)){
-      tasks.push({label:'Указать гонорар за командировку', projectId:p.id, tab:'trip', date:p.date});
+      tasks.push({key:'tripFee', label:'Указать гонорар за командировку', projectId:p.id, tab:'trip', date:p.date});
     }
     // «Собрать команду» (замена «Команда») — меньше 5 дней без команды, или было освоение без команды.
     // У многодневного проекта каждый день считается отдельно: команда на один день
@@ -5046,49 +5122,49 @@ function generateAutoTasks(){
       allDays(p).forEach((d,i)=>{
         const dayHasCrew = (d.units||[]).some(u=>u.crew.length);
         if(!dayHasCrew){
-          tasks.push({label:`Собрать команду · день ${i+1}`, projectId:p.id, tab:'crew',
+          tasks.push({key:`crewD:${d.iso}`, label:`Собрать команду · день ${i+1}`, projectId:p.id, tab:'crew',
                       date:d.iso, dayIso:d.iso});
         }
         if(!(d.estimate||[]).length){
-          tasks.push({label:`Заполнить смету · день ${i+1}`, projectId:p.id, tab:'estimate',
+          tasks.push({key:`estD:${d.iso}`, label:`Заполнить смету · день ${i+1}`, projectId:p.id, tab:'estimate',
                       date:d.iso, dayIso:d.iso});
         }
       });
     } else if(!hasCrew && (du<5 || scoutDone)){
-      tasks.push({label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date});
+      tasks.push({key:'crew', label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date});
     }
     // «Оплатить команду» — деньги от клиента получены целиком, но не все в команде закрыты
     if(fullyPaid && projectCrew(p).length>0 && !allCrewPaidFor(p)){
-      tasks.push({label:'Оплатить команду', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'payCrew', label:'Оплатить команду', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Оплатить ренталы» — аналогично, по ренталам проекта
     if(fullyPaid && RENTAL_DEBTS.some(r=>r.projectId===p.id) && !allRentalsPaidFor(p)){
-      tasks.push({label:'Оплатить ренталы', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'payRent', label:'Оплатить ренталы', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Отправить фактическую смету» — только когда отснят последний съёмочный день
     const lastShootDay = projectDates(p).slice().sort().pop();
     if(lastShootDay<=TODAY_ISO && !p.steps[3][1] && !soloTrip){
-      tasks.push({label:'Отправить фактическую смету', projectId:p.id, tab:'estimate', date:p.date});
+      tasks.push({key:'estFact', label:'Отправить фактическую смету', projectId:p.id, tab:'estimate', date:p.date});
     }
     // «Выставить счёт / дать реквизиты» (замена «Счёт») — как только готова факт. смета
     if(p.steps[3][1] && !p.steps[4][1]){
-      tasks.push({label:'Выставить счёт / дать реквизиты', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'bill', label:'Выставить счёт / дать реквизиты', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Сформировать чек» (замена «Чек») — деньги получены целиком
     if(fullyPaid && !p.steps[6][1]){
-      tasks.push({label:'Сформировать чек', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'check', label:'Сформировать чек', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Отправить кредитсы» — появляется, как только выставлен счёт; своего чек-листа под неё
     // нет, поэтому завершается вручную кликом по галочке (как кастомная задача)
     if(p.steps[4][1] && !p.creditsSent && !soloTrip){
-      tasks.push({label:'Отправить кредитсы', projectId:p.id, tab:'crew', date:p.date,
+      tasks.push({key:'credits', label:'Отправить кредитсы', projectId:p.id, tab:'crew', date:p.date,
         onComplete:`completeCredits('${p.id}')`});
     }
   });
   /* Отменённый проект задач больше не создаёт — кроме одной: пока неустойка
      не выплачена, она висит задачей, иначе про эти деньги легко забыть. */
   penaltyProjects().forEach(p=>{
-    tasks.push({label:`Выплатить неустойку · ${fmtMoney(projectDebtAmount(p))}`, projectId:p.id,
+    tasks.push({key:'penalty', label:`Выплатить неустойку · ${fmtMoney(projectDebtAmount(p))}`, projectId:p.id,
                 tab:'pay', date:(p.cancelInfo && p.cancelInfo.at) || p.date});
   });
   return tasks;
@@ -5104,8 +5180,8 @@ function generatePaymentCheckTasks(){
   activeProjects().forEach(p=>{
     if(!p.expectedPaymentDate) return;
     if(!(p.sum>0 && (p.sum-p.paidAmount)>0)) return;
-    if(p.expectedPaymentDate===TODAY_ISO) tasks.push({label:'Проверить оплату', projectId:p.id, tab:'pay', date:p.date, pinned:true});
-    else if(p.expectedPaymentDate<TODAY_ISO) tasks.push({label:'Напомнить об оплате', projectId:p.id, tab:'pay', date:p.date, pinned:true});
+    if(p.expectedPaymentDate===TODAY_ISO) tasks.push({key:'payChk', label:'Проверить оплату', projectId:p.id, tab:'pay', date:p.date, pinned:true});
+    else if(p.expectedPaymentDate<TODAY_ISO) tasks.push({key:'payChk', label:'Напомнить об оплате', projectId:p.id, tab:'pay', date:p.date, pinned:true});
   });
   return tasks;
 }
@@ -5143,34 +5219,248 @@ function taskRowHTML(t){
 // Чип — используется в большом блоке «Задачи» на дэшборде, в ряд справа от проекта
 function taskChipHTML(t){
   const clickAttr = t.projectId ? `onclick="${taskOpenCall(t)}"` : '';
-  return `<button class="task-chip" ${clickAttr}>${esc(t.label)}${taskDoneBtnHTML(t)}</button>`;
+  const planned = !!planEntry(t);
+  return `<button class="task-chip${planned?' planned':''}" ${clickAttr}>${esc(t.label)}${taskDoneBtnHTML(t)}${taskPlanBtnHTML(t)}</button>`;
 }
 // projectFilter — если задан, оставляет только задачи этого проекта (для вкладки «Задачи» внутри проекта)
 function buildTaskItems(projectFilter){
   const pinned = generatePaymentCheckTasks();
   const auto = generateAutoTasks().sort((a,b)=> new Date(a.date)-new Date(b.date));
-  const custom = CUSTOM_TASKS.filter(t=>!t.done).map(t=>({label:t.text, projectId:t.projectId, tab:'tasks', date:null,
+  const custom = CUSTOM_TASKS.filter(t=>!t.done).map(t=>({key:`c${t.id}`, label:t.text, projectId:t.projectId, tab:'tasks', date:null,
     onComplete:`completeCustomTask(${t.id})`}));
   let items = [...pinned, ...auto, ...custom];
   if(projectFilter) items = items.filter(t=>t.projectId===projectFilter);
   return items;
 }
+
+/* ============= План дня =============
+   Дэшборд разделён на три вкладки: «Общий» (всё, как было), «На сегодня»
+   (личный план на сегодня и завтра) и «Прошедшие» (задачи по отснятым проектам).
+   Задачи нигде не лежат списком — они каждый раз пересобираются из состояния
+   проектов, поэтому пометку «в план» некуда записать внутрь самой задачи.
+   Держим её отдельной картой TASK_PLAN по устойчивому ключу задачи
+   (проект + код правила), а не по подписи: подпись меняется
+   («Выплатить неустойку · 20 000 ₽»), ключ — нет. */
+let TASK_PLAN = {};
+let dashMode = 'all';
+function taskKey(t){ return `${t.projectId||'_'}|${t.key||t.label}`; }
+function planEntry(t){ return TASK_PLAN[taskKey(t)]; }
+function isoShift(iso, days){
+  const d = new Date(iso+'T00:00:00');
+  d.setDate(d.getDate()+days);
+  const pad = n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+/* Невыполненное вчера не теряется: утром оно само оказывается в плане нового дня.
+   Исходная дата остаётся в from — по ней в строке видно «перенесена с 24.08»,
+   чтобы хвосты были заметны, а не копились молча. */
+function rollPlanMap(map, todayIso){
+  Object.keys(map).forEach(k=>{
+    const e = map[k];
+    if(!e || !e.d){ delete map[k]; return; }
+    if(e.d < todayIso){ if(!e.from) e.from = e.d; e.d = todayIso; }
+  });
+  return map;
+}
+// Задача закрыта — её ключ больше не приходит из buildTaskItems: убираем за собой
+function prunePlanMap(map, items){
+  const live = new Set(items.map(taskKey));
+  Object.keys(map).forEach(k=>{ if(!live.has(k)) delete map[k]; });
+  return map;
+}
+/* После переноса номера порядка могут столкнуться: у перенесённой со вчера ord 0
+   и у только что запланированной тоже 0. Раскладываем номера подряд — перенесённые
+   хвосты первыми, они срочнее. Работает только при столкновении: когда номера
+   уникальны (а после первой же раскладки они такие), порядок стрелок неприкосновенен. */
+function normalizePlanOrds(map, items){
+  const byDay = {};
+  items.forEach(t=>{ const k = taskKey(t), e = map[k]; if(e) (byDay[e.d] = byDay[e.d]||[]).push(k); });
+  Object.keys(byDay).forEach(d=>{
+    const keys = byDay[d];
+    if(new Set(keys.map(k=>map[k].ord||0)).size === keys.length) return;
+    keys.sort((x,y)=>{
+      const ex = map[x], ey = map[y];
+      const fx = ex.from?0:1, fy = ey.from?0:1;
+      if(fx!==fy) return fx-fy;                 // перенесённые — наверх
+      return (ex.ord||0) - (ey.ord||0);
+    }).forEach((k,i)=>{ map[k].ord = i; });
+  });
+  return map;
+}
+function planListFor(items, map, iso){
+  return items.filter(t=>{ const e = map[taskKey(t)]; return !!e && e.d===iso; })
+              .sort((a,b)=> (map[taskKey(a)].ord||0) - (map[taskKey(b)].ord||0));
+}
+// Стрелки ↑↓: список ключей в текущем порядке → новый порядок, ord переписываются подряд
+function movePlanOrd(map, keys, key, dir){
+  const i = keys.indexOf(key);
+  if(i<0) return keys;
+  const j = i + dir;
+  if(j<0 || j>=keys.length) return keys;
+  const arr = keys.slice();
+  arr.splice(j, 0, arr.splice(i,1)[0]);
+  arr.forEach((k,n)=>{ if(map[k]) map[k].ord = n; });
+  return arr;
+}
+function planTask(key, when){
+  if(!when){ delete TASK_PLAN[key]; }
+  else{
+    const iso = when==='tomorrow' ? isoShift(TODAY_ISO,1) : TODAY_ISO;
+    const ords = Object.keys(TASK_PLAN).filter(k=>TASK_PLAN[k].d===iso).map(k=>TASK_PLAN[k].ord||0);
+    TASK_PLAN[key] = {d:iso, ord:(ords.length?Math.max(...ords):-1)+1};
+  }
+  closePlanMenu();
+  renderTasksList();
+  const pm = document.getElementById('plannerModal');
+  if(pm && pm.classList.contains('show')) renderPlanner();
+  scheduleSave();
+}
+function movePlanTask(key, dir){
+  const e = TASK_PLAN[key];
+  if(!e) return;
+  const keys = planListFor(buildTaskItems(null), TASK_PLAN, e.d).map(taskKey);
+  movePlanOrd(TASK_PLAN, keys, key, dir);
+  renderTasksList();
+  scheduleSave();
+}
+// Стрелка на чипе: денежные пины попадают в план сами, им кнопка не нужна
+function taskPlanBtnHTML(t){
+  if(t.pinned) return '';
+  const e = planEntry(t);
+  const mark = !e ? '→' : (e.d===TODAY_ISO ? '•' : '»');
+  const title = !e ? 'В план дня' : (e.d===TODAY_ISO ? 'В плане на сегодня' : 'В плане на завтра');
+  return `<span class="chip-plan${e?' on':''}" onclick="event.stopPropagation();openPlanMenu('${taskKey(t)}')" title="${title}">${mark}</span>`;
+}
+/* ---- мини-меню «Сегодня / Завтра / Убрать» ---- */
+let planMenuKey = null;
+function openPlanMenu(key){
+  planMenuKey = key;
+  const t = buildTaskItems(null).find(x=>taskKey(x)===key);
+  document.getElementById('planMenuLabel').textContent = t ? t.label : '';
+  document.getElementById('planMenuClear').style.display = TASK_PLAN[key] ? '' : 'none';
+  document.getElementById('planMenuModal').classList.add('show');
+}
+function closePlanMenu(){
+  const m = document.getElementById('planMenuModal');
+  if(m) m.classList.remove('show');
+  planMenuKey = null;
+}
+function planMenuPick(when){ if(planMenuKey) planTask(planMenuKey, when); }
+/* ---- окно «Спланировать день»: весь список задач с переключателями ---- */
+function openPlanner(){ renderPlanner(); document.getElementById('plannerModal').classList.add('show'); }
+function closePlanner(){ document.getElementById('plannerModal').classList.remove('show'); }
+function renderPlanner(){
+  const items = buildTaskItems(null).filter(t=>!t.pinned);
+  const tom = isoShift(TODAY_ISO,1);
+  const byProject = {}; const none = [];
+  items.forEach(t=>{ if(t.projectId){ (byProject[t.projectId]=byProject[t.projectId]||[]).push(t); } else none.push(t); });
+  const block = (title, list) => `<div class="planner-group">${esc(title)}</div>` + list.map(t=>{
+    const k = taskKey(t), e = TASK_PLAN[k];
+    const mode = !e ? '' : (e.d===TODAY_ISO ? 'today' : (e.d===tom ? 'tomorrow' : ''));
+    return `<div class="planner-row">
+      <div class="planner-label">${esc(t.label)}</div>
+      <div class="seg sm planner-seg">
+        <button class="${mode==='today'?'on':''}" onclick="planTask('${k}','today')">Сег</button>
+        <button class="${mode==='tomorrow'?'on':''}" onclick="planTask('${k}','tomorrow')">Завт</button>
+        <button class="${mode===''?'on':''}" onclick="planTask('${k}',null)">—</button>
+      </div>
+    </div>`;
+  }).join('');
+  let html = Object.keys(byProject).map(pid=>{
+    const p = PROJECTS.find(x=>x.id===pid);
+    return p ? block(p.name, byProject[pid]) : '';
+  }).join('');
+  if(none.length) html += block('Без проекта', none);
+  document.getElementById('plannerList').innerHTML = html || '<div class="empty-hint">Задач нет — планировать нечего.</div>';
+}
+/* ---- вкладка «На сегодня» ---- */
+function planRowHTML(t, idx, len){
+  const k = taskKey(t), e = TASK_PLAN[k];
+  const proj = t.projectId ? PROJECTS.find(x=>x.id===t.projectId) : null;
+  const meta = [proj?esc(proj.name):null, (e && e.from)?`перенесена с ${fmtDate(e.from)}`:null].filter(Boolean).join(' · ');
+  const arrows = t.pinned ? '<div class="plan-ord plan-ord-empty"></div>' : `<div class="plan-ord">
+      <button onclick="movePlanTask('${k}',-1)" ${idx===0?'disabled':''} title="Выше">▲</button>
+      <button onclick="movePlanTask('${k}',1)" ${idx===len-1?'disabled':''} title="Ниже">▼</button>
+    </div>`;
+  const open = t.projectId ? `onclick="${taskOpenCall(t)}"` : 'style="cursor:default;"';
+  const act = t.pinned
+    ? '<span class="plan-pin" title="Про деньги — попадает в план сама">₽</span>'
+    : `<span class="chip-plan on" onclick="event.stopPropagation();openPlanMenu('${k}')" title="Перенести или убрать">→</span>`;
+  return `<div class="plan-row${t.pinned?' pinned':''}">
+    ${arrows}
+    <div class="plan-main" ${open}>
+      <div class="plan-label">${esc(t.label)}</div>
+      ${meta?`<div class="plan-meta">${meta}</div>`:''}
+    </div>
+    <div class="plan-acts">${taskDoneBtnHTML(t)}${act}</div>
+  </div>`;
+}
+function dashTodayHTML(items){
+  const tom = isoShift(TODAY_ISO,1);
+  const pinned = items.filter(t=>t.pinned);
+  const today = planListFor(items, TASK_PLAN, TODAY_ISO).filter(t=>!t.pinned);
+  const tomorrow = planListFor(items, TASK_PLAN, tom).filter(t=>!t.pinned);
+  let html = `<div class="plan-day-head">
+    <div class="plan-day-title">Сегодня · ${fmtDate(TODAY_ISO)}</div>
+    <button class="btn ghost tiny" onclick="openPlanner()">Спланировать</button>
+  </div>`;
+  html += pinned.map(t=>planRowHTML(t,0,1)).join('');
+  html += today.length
+    ? today.map((t,i)=>planRowHTML(t,i,today.length)).join('')
+    : (pinned.length ? '' : '<div class="empty-hint">На сегодня ничего не запланировано — отметь задачи стрелкой «→» во вкладке «Общий» или нажми «Спланировать».</div>');
+  html += `<div class="plan-day-title">Завтра · ${fmtDate(tom)}</div>`;
+  html += tomorrow.length
+    ? tomorrow.map((t,i)=>planRowHTML(t,i,tomorrow.length)).join('')
+    : '<div class="empty-hint">На завтра пусто.</div>';
+  return html;
+}
+/* ---- «Прошедшие»: проект считается состоявшимся, когда его последний
+       съёмочный день уже позади (вчера и раньше) ---- */
+function isPastProject(p, iso){
+  const dates = projectDates(p).slice().sort();
+  const last = dates[dates.length-1] || p.date;
+  return last < iso;
+}
+function setDashMode(mode){
+  dashMode = mode;
+  ['All','Today','Past'].forEach(m=>{
+    const b = document.getElementById('dash'+m);
+    if(b) b.classList.toggle('on', m.toLowerCase()===mode);
+  });
+  renderTasksList();
+}
+function setDashCount(id, n){
+  const el = document.getElementById(id);
+  if(el) el.textContent = n ? n : '';
+}
+function updateDashCounts(items){
+  const todayCnt = items.filter(t=>t.pinned).length
+    + planListFor(items, TASK_PLAN, TODAY_ISO).filter(t=>!t.pinned).length;
+  const pastCnt = items.filter(t=>{
+    const p = t.projectId ? PROJECTS.find(x=>x.id===t.projectId) : null;
+    return p && isPastProject(p, TODAY_ISO);
+  }).length;
+  setDashCount('cntAll', items.length);
+  setDashCount('cntToday', todayCnt);
+  setDashCount('cntPast', pastCnt);
+}
 // Дэшборд: проекты списком (сначала ближайшие предстоящие, потом прошедшие — от недавних к старым),
 // у каждого — его задачи в ряд. Показываем только проекты, у которых реально есть задачи.
-function buildProjectTaskGroups(){
+function buildProjectTaskGroups(scope){
   const items = buildTaskItems(null);
   const byProject = {}; const unassigned = [];
   items.forEach(t=>{ if(t.projectId){ (byProject[t.projectId]=byProject[t.projectId]||[]).push(t); } else unassigned.push(t); });
   const todayTime = new Date(TODAY_ISO).getTime();
-  const groups = Object.keys(byProject).map(pid=>({p:PROJECTS.find(x=>x.id===pid), tasks:byProject[pid]}))
+  let groups = Object.keys(byProject).map(pid=>({p:PROJECTS.find(x=>x.id===pid), tasks:byProject[pid]}))
     .filter(g=>g.p);
+  if(scope==='past') groups = groups.filter(g=>isPastProject(g.p, TODAY_ISO));
   groups.sort((a,b)=>{
     const da = new Date(a.p.date).getTime(), db = new Date(b.p.date).getTime();
     const aFuture = da>=todayTime, bFuture = db>=todayTime;
     if(aFuture!==bFuture) return aFuture ? -1 : 1;       // предстоящие всегда впереди прошедших
     return aFuture ? (da-db) : (db-da);                  // предстоящие — ближайшие сначала; прошедшие — недавние сначала
   });
-  return {groups, unassigned};
+  return {groups, unassigned: scope==='past' ? [] : unassigned};
 }
 /* Длинные списки задач сворачиваются: у проекта на восемь дней их бывает
    полтора десятка, и дэшборд превращался в простыню. Показываем три,
@@ -5192,9 +5482,15 @@ function taskChipsHTML(key, tasks){
     + `<button class="task-chip chip-more" onclick="toggleTasksOpen('${key}')">ещё ${tasks.length-TASKS_SHOWN}</button>`;
 }
 function renderTasksList(){
-  const {groups, unassigned} = buildProjectTaskGroups();
-  const total = groups.reduce((s,g)=>s+g.tasks.length,0) + unassigned.length;
-  document.getElementById('taskCount').textContent = total;
+  const items = buildTaskItems(null);
+  rollPlanMap(TASK_PLAN, TODAY_ISO);   // вчерашнее — в сегодняшний план, до всех подсчётов
+  prunePlanMap(TASK_PLAN, items);
+  normalizePlanOrds(TASK_PLAN, items);
+  document.getElementById('taskCount').textContent = items.length;
+  updateDashCounts(items);
+  const box = document.getElementById('taskList');
+  if(dashMode==='today'){ box.innerHTML = dashTodayHTML(items); return; }
+  const {groups, unassigned} = buildProjectTaskGroups(dashMode);
   let html = groups.map(g=>`
     <div class="task-proj-row">
       <div class="tpr-head" onclick="openProject('${g.p.id}','info')">
@@ -5212,7 +5508,9 @@ function renderTasksList(){
       <div class="tpr-chips">${taskChipsHTML('_none', unassigned)}</div>
     </div>`;
   }
-  document.getElementById('taskList').innerHTML = html || '<div class="empty-hint">Задач нет — всё под контролем.</div>';
+  box.innerHTML = html || (dashMode==='past'
+    ? '<div class="empty-hint">По прошедшим проектам задач нет.</div>'
+    : '<div class="empty-hint">Задач нет — всё под контролем.</div>');
 }
 function toggleAddTask(){
   const f = document.getElementById('addTaskForm');
@@ -10555,7 +10853,7 @@ function collectState(){
     savedAt: new Date().toISOString(),
     projects: PROJECTS, crew: CREW, clients: CLIENTS,
     rentals: RENTALS, rentalDebts: RENTAL_DEBTS,
-    quickNotes: QUICK_NOTES, customTasks: CUSTOM_TASKS,
+    quickNotes: QUICK_NOTES, customTasks: CUSTOM_TASKS, taskPlan: TASK_PLAN,
     dbFiles: DB_FILES, rates: CURRENT_RATES,
     priceBook: PRICE_BOOK, rentalTerms: RENTAL_TERMS, rentalRules: RENTAL_RULES,
     myName: MY_NAME, myContacts: MY_CONTACTS,
@@ -10576,6 +10874,8 @@ function applyState(s){
   replaceArray(RENTAL_DEBTS, s.rentalDebts);
   replaceArray(QUICK_NOTES, s.quickNotes);
   replaceArray(CUSTOM_TASKS, s.customTasks);
+  // План дня появился позже: в старых сейвах его просто нет — начинаем с пустого
+  TASK_PLAN = (s.taskPlan && typeof s.taskPlan === 'object') ? s.taskPlan : {};
   if(Array.isArray(s.dbFiles)) DB_FILES = s.dbFiles;
   // Прайсы появились позже: в сохранениях без этих ключей просто нечего восстанавливать,
   // а уже заведённые данные трогать нельзя — поэтому проверяем, а не перезаписываем вслепую.
@@ -11887,6 +12187,91 @@ const SELF_CHECK_CASES = [
       refreshProjectSum(p); refreshPaymentMeta(p);
       return (!projectIsSettled(p) && p.paidAmount === 0 && p.paymentDate === null) ? 1 : 0;
     }, expect:1},
+
+  // ---- План дня (вкладка «На сегодня») ----
+  {group:'План дня', name:'Ключ задачи не зависит от подписи (неустойка сменила сумму)',
+    run:()=>{
+      const a = taskKey({projectId:'p1', key:'penalty', label:'Выплатить неустойку · 10 000 ₽'});
+      const b = taskKey({projectId:'p1', key:'penalty', label:'Выплатить неустойку · 20 000 ₽'});
+      return a === b ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Одинаковое правило в разных проектах — разные ключи',
+    run:()=>taskKey({projectId:'p1', key:'crew'}) !== taskKey({projectId:'p2', key:'crew'}) ? 1 : 0,
+    expect:1},
+  {group:'План дня', name:'Невыполненное вчера само переезжает на сегодня',
+    run:()=>{
+      const m = {k1:{d:isoShift(TODAY_ISO,-1), ord:0}};
+      rollPlanMap(m, TODAY_ISO);
+      return m.k1.d === TODAY_ISO ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'При переносе запоминается исходная дата (показываем «перенесена с»)',
+    run:()=>{
+      const y = isoShift(TODAY_ISO,-2);
+      const m = {k1:{d:y, ord:0}};
+      rollPlanMap(m, TODAY_ISO); rollPlanMap(m, TODAY_ISO);   // второй прогон не должен затирать from
+      return m.k1.from === y ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Завтрашнее переносом не трогается',
+    run:()=>{
+      const t = isoShift(TODAY_ISO,1);
+      const m = {k1:{d:t, ord:0}};
+      rollPlanMap(m, TODAY_ISO);
+      return (m.k1.d === t && !m.k1.from) ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Закрытая задача уходит из плана (ключа больше нет в списке)',
+    run:()=>{
+      const m = {'p1|crew':{d:TODAY_ISO, ord:0}, 'p1|check':{d:TODAY_ISO, ord:1}};
+      prunePlanMap(m, [{projectId:'p1', key:'crew'}]);
+      return (m['p1|crew'] && !m['p1|check']) ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Список дня идёт по порядку ord, а не по порядку задач',
+    run:()=>{
+      const items = [{projectId:'p1', key:'a'}, {projectId:'p1', key:'b'}, {projectId:'p1', key:'c'}];
+      const m = {'p1|a':{d:TODAY_ISO, ord:2}, 'p1|b':{d:TODAY_ISO, ord:0}, 'p1|c':{d:TODAY_ISO, ord:1}};
+      const got = planListFor(items, m, TODAY_ISO).map(t=>t.key).join('');
+      return got === 'bca' ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'В список дня попадают только задачи этой даты',
+    run:()=>{
+      const items = [{projectId:'p1', key:'a'}, {projectId:'p1', key:'b'}];
+      const m = {'p1|a':{d:TODAY_ISO, ord:0}, 'p1|b':{d:isoShift(TODAY_ISO,1), ord:0}};
+      return planListFor(items, m, TODAY_ISO).length;
+    }, expect:1},
+  {group:'План дня', name:'Стрелка ↑ поднимает задачу на одну позицию',
+    run:()=>{
+      const m = {a:{d:TODAY_ISO, ord:0}, b:{d:TODAY_ISO, ord:1}, c:{d:TODAY_ISO, ord:2}};
+      const out = movePlanOrd(m, ['a','b','c'], 'c', -1).join('');
+      return (out === 'acb' && m.c.ord === 1 && m.b.ord === 2) ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Стрелка не выпускает задачу за границы списка',
+    run:()=>{
+      const m = {a:{d:TODAY_ISO, ord:0}, b:{d:TODAY_ISO, ord:1}};
+      const out = movePlanOrd(m, ['a','b'], 'a', -1).join('');
+      return (out === 'ab' && m.a.ord === 0) ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Столкнувшиеся номера раскладываются подряд, перенесённое — наверх',
+    run:()=>{
+      const items = [{projectId:'p1', key:'a'}, {projectId:'p1', key:'b'}];
+      const m = {'p1|a':{d:TODAY_ISO, ord:0}, 'p1|b':{d:TODAY_ISO, ord:0, from:isoShift(TODAY_ISO,-1)}};
+      normalizePlanOrds(m, items);
+      return (m['p1|b'].ord === 0 && m['p1|a'].ord === 1) ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Уникальные номера раскладка не трогает (порядок стрелок держится)',
+    run:()=>{
+      const items = [{projectId:'p1', key:'a'}, {projectId:'p1', key:'b'}];
+      const m = {'p1|a':{d:TODAY_ISO, ord:0}, 'p1|b':{d:TODAY_ISO, ord:1, from:isoShift(TODAY_ISO,-1)}};
+      normalizePlanOrds(m, items);
+      return (m['p1|a'].ord === 0 && m['p1|b'].ord === 1) ? 1 : 0;
+    }, expect:1},
+  {group:'План дня', name:'Прошедший проект — тот, чей последний съёмочный день позади',
+    run:()=>isPastProject({date:isoShift(TODAY_ISO,-5), dates:[isoShift(TODAY_ISO,-5), isoShift(TODAY_ISO,-1)]}, TODAY_ISO) ? 1 : 0,
+    expect:1},
+  {group:'План дня', name:'Проект со съёмкой завтра прошедшим не считается',
+    run:()=>isPastProject({date:isoShift(TODAY_ISO,-3), dates:[isoShift(TODAY_ISO,-3), isoShift(TODAY_ISO,1)]}, TODAY_ISO) ? 0 : 1,
+    expect:1},
+  {group:'План дня', name:'Сегодняшняя съёмка ещё не прошедшая (граница — вчера)',
+    run:()=>isPastProject({date:TODAY_ISO, dates:[TODAY_ISO]}, TODAY_ISO) ? 0 : 1,
+    expect:1},
 ];
 
 function runSelfCheck(){
@@ -12017,6 +12402,7 @@ if(APP_MODE === 'live' && !hadSave){
   replaceArray(RENTAL_DEBTS, []);
   replaceArray(QUICK_NOTES, []);
   replaceArray(CUSTOM_TASKS, []);
+  TASK_PLAN = {};
   replaceArray(CLIENTS, []);
   DB_FILES = DB_FILES.filter(f => f.dataUrl);   // демо-отметки без содержимого не тащим
   saveState();
