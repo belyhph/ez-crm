@@ -6394,7 +6394,7 @@ function renderEstimate(p){
       const dLabel = rentalDiscountLabel(debt);
       const meta = [
         f.rental ? esc(f.rental) : '',
-        ezFileHasData(f) ? '' : 'файл на другом устройстве',
+        ezFileHasData(f) ? (ezFileEverywhere(f) ? '' : 'только на этом устройстве') : 'файл в облаке',
         lines.length ? `${lines.length} ${plural(lines.length, 'позиция', 'позиции', 'позиций')} · ${fmtMoney(sum)}`
                      : 'позиций в смете нет',
         (dLabel && debt && debt.amount >= 0) ? `${dLabel} → ${fmtMoney(debt.amount)}` : '',
@@ -6406,7 +6406,7 @@ function renderEstimate(p){
           <div class="ef-meta">${meta}</div>
         </div>
         ${f.rental ? `<button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(f.rental)}')" title="Скидка этого рентала">%</button>` : ''}
-        ${ezFileHasData(f) ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
+        ${(ezFileHasData(f) || ezFileEverywhere(f)) ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
         <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
       </div>`;
     }).join('')}</div>`;
@@ -6551,7 +6551,7 @@ function removeRentalFileFromEstimate(pid, idx){
       if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => l.src !== f.name);
     });
     const pos = p.files.indexOf(f);
-    if(pos > -1){ p.files.splice(pos, 1); if(f.blobKey) ezBlobDel(f.blobKey); }
+    if(pos > -1){ p.files.splice(pos, 1); if(f.blobKey){ ezBlobDel(f.blobKey); if(f.cloud) cloudBlobDel(f.cloudPath, f.name); } }
     if(rental) syncRentalDebtFromEstimate(p, rental);
     refreshProjectSum(p);
     syncEstimateToFiles(p);
@@ -6579,6 +6579,79 @@ function openRentalFileForEstimate(){
    исчезал. Теперь содержимое хранится в IndexedDB, где места на порядки больше,
    а в состоянии остаётся только ключ. Побочный эффект честный: содержимое живёт
    на том устройстве, где файл загрузили, — в облако уходит имя, а не байты. */
+/* ============= Файлы проектов в облаке =============
+   Байты лежат в том же приватном репозитории, что и данные, но отдельными
+   файлами в папке files/ — снимок состояния от них не пухнет, а файл открывается
+   на любом устройстве. Честные пределы: один файл — до 20 МБ (GitHub позволяет
+   и больше, но его API на таких размерах капризничает), весь репозиторий GitHub
+   просит держать в пределах 1 ГБ. Смета рентала весит 10–30 КБ, прайс — до
+   мегабайта: на годы работы этого хватает с запасом. Тяжёлое — видео, фото
+   пачками — сюда лучше не класть. */
+const CLOUD_BLOB_DIR = 'files/';
+const CLOUD_BLOB_LIMIT = 20 * 1024 * 1024;
+/* Путь в репозитории делаем человеческим: files/<проект>/<имя файла>.
+   Туда можно зайти на GitHub и увидеть свои сметы по папкам, а не мешанину
+   ключей. Режем только то, что ломает путь; кириллицу оставляем и кодируем
+   при запросе. */
+function cloudSafeSeg(v){
+  return String(v || '').replace(/[\\/:*?"<>|#]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80) || 'без-имени';
+}
+function cloudBlobPathFor(projectName, fileName){
+  return CLOUD_BLOB_DIR + cloudSafeSeg(projectName) + '/' + cloudSafeSeg(fileName);
+}
+function cloudBlobUrl(path){
+  // каждый сегмент кодируем отдельно, чтобы слэши остались слэшами
+  return String(path).split('/').map(encodeURIComponent).join('/');
+}
+function cloudBlobBytes(dataUrl){
+  const body = String(dataUrl || '').split(',')[1] || '';
+  return Math.ceil(body.replace(/\s/g, '').length * 3 / 4);
+}
+async function cloudBlobSha(path){
+  const c = cloudCfg();
+  const r = await cloudApi('/repos/' + c.owner + '/' + c.repo + '/contents/' + cloudBlobUrl(path));
+  if(!r.ok) return null;
+  const d = await r.json();
+  return d.sha || null;
+}
+async function cloudBlobPut(path, dataUrl, name){
+  if(!cloudOn()) return {off:true};
+  const bytes = cloudBlobBytes(dataUrl);
+  if(bytes > CLOUD_BLOB_LIMIT) return {tooBig:true, bytes};
+  const c = cloudCfg();
+  const content = String(dataUrl).split(',')[1].replace(/\s/g, '');
+  const sha = await cloudBlobSha(path);
+  const body = {message: 'EZ CRM · файл ' + (name || path), content};
+  if(sha) body.sha = sha;
+  const r = await cloudApi('/repos/' + c.owner + '/' + c.repo + '/contents/' + cloudBlobUrl(path),
+    {method:'PUT', body: JSON.stringify(body)});
+  if(!r.ok) throw new Error(cloudErrText(r));
+  return {ok:true, bytes, path};
+}
+async function cloudBlobGet(path, mime){
+  if(!cloudOn() || !path) return null;
+  const c = cloudCfg();
+  const r = await cloudApi('/repos/' + c.owner + '/' + c.repo + '/contents/' + cloudBlobUrl(path));
+  if(r.status === 404) return null;
+  if(!r.ok) throw new Error(cloudErrText(r));
+  const d = await r.json();
+  let b64 = String(d.content || '').replace(/\s/g, '');
+  if(!b64 && d.sha){                              // крупный файл отдаётся отдельным объектом
+    const rb = await cloudApi('/repos/' + c.owner + '/' + c.repo + '/git/blobs/' + d.sha);
+    if(rb.ok) b64 = String((await rb.json()).content || '').replace(/\s/g, '');
+  }
+  if(!b64) return null;
+  return 'data:' + (mime || 'application/octet-stream') + ';base64,' + b64;
+}
+async function cloudBlobDel(path, name){
+  if(!cloudOn() || !path) return false;
+  const c = cloudCfg();
+  const sha = await cloudBlobSha(path);
+  if(!sha) return false;
+  const r = await cloudApi('/repos/' + c.owner + '/' + c.repo + '/contents/' + cloudBlobUrl(path),
+    {method:'DELETE', body: JSON.stringify({message:'EZ CRM · убран файл ' + (name || path), sha})});
+  return r.ok;
+}
 const EZ_BLOB_STORE = 'files';
 let ezBlobDbPromise = null;
 function ezBlobDb(){
@@ -6597,15 +6670,17 @@ function ezBlobDb(){
   });
   return ezBlobDbPromise;
 }
-function ezBlobTx(mode, fn){
+/* read — отдаём то, что нашлось (или null, если не нашлось); write — просто «получилось».
+   Смешивать нельзя: на чтении пустого ключа «true» выглядело бы как содержимое. */
+function ezBlobTx(mode, fn, read){
   return ezBlobDb().then(db => {
     if(!db) return null;
     return new Promise(resolve => {
       try{
         const tx = db.transaction(EZ_BLOB_STORE, mode);
         const req = fn(tx.objectStore(EZ_BLOB_STORE));
-        if(req) req.onsuccess = () => resolve(req.result === undefined ? true : req.result);
-        tx.oncomplete = () => { if(!req) resolve(true); };
+        if(req) req.onsuccess = () => resolve(read ? (req.result === undefined ? null : req.result) : true);
+        tx.oncomplete = () => { if(!req) resolve(read ? null : true); };
         tx.onerror = () => resolve(null);
       }catch(e){ resolve(null); }
     });
@@ -6617,9 +6692,9 @@ function ezBlobKey(name){
   return 'f' + Date.now().toString(36) + '-' + ezBlobSeq + '-' + String(name || '').slice(-24);
 }
 function ezBlobPut(key, dataUrl){ return ezBlobTx('readwrite', st => st.put(dataUrl, key)); }
-function ezBlobGet(key){ return ezBlobTx('readonly', st => st.get(key)); }
+function ezBlobGet(key){ return ezBlobTx('readonly', st => st.get(key), true); }
 function ezBlobDel(key){ return ezBlobTx('readwrite', st => st.delete(key)); }
-function ezBlobKeys(){ return ezBlobTx('readonly', st => st.getAllKeys()); }
+function ezBlobKeys(){ return ezBlobTx('readonly', st => st.getAllKeys(), true); }
 /* Содержимое файла: сначала новое хранилище, потом старое поле dataUrl —
    файлы, добавленные до этой правки, продолжают открываться как раньше. */
 async function ezFileData(f){
@@ -6627,16 +6702,36 @@ async function ezFileData(f){
   if(f.blobKey){
     const v = await ezBlobGet(f.blobKey);
     if(v) return v;
+    if(f.cloud){                     // на этом устройстве нет — забираем из облака
+      try{
+        const fromCloud = await cloudBlobGet(f.cloudPath, f.mime);
+        if(fromCloud){ ezBlobPut(f.blobKey, fromCloud); return fromCloud; }
+      }catch(e){}
+    }
   }
   return f.dataUrl || null;
 }
+// в облаке файл есть — значит его достанет и другое устройство
+function ezFileEverywhere(f){ return !!(f && f.cloud); }
 function ezFileHasData(f){ return !!(f && (f.blobKey || f.dataUrl)); }
 /* Перекладываем содержимое в отдельное хранилище и убираем его из состояния. */
 async function ezFileStash(entry){
   if(!entry || !entry.dataUrl) return entry;
   const key = entry.blobKey || ezBlobKey(entry.name);
-  const ok = await ezBlobPut(key, entry.dataUrl);
+  const data = entry.dataUrl;
+  entry.mime = (String(data).match(/^data:([^;,]+)/) || [])[1] || '';
+  const ok = await ezBlobPut(key, data);
   if(ok){ entry.blobKey = key; delete entry.dataUrl; }
+  // и в облако, чтобы файл открывался на другом устройстве
+  if(cloudOn()){
+    const proj = PROJECTS.find(x => (x.files || []).indexOf(entry) > -1);
+    const path = entry.cloudPath || cloudBlobPathFor(proj ? proj.name : 'общие', entry.name);
+    try{
+      const res = await cloudBlobPut(path, data, entry.name);
+      if(res && res.ok){ entry.cloud = true; entry.cloudPath = path; delete entry.cloudNote; }
+      else if(res && res.tooBig) entry.cloudNote = 'файл тяжелее 20 МБ — в облако не поехал';
+    }catch(e){ entry.cloudNote = 'в облако не ушёл: ' + cloudHuman(e); }
+  }
   return entry;
 }
 /* Разовый переезд: у кого файлы уже лежат внутри состояния — переносим их
@@ -6647,8 +6742,21 @@ async function migrateFilesToBlobStore(){
   PROJECTS.forEach(p => (p.files || []).forEach(f => all.push(f)));
   (DB_FILES || []).forEach(f => all.push(f));
   const heavy = all.filter(f => f && f.dataUrl && f.dataUrl.length > 4096);
-  if(!heavy.length) return false;
+  const notInCloud = cloudOn() ? all.filter(f => f && f.blobKey && !f.cloud && !f.cloudNote) : [];
+  if(!heavy.length && !notInCloud.length) return false;
   for(const f of heavy) await ezFileStash(f);
+  // те, что уже переехали локально, досылаем в облако — по одному, не спеша
+  for(const f of notInCloud){
+    const data = await ezBlobGet(f.blobKey);
+    if(!data) continue;
+    const owner = PROJECTS.find(x => (x.files || []).indexOf(f) > -1);
+    const path = f.cloudPath || cloudBlobPathFor(owner ? owner.name : 'общие', f.name);
+    try{
+      const res = await cloudBlobPut(path, data, f.name);
+      if(res && res.ok){ f.cloud = true; f.cloudPath = path; }
+      else if(res && res.tooBig) f.cloudNote = 'файл тяжелее 20 МБ — в облако не поехал';
+    }catch(e){ f.cloudNote = 'в облако не ушёл'; break; }
+  }
   saveState();
   return true;
 }
@@ -6783,7 +6891,7 @@ function downloadProjectFile(pid, idx){
   const p = PROJECTS.find(x=>x.id===pid);
   const f = p && p.files[idx];
   if(!f) return;
-  if(!ezFileHasData(f)){
+  if(!ezFileHasData(f) && !ezFileEverywhere(f)){
     askNotice('Этот файл был добавлен как отметка, без содержимого — скачивать нечего. Прикрепи его заново кнопкой «Загрузить файл рентала».', 'Нечего скачивать');
     return;
   }
@@ -8720,7 +8828,7 @@ function renderFiles(p){
       <div class="fico">${esc(f.kind)}</div>
       <div style="flex:1;min-width:0;">${esc(f.name)}${f.auto?' <span class="pill pill-muted">авто</span>':''}${f.sourceType==='rental-estimate'?` <span class="pill pill-muted">${esc(f.rental||'от рентала')}</span>`:''}${f.sourceType==='generated-estimate'?` <span class="pill ${f.phase==='actual'?'pill-ok':'pill-muted'}">${f.phase==='actual'?'фактическая':'первичная'}</span>`:''}
         ${f.size?`<div class="db-file-meta">${esc(f.size)}</div>`:''}</div>
-      ${ezFileHasData(f)?`<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
+      ${(ezFileHasData(f) || ezFileEverywhere(f))?`<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
     </div>`).join('');
 }
 
