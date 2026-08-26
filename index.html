@@ -623,6 +623,12 @@
   .esr-detail table{font-size:.78rem;}
   .esr-detail th,.esr-detail td{padding:.38rem .5rem;}
   .esr-detail td.num,.esr-detail th.r{white-space:nowrap;}
+  .est-line-btn{border:none;background:none;color:var(--ink);font:inherit;text-align:left;
+    padding:0;cursor:pointer;display:inline-flex;align-items:center;flex-wrap:wrap;}
+  .est-line-btn:hover{color:var(--accent-ink);text-decoration:underline;text-underline-offset:3px;}
+  .est-sum-disc{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
+    font-size:.8rem;color:var(--ink-muted);padding:.1rem .15rem;}
+  .est-sum-disc .btn.tiny{margin-left:.35rem;}
   .est-sum-total{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem;
     border-top:2px solid var(--ink);margin-top:.45rem;padding-top:.5rem;
     font-weight:700;font-size:.95rem;}
@@ -2094,7 +2100,7 @@
       <h3>Чей это прайс?</h3>
       <button class="btn ghost tiny" onclick="closeRentalPick()">✕</button>
     </div>
-    <div class="form-hint">Файл: <span id="rentalPickFiles" class="mono"></span>.
+    <div class="form-hint" id="rentalPickHint">Файл: <span id="rentalPickFiles" class="mono"></span>.
       Привяжи к ренталу — тогда он будет виден прямо в его карточке.</div>
     <div id="rentalPickList"></div>
   </div>
@@ -3056,8 +3062,54 @@ function dbAddFiles(files){
   scheduleSave();
   if(dbPendingFileIdxs.length) openRentalPick();
 }
+/* Выбор рентала для одной позиции сметы. Переиспользуем то же окно, что и для
+   файлов прайса, — заголовок и подпись ставим свои, обработчик разовый. */
+let linePickRef = null;
+function pickLineRental(pid, idx){
+  const p = PROJECTS.find(x => x.id === pid);
+  if(!p) return;
+  const day = activeDay(p);
+  const line = day.estimate[idx];
+  if(!line) return;
+  linePickRef = {pid, iso: day.iso || p.date, idx};
+  document.querySelector('#rentalPickModal h3').textContent = 'Чей это?';
+  document.getElementById('rentalPickHint').innerHTML =
+    `Позиция: <b>${esc(line.name)}</b> · ${fmtMoney(lineTotal(line))}.<br>
+     Привяжи к ренталу — она попадёт в его оплату, вместе со скидкой этого рентала.`;
+  const list = RENTALS.map(r => `<button class="daypick-row" onclick="applyLineRental('${jsArg(r)}')">
+      <span class="daypick-dot" style="background:${line.rental === r ? 'var(--ok)' : 'var(--accent-ink)'}"></span>
+      <span style="flex:1;min-width:0;font-weight:600;">${esc(r)}</span>
+      <span style="opacity:.5;">${line.rental === r ? '✓' : '›'}</span>
+    </button>`).join('');
+  document.getElementById('rentalPickList').innerHTML = list
+    + `<button class="daypick-row" onclick="applyLineRental('')">
+         <span class="daypick-dot" style="background:var(--ink-muted)"></span>
+         <span style="flex:1;min-width:0;">Без рентала — это моя позиция</span>
+         <span style="opacity:.5;">${line.rental ? '›' : '✓'}</span>
+       </button>`;
+  document.getElementById('rentalPickModal').classList.add('show');
+}
+function applyLineRental(rental){
+  const ref = linePickRef;
+  linePickRef = null;
+  document.getElementById('rentalPickModal').classList.remove('show');
+  if(!ref) return;
+  const p = PROJECTS.find(x => x.id === ref.pid);
+  if(!p) return;
+  const day = allDays(p).find(d => (d.iso || p.date) === ref.iso) || activeDay(p);
+  const line = (day.estimate || [])[ref.idx];
+  if(!line) return;
+  if(rental) line.rental = rental; else delete line.rental;
+  resyncRentals(p);                    // оплаты пересобираются по всем ренталам сразу
+  syncEstimateToFiles(p);
+  renderEstimate(p); renderPayTab(p); renderInfo(p); renderFiles(p);
+  refreshAll();
+}
 function openRentalPick(){
   const names = dbPendingFileIdxs.map(i=>DB_FILES[i].name);
+  document.querySelector('#rentalPickModal h3').textContent = 'Чей это прайс?';
+  document.getElementById('rentalPickHint').innerHTML =
+    'Файл: <span id="rentalPickFiles" class="mono"></span>. Привяжи к ренталу — тогда он будет виден прямо в его карточке.';
   document.getElementById('rentalPickFiles').textContent = names.join(', ');
   document.getElementById('rentalPickList').innerHTML =
     RENTALS.map(r=>`<button class="daypick-row" onclick="assignPendingRental('${esc(r).replace(/'/g,"\\'")}')">
@@ -6350,6 +6402,7 @@ function renderEstimate(p){
           <div class="ef-name">${esc(f.name)}</div>
           <div class="ef-meta">${meta}</div>
         </div>
+        ${f.rental ? `<button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(f.rental)}')" title="Скидка этого рентала">%</button>` : ''}
         ${f.dataUrl ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
         <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
       </div>`;
@@ -6376,12 +6429,25 @@ function renderEstimate(p){
   }
   /* Внутри группы колонок меньше, чем в полной смете: кол-во и смены сведены
      в одну ячейку («2 × 3»), иначе на телефоне пять колонок рвут рубль на строки. */
+  /* Позицию можно привязать к ренталу прямо отсюда: машина в смете рентала идёт
+     обычной строкой, и приложение не знает, чья она. Тап по строке — выбор рентала,
+     после него позиция попадает в его оплату. Такси не трогаем: его платят мне,
+     а я раздаю ребятам, — у него своя дорога. */
   function groupDetailHTML(items){
+    const day = activeDay(p);
     return `<div class="twrap"><table>
       <thead><tr><th>Наименование</th><th class="r">Кол-во × смен</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
       <tbody>${items.map(i=>{
         const sh = shownShifts(i);
-        return `<tr><td>${esc(i.name)}</td><td class="r num">${i.qty}${sh != 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
+        const idx = day.estimate.indexOf(i);
+        const own = i.taxiLine || i.scoutLine || i.gaffer || i.sec === 'Персонал';
+        const tag = i.rental
+          ? `<span class="ef-kind" style="margin-left:.35rem;">${esc(i.rental)}</span>`
+          : (own ? '' : `<span class="ef-kind" style="margin-left:.35rem;opacity:.55;">чей?</span>`);
+        const name = (own || idx < 0)
+          ? esc(i.name)
+          : `<button class="est-line-btn" onclick="pickLineRental('${p.id}',${idx})" title="Привязать позицию к ренталу">${esc(i.name)}${tag}</button>`;
+        return `<tr><td>${name}</td><td class="r num">${i.qty}${sh != 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`;
   }
@@ -6401,7 +6467,8 @@ function renderEstimate(p){
   function draw(){
     const day = activeDay(p);
     const items = estItems(day.estimate);
-    const dayTotal = total(items);
+    // скидка рентала уменьшает итог — так цифра совпадает и с его файлом, и с оплатой
+    const dayTotal = total(items) - rentalDiscountRows(p, items).reduce((sum, r) => sum + r.off, 0);
     // к оплате считается по всему проекту и с учётом скидки/налога — показываем
     // отдельной строкой, только когда она и правда отличается от свода дня
     const payable = estPayable(p, estItems(allEstimate(p))).payable;
@@ -6410,6 +6477,13 @@ function renderEstimate(p){
       ${multi ? `<div class="form-hint" style="margin-bottom:.45rem;">Свод за ${fmtDate(day.iso)}${day.transfer?' · <b>трансферный день, 50%</b> кроме транспорта':''}. Смета по форме собирается по всем дням проекта.</div>` : ''}
       <div class="est-sum">
         ${estSummaryBuckets(items).map(groupRowHTML).join('')}
+        ${rentalDiscountRows(p, items).map(r => `
+          <div class="est-sum-disc">
+            <span>Скидка рентала «${esc(r.rental)}» · ${esc(r.label)}
+              <button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(r.rental)}')" title="Изменить скидку">%</button>
+            </span>
+            <span class="mono">− ${fmtMoney(r.off)}</span>
+          </div>`).join('')}
         <div class="est-sum-total"><span>Итого${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(dayTotal)}</span></div>
         ${payable !== dayTotal ? `<div class="est-sum-payable"><span>К оплате по смете${multi ? ' (все дни)' : ''}${(p.estDiscount || p.estTax) ? ', со скидкой и налогом' : ''}</span><span class="mono">${fmtMoney(payable)}</span></div>` : ''}
       </div>` + loadNoteHTML(day);
@@ -6690,7 +6764,10 @@ function myContactLines(){ return (MY_CONTACTS || []).map(x => String(x).trim())
 function myHeadName(){ return MY_NAME ? 'Гафер: ' + MY_NAME : ''; }
 const EST_FORM_GROUPS = ['СВЕТ','ГРИП','ТРАНСПОРТ','ПЕРСОНАЛ','ПРОЧЕЕ'];
 function estFormGroup(sec){
-  if(sec === 'Свет') return 'СВЕТ';
+  /* В файле рентала разделы бывают свои («COB LIGHT», «ГРИП») или их нет вовсе —
+     тогда позиция приходит просто «Оборудование». Это всё равно оборудование:
+     иначе оно уезжало в «ПРОЧЕЕ», и скидка на оборудование его не касалась. */
+  if(sec === 'Свет' || sec === 'Оборудование') return 'СВЕТ';
   if(sec === 'Грип') return 'ГРИП';
   if(sec === 'Логистика') return 'ТРАНСПОРТ';
   if(sec === 'Персонал') return 'ПЕРСОНАЛ';
@@ -6707,9 +6784,14 @@ function estPayable(p, items){
   const tax = Math.max(0, Number(p && p.estTax) || 0);
   const gear = g['СВЕТ'] + g['ГРИП'];
   const gearDisc = Math.round(gear * (1 - discount / 100));
-  const total = gearDisc + g['ТРАНСПОРТ'] + g['ПЕРСОНАЛ'] + g['ПРОЧЕЕ'];
+  /* Скидка рентала — та, что стоит в его же смете. Она уменьшает итог: тогда
+     цифра в приложении совпадает с той, что рентал прислал, и с тем, что ему
+     платим. Клиентская скидка (estDiscount) — отдельная, поверх. */
+  const rentalRows = rentalDiscountRows(p, items);
+  const rentalOff = rentalRows.reduce((sum, r) => sum + r.off, 0);
+  const total = Math.max(0, gearDisc + g['ТРАНСПОРТ'] + g['ПЕРСОНАЛ'] + g['ПРОЧЕЕ'] - rentalOff);
   const taxSum = Math.round(total * tax / 100);
-  return {groups:g, gear, gearDisc, discount, tax, taxSum,
+  return {groups:g, gear, gearDisc, discount, tax, taxSum, rentalRows, rentalOff,
     logistics:g['ТРАНСПОРТ'], crew:g['ПЕРСОНАЛ'], other:g['ПРОЧЕЕ'],
     total, payable: total + taxSum};
 }
@@ -6721,7 +6803,7 @@ function estPayable(p, items){
    поэтому «Персонал» стоит после такси и П/Р, иначе он забрал бы их себе. */
 const EST_SUM_GROUPS = [
   {key:'gear', name:'Оборудование', sub:'свет и грип — на них идёт скидка',
-   test:i => i.sec === 'Свет' || i.sec === 'Грип'},
+   test:i => i.sec === 'Свет' || i.sec === 'Грип' || i.sec === 'Оборудование'},
   {key:'logi', name:'Логистика', sub:'транспорт',
    test:i => i.sec === 'Логистика'},
   {key:'load', name:'Погрузка/разгрузка', sub:'',
@@ -6786,6 +6868,7 @@ function estimateTableHTML(items, t){
         ${t.gear > 0 ? sumRow('Оборудование (свет + грип)', t.gear) : ''}
         ${t.discount > 0 ? sumRow(`Скидка на оборудование ${t.discount}%`, -(t.gear - t.gearDisc)) : ''}
         ${t.discount > 0 ? sumRow('Итого оборудование со скидкой', t.gearDisc) : ''}
+        ${(t.rentalRows || []).map(r => sumRow(`Скидка рентала «${esc(r.rental)}» ${esc(r.label).replace('скидка ', '')}`, -r.off)).join('')}
         ${t.logistics > 0 ? sumRow('Логистика', t.logistics) : ''}
         ${t.crew > 0 ? sumRow('Персонал', t.crew) : ''}
         ${t.other > 0 ? sumRow('Прочее', t.other) : ''}
@@ -7912,6 +7995,17 @@ function ensureRoleRates(){
   });
   if(added) rebuildRateLookups();
 }
+/* Скидка рентала раньше лежала в записи оплаты — переносим её в проект,
+   иначе после обновления смета посчитается без неё. */
+function migrateRentalDiscounts(){
+  RENTAL_DEBTS.forEach(r => {
+    if(!(r.discountPct > 0 || r.discountSum > 0)) return;
+    const p = PROJECTS.find(x => x.id === r.projectId);
+    if(p && !rentalDiscountOf(p, r.rental))
+      setRentalDiscountOn(p, r.rental, {pct: r.discountPct || 0, sum: r.discountSum || 0});
+    delete r.discountPct; delete r.discountSum; delete r.discountNote;
+  });
+}
 function migrateEstimateClientFlag(){
   PROJECTS.forEach(p => {
     let touched = false;
@@ -7931,6 +8025,7 @@ function migrateAllSettlements(){
   PROJECTS.forEach(p=>{ ensureUniqueUnitIds(p); allUnits(p).forEach(u=>u.crew.forEach(migrateSettlement)); });
   RENTAL_DEBTS.forEach(migrateSettlement);
   migrateEstimateClientFlag();
+  migrateRentalDiscounts();
   ensureRoleRates();
 }
 
@@ -9619,21 +9714,52 @@ function pbScanTotals(rows){
   });
   return res;
 }
-/* Сколько скидка снимает с суммы позиций рентала. Процент считается от суммы,
-   поэтому переживает правку позиций; фиксированная сумма остаётся как была. */
-function rentalDiscountOff(gross, e){
-  if(!e || !(gross > 0)) return 0;
-  // считаем сумму К ОПЛАТЕ и от неё скидку: 89 555 при 50% даёт 44 778 —
-  // ровно как в файле рентала. Вычитание округлённой половины дало бы 44 777.
-  if(e.discountPct > 0) return gross - Math.round(gross * (100 - e.discountPct) / 100);
-  if(e.discountSum > 0) return Math.min(gross, Math.round(e.discountSum));
+/* Скидка рентала хранится в самом проекте — p.rentalDiscounts[рентал] — и оттуда
+   её читают И смета, И оплата. Один источник: цифры не разъедутся, а скидка
+   переживает пересборку позиций и удаление файла. */
+function rentalDiscountOf(p, rental){
+  const d = p && p.rentalDiscounts && p.rentalDiscounts[rental];
+  return (d && ((d.pct || 0) > 0 || (d.sum || 0) > 0)) ? d : null;
+}
+function setRentalDiscountOn(p, rental, disc){
+  if(!p || !rental) return;
+  p.rentalDiscounts = p.rentalDiscounts || {};
+  if(disc && ((disc.pct || 0) > 0 || (disc.sum || 0) > 0))
+    p.rentalDiscounts[rental] = {pct: Number(disc.pct) || 0, sum: Number(disc.sum) || 0};
+  else delete p.rentalDiscounts[rental];
+}
+/* Сколько скидка снимает с суммы позиций рентала. Процент считается от суммы
+   К ОПЛАТЕ: 89 555 при 50% дают 44 778 — ровно как в файле рентала.
+   Вычитание округлённой половины дало бы 44 777. */
+function rentalDiscountOff(gross, d){
+  if(!d || !(gross > 0)) return 0;
+  const pct = d.pct != null ? d.pct : d.discountPct;
+  const sum = d.sum != null ? d.sum : d.discountSum;
+  if(pct > 0) return gross - Math.round(gross * (100 - pct) / 100);
+  if(sum > 0) return Math.min(gross, Math.round(sum));
   return 0;
 }
-function rentalDiscountLabel(e){
-  if(!e) return '';
-  if(e.discountPct > 0) return `скидка ${e.discountPct}%`;
-  if(e.discountSum > 0) return `скидка ${fmtMoney(e.discountSum)}`;
+function rentalDiscountLabel(d){
+  if(!d) return '';
+  const pct = d.pct != null ? d.pct : d.discountPct;
+  const sum = d.sum != null ? d.sum : d.discountSum;
+  if(pct > 0) return `скидка ${pct}%`;
+  if(sum > 0) return `скидка ${fmtMoney(sum)}`;
   return '';
+}
+/* Скидки по всем ренталам, у которых есть позиции: и для свода, и для формуляра,
+   и для оплат. gross — сумма позиций рентала, off — сколько снимает скидка. */
+function rentalDiscountRows(p, items){
+  const byRental = {};
+  (items || []).forEach(i => {
+    if(!i.rental) return;
+    byRental[i.rental] = (byRental[i.rental] || 0) + lineTotal(i);
+  });
+  return Object.keys(byRental).map(rental => {
+    const gross = Math.round(byRental[rental]);
+    const d = rentalDiscountOf(p, rental);
+    return {rental, gross, off: rentalDiscountOff(gross, d), label: rentalDiscountLabel(d), disc: d};
+  }).filter(r => r.off > 0);
 }
 function pbBuildRows(){
   const {rows, headerRow, map} = pbImp;
@@ -9844,7 +9970,8 @@ function pbApplyToEstimate(rows){
       price: r.price,
       client: true,
       rental,                 // по ренталу строки собираются в оплату
-      src: pbImp.source,      // видно, из какого файла пришла позиция
+      // имя приложенного файла: по нему позиция и файл связаны в «Расчёте»
+      src: (pbImp.fileData && pbImp.fileData.name) || pbImp.source,
     });
   });
   // сам файл — в проект: скачать и переслать можно прямо отсюда
@@ -9863,8 +9990,7 @@ function pbApplyToEstimate(rows){
   const debtMsg = debt.kept ? 'Оплата этому ренталу уже закрыта — её сумму не менял.'
     : debt.amount > 0
       ? `Оплата ренталу «${rental}»: ${fmtMoney(debt.amount)}`
-        + (debt.off > 0 ? ` (${fmtMoney(debt.gross)} минус ${rentalDiscountLabel(
-            RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === rental) || {})})` : '')
+        + (debt.off > 0 ? ` (${fmtMoney(debt.gross)} минус ${rentalDiscountLabel(rentalDiscountOf(p, rental))})` : '')
         + ' — уже в «Оплатах».'
       : '';
   askNotice(`Добавлено позиций: ${rows.length}${pbImp.fileData ? ', файл приложен к проекту' : ''}. ${debtMsg}`, 'Оборудование в смете');
@@ -9892,42 +10018,40 @@ function pbSetEstRental(v){
    в присланной смете под строкой «Итого». Сумму до скидки держим в gross,
    чтобы в «Оплатах» было видно, из чего она сложилась. */
 function syncRentalDebtFromEstimate(p, rental, discount){
+  if(discount !== undefined) setRentalDiscountOn(p, rental, discount);
   const gross = Math.round(allEstimate(p).filter(l => l.rental === rental)
     .reduce((sum, l) => sum + lineTotal(l), 0));
+  const off = rentalDiscountOff(gross, rentalDiscountOf(p, rental));
   const e = RENTAL_DEBTS.find(r => r.rental === rental && r.projectId === p.id);
-  if(e && e.paid) return {kept:true, amount:e.amount, gross:e.gross || e.amount};
-  const applyDiscount = target => {
-    if(!discount) return;
-    if(discount.pct > 0){ target.discountPct = discount.pct; target.discountSum = null; }
-    else if(discount.sum > 0){ target.discountSum = discount.sum; target.discountPct = null; }
-    else { target.discountPct = null; target.discountSum = null; }
-    target.discountNote = discount.label || '';
-  };
+  if(e && e.paid) return {kept:true, amount:e.amount, gross:e.gross || e.amount, off};
   if(!e){
-    if(gross <= 0) return {none:true, amount:0, gross:0};
-    const rec = {rental, projectId:p.id, amount:gross, gross, paid:false,
-      paymentType:null, paymentDate:null, payments:[]};
-    applyDiscount(rec);
-    const off = rentalDiscountOff(gross, rec);
-    rec.amount = gross - off;
-    RENTAL_DEBTS.push(rec);
-    return {created:true, amount:rec.amount, gross, off};
+    if(gross <= 0) return {none:true, amount:0, gross:0, off:0};
+    RENTAL_DEBTS.push({rental, projectId:p.id, amount:gross - off, gross, paid:false,
+      paymentType:null, paymentDate:null, payments:[]});
+    return {created:true, amount:gross - off, gross, off};
   }
-  if(gross <= 0){ RENTAL_DEBTS.splice(RENTAL_DEBTS.indexOf(e), 1); return {removed:true, amount:0, gross:0}; }
-  applyDiscount(e);
-  const off = rentalDiscountOff(gross, e);
+  if(gross <= 0){ RENTAL_DEBTS.splice(RENTAL_DEBTS.indexOf(e), 1); return {removed:true, amount:0, gross:0, off:0}; }
   e.gross = gross;
   e.amount = gross - off;
   return {updated:true, amount:e.amount, gross, off};
+}
+/* Пересчитать всё, что зависит от позиций рентала: и оплату, и сумму проекта.
+   Зовём после любой правки — привязки позиции, смены скидки, удаления файла. */
+function resyncRentals(p){
+  const names = new Set(allEstimate(p).map(l => l.rental).filter(Boolean));
+  RENTAL_DEBTS.filter(r => r.projectId === p.id).forEach(r => names.add(r.rental));
+  names.forEach(r => syncRentalDebtFromEstimate(p, r));
+  refreshProjectSum(p);
 }
 /* Скидку можно поправить руками: «50» или «50%» — процент, «44778» — сумма,
    пусто — скидки нет. Пересчитываем и оплату, и всё, что от неё зависит. */
 function editRentalDiscount(pid, rental){
   const p = PROJECTS.find(x => x.id === pid);
+  if(!p) return;
   const e = RENTAL_DEBTS.find(r => r.projectId === pid && r.rental === rental);
-  if(!p || !e) return;
-  if(e.paid){ askNotice('Оплата этому ренталу закрыта — сумму уже не меняем.', 'Закрыто'); return; }
-  const cur = e.discountPct > 0 ? e.discountPct + '%' : (e.discountSum > 0 ? String(e.discountSum) : '');
+  if(e && e.paid){ askNotice('Оплата этому ренталу закрыта — сумму уже не меняем.', 'Закрыто'); return; }
+  const d = rentalDiscountOf(p, rental);
+  const cur = d ? (d.pct > 0 ? d.pct + '%' : String(d.sum)) : '';
   askInput({title:`Скидка рентала «${rental}»`,
     text:'Процент — «50» или «50%». Сумма — числом, например «44778». Пусто — скидки нет.',
     value:cur, okText:'Применить'}, v => {
@@ -9940,9 +10064,10 @@ function editRentalDiscount(pid, rental){
                                            : {pct:null, sum:num, label:`скидка ${fmtMoney(num)}`};
       }
     }
-    if(!disc) disc = {pct:null, sum:0, label:''};
+    if(!disc) disc = {pct:0, sum:0, label:''};
     syncRentalDebtFromEstimate(p, rental, disc);
-    renderPayTab(p); renderEstimate(p); renderInfo(p);
+    refreshProjectSum(p);
+    renderPayTab(p); renderEstimate(p); renderInfo(p); renderFiles(p);
     refreshAll();
   });
 }
@@ -12192,6 +12317,44 @@ const SELF_CHECK_CASES = [
     ]).payable, expect:20000},
   {group:'Сметы', name:'Смета одна: в итог идут все её строки, ничего не прячется',
     run:()=>estItems([{price:1}, {price:2, client:true}]).length, expect:2},
+  {group:'Сметы', name:'Скидка рентала уменьшает и смету, и оплату — цифры сходятся',
+    run:()=>{
+      const p = {id:'__rd2', name:'__rd2', dates:['2026-01-01'], sum:0, paidAmount:0,
+        estimate:[
+          {sec:'Свет', name:'Оборудование', qty:1, days:1, price:89555, client:true, rental:'Сеченов'},
+          {sec:'Персонал', name:'Осветитель — смена', qty:1, days:1, price:13200, client:true}],
+        files:[], units:[], notes:[], payments:[]};
+      PROJECTS.push(p);
+      syncRentalDebtFromEstimate(p, 'Сеченов', {pct:50});
+      refreshProjectSum(p);
+      const debt = RENTAL_DEBTS.find(x => x.projectId === '__rd2');
+      // смета: 89 555 − 44 777 + 13 200 = 57 978, ренталу: 44 778
+      const v = (p.sum === 57978 ? 100000 : 0) + (debt.amount === 44778 ? 1 : 0);
+      for(let i = RENTAL_DEBTS.length - 1; i >= 0; i--)
+        if(RENTAL_DEBTS[i].projectId === '__rd2') RENTAL_DEBTS.splice(i, 1);
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return v;
+    }, expect:100001},
+  {group:'Сметы', name:'Позиция, привязанная к ренталу, уходит в его оплату вместе со скидкой',
+    run:()=>{
+      const p = {id:'__rd3', name:'__rd3', dates:['2026-01-01'], sum:0, paidAmount:0,
+        rentalDiscounts:{'Сеченов':{pct:50, sum:0}},
+        estimate:[
+          {sec:'Свет', name:'Прибор', qty:1, days:1, price:80000, client:true, rental:'Сеченов'},
+          {sec:'Логистика', name:'Доставка гидроборт', qty:1, days:1, price:17000, client:true},
+          {sec:'Персонал', name:'Такси', qty:1, days:1, price:3000, client:true, taxiLine:true}],
+        files:[], units:[], notes:[], payments:[]};
+      PROJECTS.push(p);
+      p.estimate[1].rental = 'Сеченов';        // привязали машину к ренталу
+      resyncRentals(p);
+      const debt = RENTAL_DEBTS.find(x => x.projectId === '__rd3');
+      // ренталу: (80 000 + 17 000) со скидкой 50% = 48 500; такси не в счёт
+      const v = debt.amount * 10 + (debt.gross === 97000 ? 1 : 0);
+      for(let i = RENTAL_DEBTS.length - 1; i >= 0; i--)
+        if(RENTAL_DEBTS[i].projectId === '__rd3') RENTAL_DEBTS.splice(i, 1);
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return v;
+    }, expect:485001},
   {group:'Сметы', name:'Скидка рентала читается из файла: «Скидка 50%» → 50',
     run:()=>{
       const scan = pbScanTotals([
