@@ -280,8 +280,10 @@
        разрыв между последним рядом и легендой резал глаз */
     .cal-toolbar{margin-bottom:1.05rem;}
     .cal-panel{padding-bottom:.6rem;}
-    /* легенда строго одной строкой и вплотную к сетке */
-    .panel .legend{gap:.34rem;font-size:.55rem;flex-wrap:nowrap;white-space:nowrap;margin-top:.15rem;}
+    /* легенда вплотную к сетке; с появлением метки «отменён» пунктов стало шесть —
+       в одну строку они на телефоне не влезают, поэтому разрешаем перенос,
+       но сами пункты не рвём */
+    .panel .legend{gap:.2rem .34rem;font-size:.55rem;flex-wrap:wrap;white-space:nowrap;margin-top:.15rem;}
     .panel .legend span{gap:.22rem;}
     .panel .legend i{width:6px;height:6px;}
     .panel .legend .coin-ico{width:8px;height:8px;}
@@ -376,6 +378,8 @@
     .agenda-row .psum{font-size:.74rem;}
   }
 
+  /* отменённый проект в календаре: плашка на месте, название зачёркнуто */
+  .cal-ev-off, .cal-proj-off{text-decoration:line-through;}
   .legend{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem;font-size:.74rem;color:var(--ink-muted);}
   .legend span{display:inline-flex;align-items:center;gap:.35rem;}
   .coin-ico{flex:none;opacity:.85;}
@@ -1705,6 +1709,7 @@
         <span><i style="background:var(--pending)"></i>В работе</span>
         <span><i style="background:var(--warn)"></i>Ждём оплату</span>
         <span><i style="background:var(--ok)"></i>Закрыт</span>
+        <span><i style="background:var(--ink-muted)"></i>Отменён</span>
         <span><svg class="coin-ico" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="5" r="3.4"></circle><path d="M7.6 7.6 L10.4 10.4"></path></svg>Освоение</span>
         <span><svg class="coin-ico" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>День оплаты</span>
       </div>
@@ -2694,6 +2699,12 @@ const STEP_NAMES = ['Освоение','Смета','Команда','Факт. 
 const PHASE_COLORS = ['var(--pending)','var(--warn)','var(--ok)']; // в работе / ждём оплату / закрыт
 const PHASE_SOFT   = ['var(--pending-soft)','var(--warn-soft)','var(--ok-soft)'];
 const PHASE_TEXT   = ['var(--pending)','var(--warn)','var(--ok)'];
+/* Отменённый проект из календаря не исчезает — он остаётся днём, который был занят,
+   но помечен отдельно: серая плашка с зачёркнутым названием. Во всём остальном
+   (деньги, задачи, списки проектов) он по-прежнему не участвует — там activeProjects(). */
+function calendarProjects(){ return PROJECTS; }
+function calChipBg(p){ return p.cancelled ? 'var(--mono-bg)' : PHASE_SOFT[projectPhase(p)]; }
+function calChipFg(p){ return p.cancelled ? 'var(--ink-muted)' : PHASE_TEXT[projectPhase(p)]; }
 let calSearchQuery = '';
 
 const CREW = [
@@ -4651,7 +4662,7 @@ function showCalTooltip(e){
     if(r.r==='scout'){
       return `<div class="cal-tooltip-row"><span class="cal-tooltip-dot" style="background:var(--accent-ink)"></span>◆ Освоение — ${esc(p.name)}</div>`;
     }
-    return `<div class="cal-tooltip-row"><span class="cal-tooltip-dot" style="background:${phaseColor(p)}"></span>${esc(p.name)}</div>`;
+    return `<div class="cal-tooltip-row"><span class="cal-tooltip-dot" style="background:${phaseColor(p)}"></span>${esc(p.name)}${p.cancelled?' — отменён':''}</div>`;
   }).join('');
   tip.classList.add('show');
   positionCalTooltip(e);
@@ -4703,13 +4714,13 @@ function newProjectOnDate(iso){
 function openDayPick(d, m, y){
   hideCalTooltip();
   dayPickIso = npIsoFor(d, m, y);
-  const shootProjects  = activeProjects().filter(p=>projectDates(p).some(iso=>sameDay(iso,d,m,y)));
+  const shootProjects  = calendarProjects().filter(p=>projectDates(p).some(iso=>sameDay(iso,d,m,y)));
   const paydayProjects = activeProjects().filter(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,m,y));
   const scoutProjects  = activeProjects().filter(p=>sameDay(p.scoutDate,d,m,y));
   // клиента показываем, только если он не повторяет название проекта
   const clientOf = p => (p.client && !p.name.toLowerCase().includes(p.client.toLowerCase())) ? p.client : '';
   const rows = [
-    ...shootProjects.map(p=>({p, tab:'info', why:'Съёмочный день',
+    ...shootProjects.map(p=>({p, tab:'info', why: p.cancelled ? 'Отменён' : 'Съёмочный день',
       dot:phaseColor(p), sub:clientOf(p)})),
     ...paydayProjects.map(p=>({p, tab:'pay', why:`Ждём оплату · ${fmtMoney(p.sum-p.paidAmount)}`,
       dot:'var(--warn)', sub:clientOf(p)})),
@@ -4743,7 +4754,7 @@ function renderCalendarMonth(){
   for(let i=0;i<startOffset;i++) cells += `<div class="cal-day-mini pad"></div>`;
   for(let d=1; d<=daysInMonth; d++){
     const isToday = (d===TODAY.getDate() && calMonth===TODAY.getMonth() && calYear===TODAY.getFullYear());
-    const shootProjects = activeProjects().filter(p=>projectDates(p).some(iso=>sameDay(iso,d,calMonth,calYear)));
+    const shootProjects = calendarProjects().filter(p=>projectDates(p).some(iso=>sameDay(iso,d,calMonth,calYear)));
     const paydayProjects = activeProjects().filter(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,calMonth,calYear));
     const scoutProjects = activeProjects().filter(p=>sameDay(p.scoutDate,d,calMonth,calYear));
     const allProjects = [...new Set([...shootProjects, ...paydayProjects, ...scoutProjects])];
@@ -4760,13 +4771,12 @@ function renderCalendarMonth(){
     /* День оплаты не занимает строку события — он монеткой рядом с числом:
        таких дней много, а места в клетке мало. Освоение — монохромной плашкой. */
     const evs = [
-      ...shootProjects.map(p=>{ const ph = projectPhase(p);
-        return {t:p.name, bg:PHASE_SOFT[ph], fg:PHASE_TEXT[ph]}; }),
+      ...shootProjects.map(p=>({t:p.name, bg:calChipBg(p), fg:calChipFg(p), off:!!p.cancelled})),
       ...scoutProjects.map(p=>({t:p.name, ico:'scout', bg:'var(--accent-soft)', fg:'var(--ink)'})),
     ];
     const coinSvg = '<svg class="coin-ico" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>';
     const scoutSvg = '<svg class="coin-ico" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="5" r="3.4"></circle><path d="M7.6 7.6 L10.4 10.4"></path></svg>';
-    const shown = evs.slice(0,2).map(e=>`<span class="cal-ev" style="background:${e.bg};color:${e.fg};">${e.ico==='scout'?scoutSvg:''}${esc(e.t)}</span>`).join('');
+    const shown = evs.slice(0,2).map(e=>`<span class="cal-ev${e.off?' cal-ev-off':''}" style="background:${e.bg};color:${e.fg};">${e.ico==='scout'?scoutSvg:''}${esc(e.t)}</span>`).join('');
     const hidden = evs.length - 2 + (paydayProjects.length ? 0 : 0);
     const more = evs.length>2 ? `<span class="cal-ev-more">ещё ${evs.length-2}</span>` : '';
     const coinMark = paydayProjects.length ? `<span class="cal-coin">${coinSvg}</span>` : '';
@@ -4793,17 +4803,16 @@ function renderCalendarWeek(){
   const head = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(w=>`<div>${w}</div>`).join('');
   const cells = days.map(d=>{
     const isToday = d.toDateString()===TODAY.toDateString();
-    const dayProjects = activeProjects().filter(p=> projectDates(p).some(iso=>new Date(iso).toDateString()===d.toDateString()));
+    const dayProjects = calendarProjects().filter(p=> projectDates(p).some(iso=>new Date(iso).toDateString()===d.toDateString()));
     const matching = dayProjects.filter(p=>matchesQuery(p,q));
     const dim = q && dayProjects.length && !matching.length;
     const cls = 'cal-wday'+(isToday?' today':'')+(dayProjects.length?' has-project':'')+(dim?' dim':'');
     const payday = dayHasPayday(d.getDate(), d.getMonth(), d.getFullYear());
     let html = `<div class="cal-wnum" style="position:relative;">${d.getDate()}${payday?'<span class="cal-payday-mark" style="top:-2px;right:-8px;"><svg class="coin-ico" viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg></span>':''}</div>`;
     dayProjects.forEach(p=>{
-      const ph = projectPhase(p);
       const isMatch = !q || matching.includes(p);
-      html += `<span class="cal-proj" style="background:${PHASE_SOFT[ph]};color:${PHASE_TEXT[ph]};${isMatch?'':'opacity:.35;'}"
-        onclick="event.stopPropagation();openProject('${p.id}')" title="${esc(p.name)}">${esc(p.name)}</span>`;
+      html += `<span class="cal-proj${p.cancelled?' cal-proj-off':''}" style="background:${calChipBg(p)};color:${calChipFg(p)};${isMatch?'':'opacity:.35;'}"
+        onclick="event.stopPropagation();openProject('${p.id}')" title="${esc(p.name)}${p.cancelled?' — отменён':''}">${esc(p.name)}</span>`;
     });
     return `<div class="${cls}">${html}</div>`;
   }).join('');
@@ -4846,7 +4855,7 @@ function renderCalendarWork(){
   document.getElementById('calTitle').textContent = 'Расписание';
   const q = calSearchQuery.toLowerCase().trim();
   const items = [];   // {iso, sortIso, render}
-  activeProjects().filter(p=>matchesQuery(p,q)).forEach(p=>{
+  calendarProjects().filter(p=>matchesQuery(p,q)).forEach(p=>{
     const amount = p.sum ? fmtMoney(p.sum) : '';
     // съёмочные дни режем на серии подряд идущих
     const days = projectDates(p).slice().sort();
@@ -4854,7 +4863,7 @@ function renderCalendarWork(){
     const flush = () => {
       if(!run.length) return;
       const first = run[0], last = run[run.length-1];
-      const base = {p, dot:phaseColor(p), amount, kind:'Съёмочный день'};
+      const base = {p, dot:phaseColor(p), amount, kind: p.cancelled ? 'Отменён' : 'Съёмочный день'};
       if(run.length === 1){
         items.push({iso:first, html:agendaRowHTML({...base, iso:first}, {onclick:`openProject('${p.id}','info')`})});
       } else {
@@ -4864,7 +4873,7 @@ function renderCalendarWork(){
         const sameMonth = a.getMonth() === b.getMonth();
         const range = sameMonth ? `${a.getDate()}–${b.getDate()}`
           : `${a.getDate()} ${MONTHS[a.getMonth()].slice(0,3).toLowerCase()} – ${b.getDate()}`;
-        let html = agendaRowHTML({...base, iso:first}, {range, kind:`Съёмочные дни · ${run.length}`,
+        let html = agendaRowHTML({...base, iso:first}, {range, kind:`${p.cancelled?'Отменён':'Съёмочные дни'} · ${run.length}`,
           onclick:`toggleScheduleRun('${key}')`, chev: open ? '⌄' : '›'});
         if(open) html += run.map(iso=>agendaRowHTML({...base, iso, amount:''},
           {child:true, onclick:`openProject('${p.id}','info')`})).join('');
@@ -4877,10 +4886,10 @@ function renderCalendarWork(){
       run.push(iso);
     });
     flush();
-    if(p.scoutDate) items.push({iso:p.scoutDate,
+    if(p.scoutDate && !p.cancelled) items.push({iso:p.scoutDate,
       html:agendaRowHTML({iso:p.scoutDate, p, kind:'Освоение', dot:'var(--ink-muted)', amount:''},
         {onclick:`openProject('${p.id}','estimate')`})});
-    if(p.expectedPaymentDate && (p.sum-p.paidAmount)>0) items.push({iso:p.expectedPaymentDate,
+    if(p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && !p.cancelled) items.push({iso:p.expectedPaymentDate,
       html:agendaRowHTML({iso:p.expectedPaymentDate, p, kind:'Ждём оплату', dot:'var(--warn)',
         amount:fmtMoney(p.sum-p.paidAmount)}, {onclick:`openProject('${p.id}','pay')`})});
   });
