@@ -11781,12 +11781,13 @@ function collectState(){
     v: STATE_VERSION,
     savedAt: new Date().toISOString(),
     projects: PROJECTS, crew: CREW, clients: CLIENTS,
-    rentals: RENTALS, rentalDebts: RENTAL_DEBTS,
+    rentals: RENTALS, rentalDebts: RENTAL_DEBTS, personalDebts: PERSONAL_DEBTS,
     quickNotes: QUICK_NOTES, customTasks: CUSTOM_TASKS, taskPlan: TASK_PLAN,
     dbFiles: DB_FILES, rates: CURRENT_RATES,
     priceBook: PRICE_BOOK, rentalTerms: RENTAL_TERMS, rentalRules: RENTAL_RULES,
     myName: MY_NAME, myContacts: MY_CONTACTS,
-    seqs: {quickNote: quickNoteSeq, customTask: customTaskSeq, priceItem: priceItemSeq},
+    seqs: {quickNote: quickNoteSeq, customTask: customTaskSeq, priceItem: priceItemSeq,
+           personal: personalSeq, client: clientSeq},
     theme: document.documentElement.getAttribute('data-theme') || null,
   };
 }
@@ -11801,6 +11802,9 @@ function applyState(s){
   replaceArray(CLIENTS, s.clients);
   replaceArray(RENTALS, s.rentals);
   replaceArray(RENTAL_DEBTS, s.rentalDebts);
+  // Личные долги попали в сохранение позже: в старых сейвах ключа нет —
+  // replaceArray в этом случае просто очистит список, как и по всем остальным данным
+  replaceArray(PERSONAL_DEBTS, s.personalDebts);
   replaceArray(QUICK_NOTES, s.quickNotes);
   replaceArray(CUSTOM_TASKS, s.customTasks);
   // План дня появился позже: в старых сейвах его просто нет — начинаем с пустого
@@ -11821,12 +11825,24 @@ function applyState(s){
     quickNoteSeq  = s.seqs.quickNote  || quickNoteSeq;
     customTaskSeq = s.seqs.customTask || customTaskSeq;
     priceItemSeq  = s.seqs.priceItem  || priceItemSeq;
+    personalSeq   = s.seqs.personal   || personalSeq;
+    clientSeq     = s.seqs.client     || clientSeq;
   }
   // счётчик мог не сохраниться (старый файл) — иначе новые позиции получат
   // те же id, что уже заняты, и правка одной начнёт менять другую
   PRICE_BOOK.forEach(i => {
     const n = parseInt(String(i.id).replace(/\D/g, ''), 10);
     if(n >= priceItemSeq) priceItemSeq = n + 1;
+  });
+  // то же и по личным долгам с клиентами: счётчики появились в сейве позже,
+  // без пересчёта новая запись получила бы занятый id и правка задела бы чужую
+  PERSONAL_DEBTS.forEach(d => {
+    const n = parseInt(String(d.id).replace(/\D/g, ''), 10);
+    if(n >= personalSeq) personalSeq = n + 1;
+  });
+  CLIENTS.forEach(c => {
+    const n = parseInt(String(c.id).replace(/\D/g, ''), 10);
+    if(n >= clientSeq) clientSeq = n + 1;
   });
   // у проектов из старых сохранений могло не быть снимка ставок
   PROJECTS.forEach(p=>{ if(!p.rates) p.rates = cloneRates(BASE_RATES); });
@@ -13441,6 +13457,25 @@ const SELF_CHECK_CASES = [
   {group:'Сбор из прайса', name:'Крестик снимает позицию любого количества',
     run:()=>{ const m = {pbA:7}; efpBumpQty(m, 'pbA', 0); return Object.keys(m).length === 0 ? 1 : 0; },
     expect:1},
+
+  // ---- Хранилище ----
+  // Личные долги какое-то время не попадали в снимок и пропадали при перезагрузке.
+  // Эти два кейса держат их в сохранении: молчаливая потеря записей повторяться не должна.
+  {group:'Хранилище', name:'Личный долг попадает в сохранение и переживает перезагрузку',
+    run:()=>{
+      PERSONAL_DEBTS.push({id:'__pd', who:'__проверка', amount:1000, direction:'owe', paid:false});
+      try{
+        const snap = JSON.parse(JSON.stringify(collectState().personalDebts || []));
+        return snap.filter(d => d.id === '__pd' && d.amount === 1000).length;
+      } finally { PERSONAL_DEBTS.splice(PERSONAL_DEBTS.findIndex(d => d.id === '__pd'), 1); }
+    },
+    expect:1},
+  {group:'Хранилище', name:'Счётчики личных долгов и клиентов уходят в сохранение',
+    run:()=>{
+      const q = collectState().seqs || {};
+      return (typeof q.personal === 'number' ? 1 : 0) + (typeof q.client === 'number' ? 10 : 0);
+    },
+    expect:11},
 ];
 
 function runSelfCheck(){
