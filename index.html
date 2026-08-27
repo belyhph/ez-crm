@@ -688,6 +688,11 @@
     border:1px solid var(--warn);color:var(--warn);border-radius:10px;padding:.6rem .8rem;
     font-size:.84rem;margin-bottom:1rem;}
   .crew-warn .btn{margin-left:auto;}
+  /* две кнопки в предупреждении: авто-отступ вешаем на группу, иначе margin-left:auto
+     достаётся каждой кнопке и они разъезжаются по строке */
+  .crew-warn .crew-warn-actions{margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap;}
+  .crew-warn .crew-warn-actions .btn{margin-left:0;}
+  .crew-solo-note{font-size:.78rem;color:var(--ink-muted);}
   .crew-strip{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:var(--bg-raised);
     border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;margin-bottom:1rem;}
   .crew-strip-label{font-family:var(--font-mono);font-size:.68rem;text-transform:uppercase;
@@ -5168,6 +5173,8 @@ function generateAutoTasks(){
     // «Собрать команду» (замена «Команда») — меньше 5 дней без команды, или было освоение без команды.
     // У многодневного проекта каждый день считается отдельно: команда на один день
     // не закрывает потребность в остальных.
+    // соло-проект: команду не просим, но смета по дням нужна как обычно
+    const soloCrew = isSoloCrew(p);
     if(soloTrip){
       // ничего не собираем: в соло-командировке ни дней, ни команды
     } else if(isMultiDay(p)){
@@ -5175,7 +5182,7 @@ function generateAutoTasks(){
       // сразу нужны свои смета и команда — иначе задача всплыла бы только перед съёмкой.
       allDays(p).forEach((d,i)=>{
         const dayHasCrew = (d.units||[]).some(u=>u.crew.length);
-        if(!dayHasCrew){
+        if(!dayHasCrew && !soloCrew){
           tasks.push({key:`crewD:${d.iso}`, label:`Собрать команду · день ${i+1}`, projectId:p.id, tab:'crew',
                       date:d.iso, dayIso:d.iso});
         }
@@ -5184,7 +5191,7 @@ function generateAutoTasks(){
                       date:d.iso, dayIso:d.iso});
         }
       });
-    } else if(!hasCrew && (du<5 || scoutDone)){
+    } else if(!hasCrew && !soloCrew && (du<5 || scoutDone)){
       tasks.push({key:'crew', label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date});
     }
     // «Оплатить команду» — деньги от клиента получены целиком, но не все в команде закрыты
@@ -6198,6 +6205,26 @@ function removeScoutFromEstimate(p){
   day.estimate = day.estimate.filter(i=>!i.scoutLine);
   refreshProjectSum(p);
 }
+/* ============= Соло проект =============
+   Проект, который веду один: команды нет и не будет. Флаг гасит только напоминания —
+   предупреждение над вкладками и авто-задачи «Собрать команду». Ни на деньги, ни на
+   смету он не влияет: мой гонорар за «я на смене» как считался строкой в смете
+   (client:true, gaffer:true) и не попадал в выплаты, так и считается. */
+function isSoloCrew(p){ return !!(p && p.soloCrew); }
+function setSoloCrew(pid){
+  const p = PROJECTS.find(x=>x.id===pid);
+  if(!p) return;
+  p.soloCrew = true;
+  renderCrewStrip(p); renderCrewTab(p);
+  refreshAll();
+}
+function unsetSoloCrew(pid){
+  const p = PROJECTS.find(x=>x.id===pid);
+  if(!p) return;
+  delete p.soloCrew;
+  renderCrewStrip(p); renderCrewTab(p);
+  refreshAll();
+}
 function renderCrewStrip(p){
   const el = document.getElementById('pCrewStrip');
   if(isSoloTrip(p)){ el.innerHTML = ''; return; }   // еду один — некого показывать
@@ -6205,8 +6232,22 @@ function renderCrewStrip(p){
   // в полосе висели бы все смены разом
   const crew = (activeDay(p).units||[]).flatMap(u=>u.crew);
   if(!crew.length){
+    /* «Соло проект» — работаю один: собирать некого, поэтому предупреждение и задачи
+       по команде выключаются. Всё остальное считается как раньше: смета, ренталы и мой
+       гонорар за «я на смене» (он и так живёт в смете, а не в выплатах). */
+    if(isSoloCrew(p)){
+      el.innerHTML = `<div class="crew-strip">
+        <span class="crew-strip-label">Соло проект</span>
+        <span class="crew-solo-note">работаю один</span>
+        <button class="btn ghost crew-strip-more" onclick="unsetSoloCrew('${p.id}')">Вернуть команду</button>
+      </div>`;
+      return;
+    }
     el.innerHTML = `<div class="crew-warn">⚠ Команда ${isMultiDay(p)?'на этот день ':''}ещё не назначена — не забудь собрать команду
-      <button class="btn ghost" onclick="showTab('crew')">Назначить →</button></div>`;
+      <div class="crew-warn-actions">
+        <button class="btn ghost" onclick="setSoloCrew('${p.id}')" title="Работаю один: убрать это предупреждение и задачи по команде">Соло проект</button>
+        <button class="btn ghost" onclick="showTab('crew')">Назначить →</button>
+      </div></div>`;
     return;
   }
   const chips = crew.map(c=>{
@@ -12355,6 +12396,55 @@ const SELF_CHECK_CASES = [
       return settlementLeft(item); }, expect:0},
 
   // ---- Неустойка при отмене проекта ----
+  // ---- Соло-проект (работаю один) ----
+  {group:'Соло', name:'Соло-проект не просит собрать команду',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_solo', date:TODAY_ISO, dates:[TODAY_ISO], soloCrew:true,
+        steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',1]],
+        units:[{id:1, name:'Юнит 1', crew:[]}]});
+      PROJECTS.push(p);
+      const n = generateAutoTasks().filter(t => t.projectId==='__sc_solo' && /Собрать команду/.test(t.label)).length;
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return n;
+    }, expect:0},
+  {group:'Соло', name:'Без флага «соло» задача по команде остаётся на месте',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_solo2', date:TODAY_ISO, dates:[TODAY_ISO],
+        steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',1]],
+        units:[{id:1, name:'Юнит 1', crew:[]}]});
+      PROJECTS.push(p);
+      const n = generateAutoTasks().filter(t => t.projectId==='__sc_solo2' && /Собрать команду/.test(t.label)).length;
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return n;
+    }, expect:1},
+  {group:'Соло', name:'Соло-проект не теряет задачу «заполнить смету» по дню',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_solo3', date:TODAY_ISO, dates:[TODAY_ISO,'2026-12-31'], soloCrew:true,
+        steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',1]],
+        days:[{iso:TODAY_ISO, estimate:[], units:[{id:1,name:'Юнит 1',crew:[]}], notes:[], payments:[]},
+              {iso:'2026-12-31', estimate:[], units:[{id:2,name:'Юнит 1',crew:[]}], notes:[], payments:[]}]});
+      PROJECTS.push(p);
+      const t = generateAutoTasks().filter(x => x.projectId==='__sc_solo3');
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return t.filter(x=>/Заполнить смету/.test(x.label)).length * 10
+           + t.filter(x=>/Собрать команду/.test(x.label)).length;   // ждём 2 сметы и 0 команды
+    }, expect:20},
+  {group:'Соло', name:'Мой гонорар в соло-проекте считается один раз',
+    run:()=>{
+      const p = selfCheckProject({sum:50000, units:[{id:1, name:'Юнит 1', crew:[]}], estimate:[
+        {sec:'Свет', name:'Прибор', qty:1, days:1, price:30000, client:true},
+        {sec:'Персонал', name:'Гафер — смена', qty:1, days:1, price:20000, client:true, gaffer:true}]});
+      // гонорар уже внутри суммы проекта: он не расход и не добавка сверху
+      return projectIncome(p);
+    }, expect:50000},
+  {group:'Соло', name:'Гонорар гафера не попадает в выплаты команде',
+    run:()=>{
+      const p = selfCheckProject({sum:50000, units:[{id:1, name:'Юнит 1', crew:[]}], estimate:[
+        {sec:'Персонал', name:'Гафер — смена', qty:1, days:1, price:20000, client:true, gaffer:true}]});
+      const f = projectFinance(p);
+      return f.toCrew + f.paidCrew + f.gaffer;
+    }, expect:0},
+
   {group:'Неустойка', name:'База неустойки — ставка смены, переработки и П/Р в неё не входят',
     run:()=>penCrewBase(selfCheckProject({}), {role:'Осветитель', amount:99999, loadPay:5000, extraPay:2000}),
     expect:roleShiftRate(BASE_RATES,'Осветитель')},
