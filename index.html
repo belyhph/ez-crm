@@ -7001,13 +7001,14 @@ let MY_NAME = '';
 let MY_CONTACTS = [];
 function myContactLines(){ return (MY_CONTACTS || []).map(x => String(x).trim()).filter(Boolean); }
 function myHeadName(){ return MY_NAME ? 'Гафер: ' + MY_NAME : ''; }
-const EST_FORM_GROUPS = ['СВЕТ','ГРИП','ТРАНСПОРТ','ПЕРСОНАЛ','ПРОЧЕЕ'];
+const EST_FORM_GROUPS = ['СВЕТ','ГРИП','ЭЛЕКТРИКА','ТРАНСПОРТ','ПЕРСОНАЛ','ПРОЧЕЕ'];
 function estFormGroup(sec){
   /* В файле рентала разделы бывают свои («COB LIGHT», «ГРИП») или их нет вовсе —
      тогда позиция приходит просто «Оборудование». Это всё равно оборудование:
      иначе оно уезжало в «ПРОЧЕЕ», и скидка на оборудование его не касалась. */
   if(sec === 'Свет' || sec === 'Оборудование') return 'СВЕТ';
   if(sec === 'Грип') return 'ГРИП';
+  if(sec === 'Электрика') return 'ЭЛЕКТРИКА';
   if(sec === 'Логистика') return 'ТРАНСПОРТ';
   if(sec === 'Персонал') return 'ПЕРСОНАЛ';
   return 'ПРОЧЕЕ';
@@ -7021,7 +7022,9 @@ function estPayable(p, items){
   items.forEach(i => { g[estFormGroup(i.sec || 'Оборудование')] += lineTotal(i); });
   const discount = Math.max(0, Number(p && p.estDiscount) || 0);
   const tax = Math.max(0, Number(p && p.estTax) || 0);
-  const gear = g['СВЕТ'] + g['ГРИП'];
+  /* «Оборудование» в своде — свет, грип и электрика: скидка рентала и скидка
+     клиенту касаются железа, но не людей, не машины и не услуг. */
+  const gear = g['СВЕТ'] + g['ГРИП'] + g['ЭЛЕКТРИКА'];
   const gearDisc = Math.round(gear * (1 - discount / 100));
   /* Скидка рентала — та, что стоит в его же смете. Она уменьшает итог: тогда
      цифра в приложении совпадает с той, что рентал прислал, и с тем, что ему
@@ -7029,8 +7032,9 @@ function estPayable(p, items){
   const rentalRows = rentalDiscountRows(p, items);
   const rentalOff = rentalRows.reduce((sum, r) => sum + r.off, 0);
   const total = Math.max(0, gearDisc + g['ТРАНСПОРТ'] + g['ПЕРСОНАЛ'] + g['ПРОЧЕЕ'] - rentalOff);
+  const elec = g['ЭЛЕКТРИКА'];
   const taxSum = Math.round(total * tax / 100);
-  return {groups:g, gear, gearDisc, discount, tax, taxSum, rentalRows, rentalOff,
+  return {groups:g, gear, gearDisc, discount, tax, taxSum, rentalRows, rentalOff, elec,
     logistics:g['ТРАНСПОРТ'], crew:g['ПЕРСОНАЛ'], other:g['ПРОЧЕЕ'],
     total, payable: total + taxSum};
 }
@@ -7043,7 +7047,9 @@ function estPayable(p, items){
 const EST_SUM_GROUPS = [
   {key:'gear', name:'Оборудование', sub:'свет и грип — на них идёт скидка',
    test:i => i.sec === 'Свет' || i.sec === 'Грип' || i.sec === 'Оборудование'},
-  {key:'logi', name:'Логистика', sub:'транспорт',
+  {key:'elec', name:'Электрика', sub:'кабели, коммутация — скидка идёт и на неё',
+   test:i => i.sec === 'Электрика'},
+  {key:'logi', name:'Логистика', sub:'транспорт — без скидки',
    test:i => i.sec === 'Логистика'},
   {key:'load', name:'Погрузка/разгрузка', sub:'',
    test:i => i.loadFixedLine || (i.sec === 'Персонал' && /погрузка\/разгрузка/i.test(i.name || ''))},
@@ -7104,10 +7110,11 @@ function estimateTableHTML(items, t){
       <thead><tr><th>Наименование</th><th class="r">Цена за смену</th><th class="r">Кол-во</th><th class="r">Смен</th><th class="r">Стоимость</th></tr></thead>
       <tbody>${body}</tbody>
       <tfoot>
-        ${t.gear > 0 ? sumRow('Оборудование (свет + грип)', t.gear) : ''}
+        ${t.gear > 0 ? sumRow(t.elec > 0 ? 'Оборудование (свет, грип, электрика)' : 'Оборудование (свет + грип)', t.gear) : ''}
         ${t.discount > 0 ? sumRow(`Скидка на оборудование ${t.discount}%`, -(t.gear - t.gearDisc)) : ''}
         ${t.discount > 0 ? sumRow('Итого оборудование со скидкой', t.gearDisc) : ''}
         ${(t.rentalRows || []).map(r => sumRow(`Скидка рентала «${esc(r.rental)}» ${esc(r.label).replace('скидка ', '')}`, -r.off)).join('')}
+        ${t.elec > 0 && t.discount <= 0 ? sumRow('в том числе электрика', t.elec) : ''}
         ${t.logistics > 0 ? sumRow('Логистика', t.logistics) : ''}
         ${t.crew > 0 ? sumRow('Персонал', t.crew) : ''}
         ${t.other > 0 ? sumRow('Прочее', t.other) : ''}
@@ -9654,7 +9661,48 @@ function pbDetectKnownFormat(rows){
       return {kind:'form', headerRow:i, map:{name:0, price:1, qty:2, shifts:3, sum:4, sec:-1, unit:-1}};
     }
   }
+  /* Смета рентала «Rental Estimate» — один и тот же бланк из раза в раз.
+     Узнаём его по подписи вверху и разбираем сразу целиком: и таблицу,
+     и шапку документа — оттуда берём смены, проект, номер и даты. */
+  const headText = rows.slice(0, 12).map(r => (r || []).join(' ')).join(' ').toLowerCase();
+  if(/смета аренды оборудования|rental estimate/.test(headText)){
+    for(let i = 0; i < Math.min(rows.length, 40); i++){
+      const cells = (rows[i] || []).map(c => String(c == null ? '' : c).toLowerCase().trim());
+      const name = cells.findIndex(c => c.includes('наимен'));
+      if(name < 0) continue;
+      const price = cells.findIndex(c => c.includes('цена'));
+      if(price < 0) continue;
+      const qty = cells.findIndex(c => c.includes('кол-во') || c.includes('колич'));
+      const sum = cells.findIndex(c => c.includes('сумма') || c.includes('стоим'));
+      const shifts = cells.findIndex(c => c.includes('смен') && !c.includes('цена'));
+      return {kind:'rental', headerRow:i,
+        map:{name, price, qty, sum, shifts: shifts > -1 && shifts !== price ? shifts : -1, sec:-1, unit:-1},
+        meta: pbRentalMeta(rows)};
+    }
+  }
   return null;
+}
+/* Шапка документа сметы: смены, проект, номер, даты выдачи и возврата.
+   «СМЕН В ПЕРИОДЕ: 1 (по 24 ч)» — это ровно то число смен, которое иначе
+   пришлось бы проставлять руками. */
+function pbRentalMeta(rows){
+  const meta = {};
+  (rows || []).slice(0, 20).forEach(row => {
+    const cells = (row || []).map(c => String(c == null ? '' : c).trim());
+    const label = (cells.find(Boolean) || '').toLowerCase();
+    const value = cells.slice(1).find(Boolean) || '';
+    if(!label || !value) return;
+    if(label.includes('смен в период')){
+      const n = parseFloat(String(value).replace(',', '.'));
+      if(n > 0) meta.shifts = n;
+    }
+    else if(label.includes('проект')) meta.project = value;
+    else if(label.includes('номер')) meta.number = value;
+    else if(label.includes('выдача')) meta.out = value;
+    else if(label.includes('возврат')) meta.back = value;
+    else if(label.includes('клиент')) meta.client = value;
+  });
+  return meta;
 }
 /* Мост в чат: кривой файл разбирает Claude по подписке и возвращает EZ-СМЕТА,
    которую приложение принимает без единого вопроса. */
@@ -9677,17 +9725,40 @@ function copyChatPrompt(btn){
     ta.remove(); done(ok);
   }
 }
-/* Строка заголовков редко бывает первой: сверху обычно название прайса
-   и дата. Берём самую заполненную строку из первых шести — она и есть шапка.
-   Это только предположение: строка подсвечена в таблице и меняется списком. */
+/* Шапку таблицы ищем по смыслу и по всему листу, а не в первых шести строках.
+   У сметы рентала сверху лежит целая страница реквизитов — номер, клиент,
+   проект, даты, — и «самая заполненная строка из первых шести» попадала прямо
+   в них: в смету уезжали «НОМЕР» и «ДАТА» с ценой вида 20260409.
+   Настоящая шапка узнаётся по паре слов: «наименование» и «цена» (или
+   «стоимость»/«сумма») в одной строке. */
+function pbHeaderScore(row){
+  const cells = (row || []).map(c => String(c == null ? '' : c).toLowerCase().trim()).filter(Boolean);
+  if(cells.length < 2) return 0;
+  const hit = words => cells.some(c => words.some(w => c.includes(w)));
+  const name = hit(PB_COL_HINTS.name);
+  const money = hit(['цена', 'стоим', 'сумма', 'тариф']);
+  if(!name || !money) return 0;
+  let score = 2;
+  if(hit(PB_COL_HINTS.qty)) score++;
+  if(hit(['смен', 'дн'])) score++;
+  if(cells.length >= 4) score++;
+  return score;
+}
 function pbGuessHeaderRow(){
-  const limit = Math.min(6, pbImp.rows.length);
-  let best = 0, bestCount = 0;
+  const limit = Math.min(60, pbImp.rows.length);
+  let best = -1, bestScore = 0;
   for(let i = 0; i < limit; i++){
-    const count = (pbImp.rows[i] || []).filter(x => String(x == null ? '' : x).trim() !== '').length;
-    if(count > bestCount){ bestCount = count; best = i; }
+    const score = pbHeaderScore(pbImp.rows[i]);
+    if(score > bestScore){ bestScore = score; best = i; }
   }
-  return best;
+  if(best > -1) return best;
+  // по смыслу не нашлась — прежняя догадка: самая заполненная строка сверху
+  let fallback = 0, count = 0;
+  for(let i = 0; i < Math.min(6, pbImp.rows.length); i++){
+    const n = (pbImp.rows[i] || []).filter(x => String(x == null ? '' : x).trim() !== '').length;
+    if(n > count){ count = n; fallback = i; }
+  }
+  return fallback;
 }
 function pbAfterParse(){
   pbImp.known = null;
@@ -9698,7 +9769,17 @@ function pbAfterParse(){
     pbImp.known = kf.kind;
     pbImp.headerRow = kf.headerRow;
     pbImp.map = kf.map;
-    srcNote = `Формат узнан точно (${kf.kind === 'ez' ? 'EZ-СМЕТА' : 'твой формуляр'}) — столбцы известны, догадок нет.`;
+    pbImp.meta = kf.meta || null;
+    if(kf.kind === 'rental'){
+      const m = kf.meta || {};
+      if(m.shifts > 0) pbImp.shifts = m.shifts;    // смены берём из самой сметы
+      srcNote = 'Узнана смета рентала — столбцы и разделы читаются как есть'
+        + (m.shifts > 0 ? `, смен в периоде: ${m.shifts}` : '')
+        + (m.project ? `, проект «${m.project}»` : '')
+        + (m.number ? `, № ${m.number}` : '') + '.';
+    } else {
+      srcNote = `Формат узнан точно (${kf.kind === 'ez' ? 'EZ-СМЕТА' : 'твой формуляр'}) — столбцы известны, догадок нет.`;
+    }
   } else {
     // шапку файла сверяем с правилами ренталов: для прайса — только своего,
     // для сметы — со всеми: совпавшая шапка сама говорит, чей это файл
@@ -9908,11 +9989,39 @@ function pbRowParse(row){
    Так свёрстаны настоящие прайсы — «COB Light», «Грип», «Транспорт» идут
    отдельной строкой, а под ними позиции. Без этого разделы теряются,
    и весь прайс сваливается в одну кучу. */
+/* Единственная заполненная ячейка в строке — это заголовок раздела, в каком бы
+   столбце он ни стоял. У сметы рентала названия позиций идут в столбце B,
+   а разделы («COB LIGHT», «ГРИП», «ТРАНСПОРТ») — в столбце A, и по старой
+   проверке они пролетали мимо: позиции теряли раздел. */
+function pbLoneCell(row){
+  const filled = (row || []).map(c => String(c == null ? '' : c).trim()).filter(Boolean);
+  return filled.length === 1 ? filled[0] : '';
+}
+/* Имя позиции: сначала своя колонка, потом одинокая ячейка (заголовок раздела),
+   потом первая текстовая ячейка строки. Последнее — про транспорт и услуги:
+   «Ford — смена 12 ч» рентал пишет в столбце «№», а сумму кладёт в последний,
+   и по своей колонке имя не находилось. */
+function pbRowLabel(row, map){
+  const own = String((map && map.name > -1) ? (row[map.name] || '') : '').trim();
+  if(own) return own;
+  const lone = pbLoneCell(row);
+  if(lone) return lone;
+  return (row || []).map(c => String(c == null ? '' : c).trim())
+    .find(v => v && !/^[\d\s.,\-+₽%]+$/.test(v)) || '';
+}
 function pbIsSectionRow(row, map){
+  if(pbLoneCell(row)) return true;
   const name = String((map.name > -1 ? row[map.name] : '') || '').trim();
   if(!name) return false;
   const others = row.filter((c, i) => i !== map.name && String(c == null ? '' : c).trim() !== '');
   return others.length === 0;
+}
+/* Строки итогов файла позициями не являются: их читает pbScanTotals,
+   а в смету они попадать не должны ни под каким видом. */
+function pbIsTotalsRow(name){
+  const n = String(name || '').trim().toLowerCase();
+  if(!n) return false;
+  return /(^|\s)(итого|всего|к оплате)/.test(n) || /^скидк/.test(n) || /сумма сметы/.test(n);
 }
 /* Что получится из файла. Строки без названия или без цены не пропадают молча —
    они попадают в список с пометкой, чтобы было видно, что именно не взято. */
@@ -9988,10 +10097,18 @@ function rentalDiscountLabel(d){
 }
 /* Скидки по всем ренталам, у которых есть позиции: и для свода, и для формуляра,
    и для оплат. gross — сумма позиций рентала, off — сколько снимает скидка. */
+/* Скидка рентала считается только с железа: свет, грип, электрика.
+   Машина, люди, услуги и прочее идут по полной — так и в присланных сметах:
+   «Скидка 50%» стоит под строкой «Оборудование итого», а транспорт добавляется
+   уже после неё. */
+function rentalDiscountBase(i){
+  const g = estFormGroup(i.sec || 'Оборудование');
+  return g === 'СВЕТ' || g === 'ГРИП' || g === 'ЭЛЕКТРИКА';
+}
 function rentalDiscountRows(p, items){
   const byRental = {};
   (items || []).forEach(i => {
-    if(!i.rental) return;
+    if(!i.rental || !rentalDiscountBase(i)) return;
     byRental[i.rental] = (byRental[i.rental] || 0) + lineTotal(i);
   });
   return Object.keys(byRental).map(rental => {
@@ -10013,8 +10130,7 @@ function pbBuildRows(){
   for(let r = headerRow + 1; r < rows.length; r++){
     const row = rows[r] || [];
     const parsed = byRow ? pbRowParse(row) : null;
-    const name = byRow ? parsed.name
-      : String(map.name > -1 ? (row[map.name] || '') : '').trim();
+    const name = byRow ? parsed.name : pbRowLabel(row, map);
     const price = byRow ? parsed.price
       : (map.price > -1 ? parseNum(row[map.price]) : 0);
     // заголовок раздела сам в прайс не попадает — он задаёт раздел следующим позициям
@@ -10040,8 +10156,16 @@ function pbBuildRows(){
     // иначе позиция тихо уедет не туда и найдётся только при сборке сметы
     if(rawSec && rawSec.toLowerCase() !== sec.toLowerCase()) item.secNote = `раздел «${rawSec}» → ${sec}`;
     if(!name){ item.status = 'skip'; item.note = 'нет названия'; out.push(item); continue; }
-    if(!(price > 0)){ item.status = 'skip'; item.note = 'нет цены'; out.push(item); continue; }
-    if(forEstimate && map.qty > -1 && !(qty > 0)){
+    if(pbIsTotalsRow(name)){ item.status = 'skip'; item.note = 'итог файла — читается отдельно'; out.push(item); continue; }
+    /* Транспорт и услуги рентал пишет одной строкой: только сумма, без цены
+       за смену и количества. Берём сумму как цену при количестве 1 — иначе
+       машина из сметы просто терялась, и итог не сходился с файлом. */
+    if(!(item.price > 0) && item.fileSum > 0){
+      item.price = item.fileSum; item.qty = 1; item.shifts = 1; item.wholeSum = true;
+      item.note = 'строка одной суммой';
+    }
+    if(!(item.price > 0)){ item.status = 'skip'; item.note = 'нет цены'; out.push(item); continue; }
+    if(forEstimate && map.qty > -1 && !(qty > 0) && !item.wholeSum){
       item.status = 'skip'; item.note = 'не заказано'; out.push(item); continue;
     }
     if(seen.has(key(name))){ item.status = 'skip'; item.note = 'повтор в файле'; out.push(item); continue; }
@@ -10107,21 +10231,31 @@ function renderPbPreview(){
     pbImp.scan = pbScanTotals(pbImp.rows);
     const disc = pbImp.scan.discount;
     const tot = pbImp.scan.totals || {};
-    const off = disc ? (disc.pct > 0 ? sum - Math.round(sum * (100 - disc.pct) / 100) : Math.round(disc.sum || 0)) : 0;
+    /* Скидка рентала считается только с железа — свет, грип, электрика.
+       Машина и услуги идут по полной, ровно как в присланной смете: там
+       «Скидка 50%» стоит под строкой «Оборудование итого», а транспорт
+       прибавляется уже после неё. */
+    const gearSum = newRows.filter(r => rentalDiscountBase({sec: r.sec}))
+      .reduce((acc, r) => acc + r.qty * (r.shifts || shifts) * r.price, 0);
+    const restSum = sum - gearSum;
+    const off = disc
+      ? (disc.pct > 0 ? gearSum - Math.round(gearSum * (100 - disc.pct) / 100) : Math.round(disc.sum || 0))
+      : 0;
     const toPay = Math.max(0, sum - off);
-    const expect = tot.afterDiscount || (tot.equipment && off ? tot.equipment - off : 0);
+    // с чем сверяемся: «итого к оплате» точнее всего, иначе — итог по смете плюс то,
+    // что скидка не трогает
+    const expect = tot.grand || (tot.afterDiscount ? tot.afterDiscount + restSum : 0);
     const fits = expect ? Math.abs(expect - toPay) <= Math.max(1, expect * 0.005) : null;
     const discLine = disc
-      ? `<div style="margin-top:.3rem;">В файле <b>${esc(disc.label)}</b> — уйдёт в оплату ренталу:
-           <b>${fmtMoney(sum)} − ${fmtMoney(off)} = ${fmtMoney(toPay)}</b>.
+      ? `<div style="margin-top:.3rem;">В файле <b>${esc(disc.label)}</b> — она идёт с оборудования:
+           <b>${fmtMoney(gearSum)} − ${fmtMoney(off)}${restSum > 0 ? ` + ${fmtMoney(restSum)} (транспорт и прочее — без скидки)` : ''} = ${fmtMoney(toPay)}</b>.
            ${expect ? `<span style="color:${fits ? 'var(--ok)' : 'var(--warn)'}">${
-             fits ? 'Сходится с итогом файла.' : `В файле итог ${fmtMoney(expect)} — расходится на ${fmtMoney(Math.abs(expect - toPay))}.`}</span>` : ''}
-           ${tot.grand && Math.abs(tot.grand - toPay) > 1
-             ? `<br>«Итого к оплате» в файле — ${fmtMoney(tot.grand)}: туда входит ещё что-то помимо оборудования (обычно транспорт), это добавляется отдельной строкой.`
-             : ''}</div>`
-      : '';
+             fits ? 'Сходится с итогом файла.' : `В файле итог ${fmtMoney(expect)} — расходится на ${fmtMoney(Math.abs(expect - toPay))}.`}</span>` : ''}</div>`
+      : (tot.grand && Math.abs(tot.grand - sum) > 1
+          ? `<div style="margin-top:.3rem;">«Итого к оплате» в файле — <b>${fmtMoney(tot.grand)}</b>, у нас выходит <b>${fmtMoney(sum)}</b>: проверь, всё ли взято.</div>`
+          : '');
     document.getElementById('pbPreviewSummary').innerHTML = `
-      <div class="form-hint">${pbImp.known ? `<b>${pbImp.known === 'ez' ? 'EZ-СМЕТА' : 'Твой формуляр'}</b> — столбцы точные, догадок нет. ` : ''}Позиций в смету: <b>${add}</b> · не взято: <b>${skip}</b>${
+      <div class="form-hint">${pbImp.known ? `<b>${pbImp.known === 'ez' ? 'EZ-СМЕТА' : pbImp.known === 'rental' ? 'Смета рентала' : pbImp.known === 'rule' ? 'Правило рентала' : 'Твой формуляр'}</b> — столбцы точные, догадок нет. ` : ''}Позиций в смету: <b>${add}</b> · не взято: <b>${skip}</b>${
         secs ? ` · разделов: <b>${secs}</b>` : ''}.
         Итого за оборудование: <b>${fmtMoney(sum)}</b>${fromFileShifts ? ' — смены взяты из файла' : ` при ${shifts} ${plural(shifts, 'смене', 'сменах', 'сменах')}`}.${
         fileTot > 0 ? ` Итог по файлу: <b style="color:${Math.abs(fileTot - sum) / fileTot > 0.02 ? 'var(--warn)' : 'var(--ok)'}">${fmtMoney(fileTot)}</b>.` : ''}
@@ -10258,9 +10392,11 @@ function pbSetEstRental(v){
    чтобы в «Оплатах» было видно, из чего она сложилась. */
 function syncRentalDebtFromEstimate(p, rental, discount){
   if(discount !== undefined) setRentalDiscountOn(p, rental, discount);
-  const gross = Math.round(allEstimate(p).filter(l => l.rental === rental)
-    .reduce((sum, l) => sum + lineTotal(l), 0));
-  const off = rentalDiscountOff(gross, rentalDiscountOf(p, rental));
+  const mine = allEstimate(p).filter(l => l.rental === rental);
+  const gross = Math.round(mine.reduce((sum, l) => sum + lineTotal(l), 0));
+  // скидка — только с железа этого рентала; машина и услуги идут по полной
+  const base = Math.round(mine.filter(rentalDiscountBase).reduce((sum, l) => sum + lineTotal(l), 0));
+  const off = rentalDiscountOff(base, rentalDiscountOf(p, rental));
   const e = RENTAL_DEBTS.find(r => r.rental === rental && r.projectId === p.id);
   if(e && e.paid) return {kept:true, amount:e.amount, gross:e.gross || e.amount, off};
   if(!e){
@@ -12647,13 +12783,88 @@ const SELF_CHECK_CASES = [
       p.estimate[1].rental = 'Сеченов';        // привязали машину к ренталу
       resyncRentals(p);
       const debt = RENTAL_DEBTS.find(x => x.projectId === '__rd3');
-      // ренталу: (80 000 + 17 000) со скидкой 50% = 48 500; такси не в счёт
+      // ренталу: 80 000 оборудования со скидкой 50% = 40 000, плюс машина
+      // 17 000 без скидки → 57 000. Такси не в счёт: оно моё.
       const v = debt.amount * 10 + (debt.gross === 97000 ? 1 : 0);
       for(let i = RENTAL_DEBTS.length - 1; i >= 0; i--)
         if(RENTAL_DEBTS[i].projectId === '__rd3') RENTAL_DEBTS.splice(i, 1);
       PROJECTS.splice(PROJECTS.indexOf(p), 1);
       return v;
-    }, expect:485001},
+    }, expect:570001},
+  {group:'Сметы', name:'Шапка таблицы находится под реквизитами, а не в первых строках',
+    run:()=>{
+      const saved = pbImp;
+      pbImp = {rows:[
+        ['ИП Сеченов Виталий Андреевич', '', '', '', 'ИНН 771577899514'],
+        ['Смета аренды оборудования', '', '', '', '№ СМ-2026-0409'],
+        ['КЛИЕНТ', '', 'Гена Белых', '', ''],
+        ['№', 'Наименование', 'Кол-во', 'Цена за смену', 'Сумма'],
+        ['1', 'Прибор', '2', '9000', '18000'],
+      ], headerRow:0, map:{}};
+      const row = pbGuessHeaderRow();
+      pbImp = saved;
+      return row;
+    }, expect:3},
+  {group:'Сметы', name:'Смета рентала узнаётся целиком: столбцы и смены из документа',
+    run:()=>{
+      const kf = pbDetectKnownFormat([
+        ['ИП Сеченов', '', '', '', 'ИНН 1'],
+        ['Смета аренды оборудования', '', '', '', 'Rental Estimate'],
+        ['СМЕН В ПЕРИОДЕ', '', '2 (по 24 ч)', '', ''],
+        ['ПРОЕКТ', '', 'Эльман - Сниппеты', '', ''],
+        ['№', 'Наименование', 'Кол-во', 'Цена за смену', 'Сумма'],
+      ]);
+      if(!kf || kf.kind !== 'rental') return 0;
+      return kf.headerRow * 1000 + kf.map.name * 100 + kf.map.price * 10 + (kf.meta.shifts || 0);
+    }, expect:4132},
+  {group:'Сметы', name:'Транспорт одной суммой берётся позицией, итоги файла — нет',
+    run:()=>{
+      const saved = pbImp;
+      pbImp = {rows:[
+        ['№', 'Наименование', 'Кол-во', 'Цена за смену', 'Сумма'],
+        ['1', 'Прибор', '1', '9000', '9000'],
+        ['ТРАНСПОРТ', '', '', '', ''],
+        ['Ford — смена 12 ч', '', '', '', '12000'],
+        ['Оборудование итого', '', '', '', '9000'],
+        ['Скидка 50%', '', '', '', '-4500'],
+        ['ИТОГО К ОПЛАТЕ', '', '', '', '16500'],
+      ], headerRow:0, map:{name:1, price:3, qty:2, sum:4, sec:-1, unit:-1, shifts:-1},
+        target:'estimate', shifts:1, sectionRows:true, mode:'cols'};
+      const rows = pbBuildRows();
+      pbImp = saved;
+      const took = rows.filter(r => r.status === 'new');
+      const car = took.find(r => /ford/i.test(r.name));
+      const totals = rows.filter(r => r.note === 'итог файла — читается отдельно').length;
+      return took.length * 10000 + (car ? car.price : 0) + totals;
+    }, expect:32003},
+  {group:'Сметы', name:'Скидка рентала не трогает транспорт, людей и прочее',
+    run:()=>{
+      const p = {id:'__db', name:'__db', dates:['2026-01-01'], sum:0, paidAmount:0,
+        rentalDiscounts:{'Р':{pct:50, sum:0}},
+        estimate:[
+          {sec:'Свет', name:'Прибор', qty:1, days:1, price:60000, client:true, rental:'Р'},
+          {sec:'Электрика', name:'Кабель', qty:1, days:1, price:20000, client:true, rental:'Р'},
+          {sec:'Логистика', name:'Машина', qty:1, days:1, price:12000, client:true, rental:'Р'},
+          {sec:'Услуги', name:'Представитель', qty:1, days:1, price:5000, client:true, rental:'Р'}],
+        files:[], units:[], notes:[], payments:[]};
+      PROJECTS.push(p);
+      resyncRentals(p);
+      const debt = RENTAL_DEBTS.find(x => x.projectId === '__db');
+      // скидка с 80 000 железа = 40 000; машина и услуги по полной
+      const v = debt.amount * 10 + (estPayable(p, p.estimate).total === 57000 ? 1 : 0);
+      for(let i = RENTAL_DEBTS.length - 1; i >= 0; i--)
+        if(RENTAL_DEBTS[i].projectId === '__db') RENTAL_DEBTS.splice(i, 1);
+      PROJECTS.splice(PROJECTS.indexOf(p), 1);
+      return v;
+    }, expect:570001},
+  {group:'Сметы', name:'Электрика — свой раздел формуляра и входит в оборудование',
+    run:()=>{
+      const t = estPayable({}, [
+        {sec:'Свет', qty:1, days:1, price:10000},
+        {sec:'Электрика', qty:1, days:1, price:5000},
+        {sec:'Логистика', qty:1, days:1, price:3000}]);
+      return (estFormGroup('Электрика') === 'ЭЛЕКТРИКА' ? 100000 : 0) + t.gear * 10 + (t.elec === 5000 ? 1 : 0);
+    }, expect:250001},
   {group:'Сметы', name:'Скидка рентала читается из файла: «Скидка 50%» → 50',
     run:()=>{
       const scan = pbScanTotals([
