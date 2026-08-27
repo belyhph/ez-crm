@@ -87,6 +87,8 @@
        что реально трудно нажать пальцем. */
     .btn.tiny, .seg.sm button, .db-del, .proof-btn{
       min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
+    /* строка прайса — мишень для пальца: тап по ней добавляет позицию */
+    .efp-pick{min-height:40px;}
     .seg.sm button{padding-left:.7rem;padding-right:.7rem;}
     /* сегменты шапки календаря не раздуваем: там соразмерность важнее мишени */
     .cal-toolbar .seg.sm button{min-height:25px;padding-left:.37rem;padding-right:.37rem;}
@@ -618,6 +620,12 @@
     border-radius:7px;padding:.3rem .4rem;font-size:.78rem;font-family:var(--font-mono);text-align:right;outline:none;}
   .est-edit-name:focus,.est-edit-num:focus{border-color:var(--accent);}
   .efp-custom{background:var(--bg-sunk);border-radius:8px;}
+  /* Строка прайса — мишень для пальца: тап добавляет штуку, выбранная подсвечена */
+  .efp-pick{cursor:pointer;border-radius:8px;transition:background .12s var(--ease);}
+  .efp-pick:hover{background:var(--bg-sunk);}
+  .efp-pick.on{background:var(--accent-soft);}
+  .efp-plus{color:var(--ink-muted);font-size:1rem;line-height:1;padding:0 .35rem;flex:none;}
+  .efp-pick:hover .efp-plus{color:var(--accent-ink);}
   .esr-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
     background:none;color:var(--ink);font-family:inherit;padding:.6rem .75rem;}
   .esr-head:hover .esr-chev{color:var(--ink);}
@@ -2382,7 +2390,8 @@
         <input type="number" min="1" step="1" id="efpDays" oninput="efpSetDays(this.value)"></div>
     </div>
     <div class="form-hint" id="efpTermsNote" style="margin-top:.4rem;"></div>
-    <input class="pb-search" id="efpSearch" placeholder="Найти позицию…" oninput="renderEfpList()" style="margin-top:.6rem;">
+    <input class="pb-search" id="efpSearch" placeholder="Начни вводить название…" oninput="renderEfpList()" style="margin-top:.6rem;">
+    <div class="form-hint" style="margin-top:.35rem;">Нажми на позицию — добавится одна штука; ещё нажатие — ещё одна.</div>
     <div id="efpList" class="pb-preview" style="max-height:300px;margin-top:.5rem;"></div>
     <div class="calc-result" id="efpTotal" style="display:none;"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem;">
@@ -10685,6 +10694,19 @@ function efpSetQty(id, v){
   if(n > 0) efp.qty[id] = n; else delete efp.qty[id];
   renderEfpTotal();   // список не трогаем: иначе поле, в котором печатают, пересоздастся
 }
+/* Тап по строке добавляет позицию: первый — одна штука, следующий — ещё одна.
+   Раньше приходилось лезть в поле количества и менять ноль на единицу —
+   ради одной позиции это три движения вместо одного. */
+function efpBump(id){
+  efp.qty[id] = (Number(efp.qty[id]) || 0) + 1;
+  renderEfpList();
+  renderEfpTotal();
+}
+function efpDrop(id){
+  delete efp.qty[id];
+  renderEfpList();
+  renderEfpTotal();
+}
 function renderEfpList(){
   const q = (document.getElementById('efpSearch').value || '').trim().toLowerCase();
   let items = rentalPrices(efp.rental);
@@ -10713,13 +10735,17 @@ function renderEfpList(){
   }
   items.sort((a, b) => (EST_SECTIONS.indexOf(a.sec) - EST_SECTIONS.indexOf(b.sec)) ||
     (a.name || '').localeCompare(b.name || '', 'ru'));
-  box.innerHTML = picked + customRow + items.map(i => `
-    <div class="pb-prev-row">
+  box.innerHTML = picked + customRow + items.map(i => {
+    const q = Number(efp.qty[i.id]) || 0;
+    return `<div class="pb-prev-row efp-pick${q ? ' on' : ''}" onclick="efpBump('${i.id}')" title="Нажми — добавится одна штука">
       <span class="pb-prev-name">${esc(i.name)}</span>
       <span class="pb-prev-price">${fmtMoney(i.price)}${i.unit && i.unit !== 'смена' ? ' / ' + esc(i.unit) : ''}</span>
-      <input class="efp-qty" type="number" min="0" step="1" placeholder="0"
-             value="${efp.qty[i.id] || ''}" oninput="efpSetQty('${i.id}',this.value)">
-    </div>`).join('');
+      ${q ? `<input class="efp-qty" type="number" min="1" step="1" value="${q}"
+               onclick="event.stopPropagation()" oninput="efpSetQty('${i.id}',this.value)">
+             <button class="db-del" title="Убрать" onclick="event.stopPropagation();efpDrop('${i.id}')">✕</button>`
+          : '<span class="efp-plus">+</span>'}
+    </div>`;
+  }).join('');
 }
 function renderEfpTotal(){
   const shifts = payShifts(efp.rental, efp.days);
