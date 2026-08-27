@@ -607,7 +607,17 @@
     flex-wrap:wrap;margin:.9rem 0 .8rem;}
 
   .est-sum{display:flex;flex-direction:column;gap:.4rem;}
-  .est-sum-row{border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);overflow:hidden;}
+  .est-sum-row{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);overflow:hidden;}
+  .est-sum-row.editing{border-color:var(--accent);}
+  /* Кнопки раздела живут внутри раскрытой части: в шапке им тесно — на телефоне
+     они наезжали на сумму. */
+  .esr-tools{display:flex;gap:.4rem;flex-wrap:wrap;padding:.45rem .5rem .1rem;}
+  .est-edit-name{width:100%;min-width:120px;border:1px solid var(--line);background:var(--bg-raised);
+    color:var(--ink);border-radius:7px;padding:.3rem .4rem;font-size:.78rem;font-family:inherit;outline:none;}
+  .est-edit-num{width:74px;border:1px solid var(--line);background:var(--bg-raised);color:var(--ink);
+    border-radius:7px;padding:.3rem .4rem;font-size:.78rem;font-family:var(--font-mono);text-align:right;outline:none;}
+  .est-edit-name:focus,.est-edit-num:focus{border-color:var(--accent);}
+  .efp-custom{background:var(--bg-sunk);border-radius:8px;}
   .esr-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
     background:none;color:var(--ink);font-family:inherit;padding:.6rem .75rem;}
   .esr-head:hover .esr-chev{color:var(--ink);}
@@ -6417,6 +6427,7 @@ function renderEstimate(p){
     <div class="form-slot" style="margin-top:0;">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
         <button class="btn" onclick="openEstImport()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>Загрузить файл рентала</button>
+        <button class="btn ghost" onclick="openEstFromPrice()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 5v14M5 12h14"/></svg>Добавить позиции</button>
         <button class="btn ghost" onclick="genEstimate('${p.id}','primary')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>Сформировать первичную смету</button>
       </div>
     </div>`;
@@ -6477,8 +6488,28 @@ function renderEstimate(p){
      обычной строкой, и приложение не знает, чья она. Тап по строке — выбор рентала,
      после него позиция попадает в его оплату. Такси не трогаем: его платят мне,
      а я раздаю ребятам, — у него своя дорога. */
-  function groupDetailHTML(items){
+  function groupDetailHTML(items, editing, key){
     const day = activeDay(p);
+    if(editing){
+      const warn = key === 'crew'
+        ? '<div class="form-hint" style="padding:.4rem .5rem;">Строки персонала перезапишутся при следующем расчёте команды — правь их там, где считаются смены.</div>'
+        : '';
+      return warn + `<div class="twrap"><table>
+        <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th class="r">Смен</th><th class="r">Цена</th><th class="r">Сумма</th><th></th></tr></thead>
+        <tbody>${items.map(i => {
+          const idx = day.estimate.indexOf(i);
+          if(idx < 0) return '';
+          return `<tr>
+            <td><input class="est-edit-name" value="${esc(i.name)}" onchange="setEstLineField('${p.id}',${idx},'name',this.value)"></td>
+            <td class="r"><input class="est-edit-num" type="number" min="0" step="1" value="${i.qty}" onchange="setEstLineField('${p.id}',${idx},'qty',this.value)"></td>
+            <td class="r"><input class="est-edit-num" type="number" min="0" step="1" value="${shownShifts(i)}" onchange="setEstLineField('${p.id}',${idx},'days',this.value)"></td>
+            <td class="r"><input class="est-edit-num" type="number" min="0" step="100" value="${i.price}" onchange="setEstLineField('${p.id}',${idx},'price',this.value)"></td>
+            <td class="r num">${fmtMoney(lineTotal(i))}</td>
+            <td class="r"><button class="db-del" title="Убрать позицию" onclick="delEstLine('${p.id}',${idx})">✕</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
+    }
     return `<div class="twrap"><table>
       <thead><tr><th>Наименование</th><th class="r">Кол-во × смен</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
       <tbody>${items.map(i=>{
@@ -6496,16 +6527,23 @@ function renderEstimate(p){
     </table></div>`;
   }
   function groupRowHTML(b){
-    const open = estOpenGroups.has(b.key);
+    const editing = estEditGroups.has(b.key);
+    const open = estOpenGroups.has(b.key) || editing;
     const cnt = b.items.length;
     const sub = [b.sub, `${cnt} ${plural(cnt, 'позиция', 'позиции', 'позиций')}`].filter(Boolean).join(' · ');
-    return `<div class="est-sum-row${open ? ' open' : ''}" data-key="${b.key}">
+    return `<div class="est-sum-row${open ? ' open' : ''}${editing ? ' editing' : ''}" data-key="${b.key}">
         <button class="esr-head" onclick="toggleEstGroup(this)">
           <span class="esr-name">${esc(b.name)}<span class="esr-sub">${esc(sub)}</span></span>
           <span class="esr-amt mono">${fmtMoney(b.sum)}</span>
           <span class="esr-chev">›</span>
         </button>
-        <div class="esr-detail">${groupDetailHTML(b.items)}</div>
+        <div class="esr-detail">
+          <div class="esr-tools">
+            <button class="btn ghost tiny" onclick="toggleEstGroupEdit(this,'${b.key}')">${editing ? '✓ Готово' : 'Правка'}</button>
+            <button class="btn ghost tiny" onclick="openEstFromPrice()">+ Позиции</button>
+          </div>
+          ${groupDetailHTML(b.items, editing, b.key)}
+        </div>
       </div>`;
   }
   function draw(){
@@ -7073,6 +7111,61 @@ function estSummaryBuckets(items){
    персонала — не должна схлопывать то, что открыто. Тап меняет только класс,
    разметку не пересобираем. */
 let estOpenGroups = new Set();
+/* Раздел можно открыть на правку: цена и количество становятся полями, у строки
+   появляется крестик. Нужно для мелких доводок прямо в смете — накрутить цену,
+   убрать лишнее, — чтобы ради двух правок не перезаливать файл рентала целиком.
+   Любая правка тут же пересобирает оплаты ренталам и сумму проекта. */
+let estEditGroups = new Set();
+function toggleEstGroupEdit(btn, key){
+  if(estEditGroups.has(key)) estEditGroups.delete(key); else {
+    estEditGroups.add(key);
+    estOpenGroups.add(key);      // правим — значит раздел раскрыт
+  }
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(p) renderEstimate(p);
+}
+function estLineAt(pid, idx){
+  const p = PROJECTS.find(x => x.id === pid);
+  if(!p) return null;
+  const day = activeDay(p);
+  const line = (day.estimate || [])[idx];
+  return line ? {p, day, line} : null;
+}
+function setEstLineField(pid, idx, field, value){
+  const ref = estLineAt(pid, idx);
+  if(!ref) return;
+  const num = field === 'name' ? value : parseNum(value);
+  if(field === 'name'){
+    const name = String(value || '').trim();
+    if(name) ref.line.name = name;
+  } else if(field === 'price'){
+    ref.line.price = Math.max(0, num || 0);
+  } else if(field === 'qty'){
+    ref.line.qty = Math.max(0, num || 0);
+  } else if(field === 'days'){
+    // правим оплачиваемые смены: если у строки был снимок payDays — его же и меняем
+    const v = Math.max(0, num || 0);
+    if(ref.line.payDays != null && ref.line.payDays !== '') ref.line.payDays = v; else ref.line.days = v;
+  }
+  ref.line.byHand = true;        // тронуто руками — видно в смете
+  resyncRentals(ref.p);
+  syncEstimateToFiles(ref.p);
+  renderEstimate(ref.p); renderInfo(ref.p); renderPayTab(ref.p);
+  refreshAll();
+}
+function delEstLine(pid, idx){
+  const ref = estLineAt(pid, idx);
+  if(!ref) return;
+  const {p, day, line} = ref;
+  askConfirm({title:'Убрать позицию?', text:`«${line.name}» — ${fmtMoney(lineTotal(line))}.`,
+    okText:'Убрать', cancelText:'Оставить', danger:true}, () => {
+    day.estimate.splice(idx, 1);
+    resyncRentals(p);
+    syncEstimateToFiles(p);
+    renderEstimate(p); renderInfo(p); renderPayTab(p);
+    refreshAll();
+  });
+}
 function toggleEstGroup(btn){
   const row = btn.closest('.est-sum-row');
   if(!row) return;
@@ -10540,9 +10633,12 @@ function openEstFromPrice(){
   }
   // по умолчанию берём столько дней, сколько в проекте съёмочных
   const projDays = Math.max(1, projectDates(p).length);
-  efp = {rental:names[0], days:projDays, qty:{}};
+  efp = {rental:names[0], days:projDays, qty:{}, custom:[]};
   const sel = document.getElementById('efpRental');
-  sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}${rentalPrices(n).length ? '' : ' — прайс пуст'}</option>`).join('');
+  /* «Моя позиция» — то, за что ренталу платить не надо: своя техника, накрутка,
+     услуга. Такие строки идут в смету без привязки, и долг по ним не заводится. */
+  sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}${rentalPrices(n).length ? '' : ' — прайс пуст'}</option>`).join('')
+    + '<option value="">Моя позиция — без рентала</option>';
   sel.value = efp.rental;
   document.getElementById('efpDays').value = efp.days;
   document.getElementById('efpSearch').value = '';
@@ -10554,6 +10650,29 @@ function closeEstFromPrice(){ document.getElementById('estFromPriceModal').class
 function efpChangeRental(v){
   efp.rental = v;
   efp.qty = {};        // количества относятся к позициям прежнего рентала
+  renderEfpList();
+  renderEfpTotal();
+}
+/* Позиция, которой нет в прайсе: вписывается руками прямо здесь — цена и
+   количество. Тем же путём делаются накрутки и разовые услуги. */
+function efpAddCustom(){
+  const nameEl = document.getElementById('efpSearch');
+  const priceEl = document.getElementById('efpCustomPrice');
+  const qtyEl = document.getElementById('efpCustomQty');
+  const name = (nameEl.value || '').trim();
+  const price = parseNum(priceEl && priceEl.value);
+  const qty = Number(qtyEl && qtyEl.value) || 1;
+  if(!name){ askNotice('Впиши название позиции.', 'Нужно название'); return; }
+  if(!(price > 0)){ askNotice('Впиши цену за смену.', 'Нужна цена'); return; }
+  efp.custom.push({name, price, qty});
+  nameEl.value = '';
+  if(priceEl) priceEl.value = '';
+  if(qtyEl) qtyEl.value = '';
+  renderEfpList();
+  renderEfpTotal();
+}
+function efpDropCustom(i){
+  efp.custom.splice(i, 1);
   renderEfpList();
   renderEfpTotal();
 }
@@ -10571,14 +10690,30 @@ function renderEfpList(){
   let items = rentalPrices(efp.rental);
   if(q) items = items.filter(i => (i.name || '').toLowerCase().includes(q));
   const box = document.getElementById('efpList');
+  /* Строка «вписать свою» всегда под рукой: печатаешь название — приложение
+     подсказывает из прайса, а если такого нет, тут же добавляешь с ценой. */
+  const customRow = `
+    <div class="pb-prev-row efp-custom">
+      <span class="pb-prev-name">${q ? `Вписать свою: <b>${esc(q)}</b>` : 'Своя позиция — впиши название выше'}</span>
+      <input class="efp-qty" id="efpCustomPrice" type="number" min="0" step="50" placeholder="цена">
+      <input class="efp-qty" id="efpCustomQty" type="number" min="1" step="1" placeholder="кол-во" value="1">
+      <button class="btn ghost tiny" onclick="efpAddCustom()">+</button>
+    </div>`;
+  const picked = (efp.custom || []).map((c, i) => `
+    <div class="pb-prev-row">
+      <span class="pb-prev-name">${esc(c.name)} <span class="pill pill-muted">своя</span></span>
+      <span class="pb-prev-price">${c.qty} × ${fmtMoney(c.price)}</span>
+      <button class="db-del" title="Убрать" onclick="efpDropCustom(${i})">✕</button>
+    </div>`).join('');
   if(!items.length){
-    box.innerHTML = q ? '<div class="empty-hint">Ничего не нашлось.</div>'
-      : '<div class="empty-hint">У этого рентала пустой прайс. Открой его карточку и загрузи прайс.</div>';
+    box.innerHTML = picked + customRow + (q
+      ? '<div class="empty-hint">В прайсе такого нет — можно вписать своей строкой выше.</div>'
+      : '<div class="empty-hint">У этого рентала пустой прайс. Открой его карточку и загрузи прайс — или вписывай позиции руками.</div>');
     return;
   }
   items.sort((a, b) => (EST_SECTIONS.indexOf(a.sec) - EST_SECTIONS.indexOf(b.sec)) ||
     (a.name || '').localeCompare(b.name || '', 'ru'));
-  box.innerHTML = items.map(i => `
+  box.innerHTML = picked + customRow + items.map(i => `
     <div class="pb-prev-row">
       <span class="pb-prev-name">${esc(i.name)}</span>
       <span class="pb-prev-price">${fmtMoney(i.price)}${i.unit && i.unit !== 'смена' ? ' / ' + esc(i.unit) : ''}</span>
@@ -10589,24 +10724,32 @@ function renderEfpList(){
 function renderEfpTotal(){
   const shifts = payShifts(efp.rental, efp.days);
   const chosen = Object.keys(efp.qty).map(id => ({it:priceItem(id), qty:efp.qty[id]})).filter(x => x.it);
-  const sum = chosen.reduce((s, x) => s + x.qty * shifts * x.it.price, 0);
+  const custom = efp.custom || [];
+  const sum = chosen.reduce((s, x) => s + x.qty * shifts * x.it.price, 0)
+    + custom.reduce((s, c) => s + c.qty * shifts * c.price, 0);
   const terms = ((RENTAL_TERMS[efp.rental] || {}).steps || []).length;
+  if(!efp.rental){
+    document.getElementById('efpTermsNote').innerHTML =
+      'Позиции без рентала — твои: они идут в смету, но ни в чью оплату не попадают.';
+  } else
   document.getElementById('efpTermsNote').innerHTML = terms
     ? `По условиям «${esc(efp.rental)}» аренда на ${efp.days} ${plural(efp.days, 'день', 'дня', 'дней')} считается как <b>${shifts}</b> ${plural(shifts, 'смена', 'смены', 'смен')}.`
     : `Условия по дням у «${esc(efp.rental)}» не заданы — каждый день считается полной сменой. Задать можно в карточке рентала.`;
+  const count = chosen.length + custom.length;
   const box = document.getElementById('efpTotal');
-  box.style.display = chosen.length ? 'block' : 'none';
-  box.innerHTML = chosen.length
-    ? `Выбрано позиций: <b>${chosen.length}</b> · ${shifts} ${plural(shifts, 'смена', 'смены', 'смен')} · итого <b>${fmtMoney(sum)}</b>`
+  box.style.display = count ? 'block' : 'none';
+  box.innerHTML = count
+    ? `Выбрано позиций: <b>${count}</b>${custom.length ? ` (своих: ${custom.length})` : ''} · ${shifts} ${plural(shifts, 'смена', 'смены', 'смен')} · итого <b>${fmtMoney(sum)}</b>`
     : '';
-  document.getElementById('efpAddBtn').textContent = chosen.length
-    ? `Добавить в смету — ${chosen.length} ${plural(chosen.length, 'позиция', 'позиции', 'позиций')}` : 'Добавить в смету';
+  document.getElementById('efpAddBtn').textContent = count
+    ? `Добавить в смету — ${count} ${plural(count, 'позиция', 'позиции', 'позиций')}` : 'Добавить в смету';
 }
 function efpAdd(){
   const p = PROJECTS.find(x => x.id === currentProjectId);
   if(!p) return;
   const chosen = Object.keys(efp.qty).map(id => ({it:priceItem(id), qty:efp.qty[id]})).filter(x => x.it);
-  if(!chosen.length){ askNotice('Проставь количество хотя бы у одной позиции.', 'Нечего добавлять'); return; }
+  const custom = efp.custom || [];
+  if(!chosen.length && !custom.length){ askNotice('Проставь количество хотя бы у одной позиции или впиши свою.', 'Нечего добавлять'); return; }
   const shifts = payShifts(efp.rental, efp.days);
   const day = activeDay(p);
   chosen.forEach(x => {
@@ -10618,15 +10761,27 @@ function efpAdd(){
       payDays:shifts,       // оплачиваемые смены — по ним и считается сумма
       price:x.it.price,     // снимок цены: обновление прайса эту смету не тронет
       client:true,
-      rental:efp.rental,
+      // без рентала — это моя позиция: долг по ней не заводится
+      ...(efp.rental ? {rental:efp.rental} : {}),
       priceId:x.it.id,
     });
   });
-  refreshProjectSum(p);
+  custom.forEach(c => {
+    day.estimate.push({
+      sec:'Оборудование', name:c.name, qty:c.qty,
+      days:efp.days, payDays:shifts, price:c.price, client:true,
+      ...(efp.rental ? {rental:efp.rental} : {}),
+      byHand:true,          // вписана руками — в прайсе такой нет
+    });
+  });
+  resyncRentals(p);        // оплата ренталу пересобирается вместе со сметой
   syncEstimateToFiles(p);
   closeEstFromPrice();
-  renderEstimate(p); renderInfo(p); renderFiles(p);
+  renderEstimate(p); renderInfo(p); renderFiles(p); renderPayTab(p);
   refreshAll();
+  const total = chosen.length + custom.length;
+  askNotice(`Добавлено позиций: ${total}${efp.rental ? `, оплата ренталу «${efp.rental}» пересчитана` : ', без привязки к ренталу'}.`,
+    'Позиции в смете');
 }
 
 /* ============= Team ============= */
