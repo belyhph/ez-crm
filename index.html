@@ -85,7 +85,7 @@
        на дэшборде раздувались почти вдвое. Кружок-галочка внутри чипа тем более
        не должен тянуть строку: он маленький по смыслу. Целимся только в то,
        что реально трудно нажать пальцем. */
-    .btn.tiny, .seg.sm button, .db-del, .proof-btn{
+    .btn.tiny, .seg.sm button, .db-del, .proof-btn, .efp-step{
       min-height:32px;display:inline-flex;align-items:center;justify-content:center;}
     /* строка прайса — мишень для пальца: тап по ней добавляет позицию */
     .efp-pick{min-height:40px;}
@@ -626,6 +626,43 @@
   .efp-pick.on{background:var(--accent-soft);}
   .efp-plus{color:var(--ink-muted);font-size:1rem;line-height:1;padding:0 .35rem;flex:none;}
   .efp-pick:hover .efp-plus{color:var(--accent-ink);}
+  /* Набранное — общий список того, что уже отобрано в окне. Живёт отдельно от
+     прайса: поиск его не прячет, и видно всё сразу, даже позиции разных ренталов. */
+  /* Пока ничего не набрано, прайс занимает всё окно. Как только пошёл набор,
+     список ужимается — иначе набранное уезжает вниз, за край экрана телефона.
+     А само окно делит высоту между прайсом и набранным: оба со своей прокруткой,
+     кнопки внизу. Так на маленьком экране ничто не выдавливается за край. */
+  #estFromPriceModal .modal-card{display:flex;flex-direction:column;}
+  #estFromPriceModal .modal-card > *{flex:none;}
+  #estFromPriceModal #efpList{flex:1 1 auto;min-height:96px;max-height:min(260px, 32vh);}
+  #estFromPriceModal #efpList.squeeze{max-height:min(170px, 22vh);}
+  #estFromPriceModal .efp-cart{display:flex;flex-direction:column;flex:0 1 auto;min-height:0;}
+  #estFromPriceModal .efp-cart-body{flex:1 1 auto;min-height:0;}
+  .efp-cart{border:1px solid var(--line);border-radius:12px;background:var(--bg-sunk);
+    margin-top:.6rem;padding:.35rem .55rem .45rem;}
+  .efp-cart-head{display:flex;align-items:baseline;gap:.5rem;font-size:.74rem;
+    color:var(--ink-muted);padding:.15rem 0 .3rem;}
+  .efp-cart-head b{color:var(--ink);}
+  .efp-cart-body{max-height:min(172px, 22vh);overflow-y:auto;position:relative;}
+  .efp-cart-grp{font-size:.64rem;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--ink-muted);padding:.35rem 0 .1rem;}
+  .efp-cart-row{display:flex;align-items:center;gap:.35rem;padding:.22rem 0;
+    border-bottom:1px solid var(--line);font-size:.8rem;}
+  .efp-cart-row:last-child{border-bottom:none;}
+  .efp-cart-row.hit{background:var(--accent-soft);border-radius:8px;}
+  .efp-cart-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .efp-cart-sum{font-family:var(--font-mono);font-size:.74rem;flex:none;color:var(--ink-muted);}
+  .efp-cart-qty{font-family:var(--font-mono);font-size:.78rem;min-width:2ch;text-align:center;flex:none;}
+  .efp-step{width:24px;height:24px;flex:none;border:1px solid var(--line);border-radius:7px;
+    background:var(--bg-raised);color:var(--ink);font-size:.85rem;line-height:1;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;font-family:inherit;padding:0;}
+  .efp-step:hover{border-color:var(--accent);color:var(--accent-ink);}
+  /* Кнопки окна прилипают к низу: набранное растёт, а «Добавить в смету» остаётся
+     на виду — на телефоне за ней приходилось лезть прокруткой. Отрицательные поля
+     растягивают полосу на всю ширину карточки, чтобы под ней ничего не просвечивало. */
+  .efp-actions{position:sticky;bottom:0;z-index:2;background:var(--bg-raised);
+    margin:.5rem -1.3rem -1.2rem;padding:.6rem 1.3rem 1.2rem;
+    display:flex;gap:.5rem;flex-wrap:wrap;}
   .esr-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
     background:none;color:var(--ink);font-family:inherit;padding:.6rem .75rem;}
   .esr-head:hover .esr-chev{color:var(--ink);}
@@ -2391,10 +2428,10 @@
     </div>
     <div class="form-hint" id="efpTermsNote" style="margin-top:.4rem;"></div>
     <input class="pb-search" id="efpSearch" placeholder="Начни вводить название…" oninput="renderEfpList()" style="margin-top:.6rem;">
-    <div class="form-hint" style="margin-top:.35rem;">Нажми на позицию — добавится одна штука; ещё нажатие — ещё одна.</div>
-    <div id="efpList" class="pb-preview" style="max-height:300px;margin-top:.5rem;"></div>
-    <div class="calc-result" id="efpTotal" style="display:none;"></div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem;">
+    <div class="form-hint" id="efpHint" style="margin-top:.35rem;">Нажми на позицию — добавится одна штука; ещё нажатие — ещё одна. Что набрал — видно ниже.</div>
+    <div id="efpList" class="pb-preview" style="margin-top:.5rem;"></div>
+    <div id="efpCart" class="efp-cart" style="display:none;"></div>
+    <div class="efp-actions">
       <button class="btn" id="efpAddBtn" onclick="efpAdd()">Добавить в смету</button>
       <button class="btn ghost" onclick="closeEstFromPrice()">Отмена</button>
     </div>
@@ -10630,7 +10667,7 @@ function factGenerate(){
    в смету снимком. Здесь ничего не вычисляется «на глазок»: количество
    ставишь ты, дни — тоже, цена берётся из проверенного прайса,
    а сколько смен считать за эти дни — из условий рентала. */
-let efp = {rental:'', days:1, qty:{}};
+let efp = {rental:'', days:1, qty:{}, custom:[], last:null};
 
 function openEstFromPrice(){
   const p = PROJECTS.find(x => x.id === currentProjectId);
@@ -10642,7 +10679,7 @@ function openEstFromPrice(){
   }
   // по умолчанию берём столько дней, сколько в проекте съёмочных
   const projDays = Math.max(1, projectDates(p).length);
-  efp = {rental:names[0], days:projDays, qty:{}, custom:[]};
+  efp = {rental:names[0], days:projDays, qty:{}, custom:[], last:null};
   const sel = document.getElementById('efpRental');
   /* «Моя позиция» — то, за что ренталу платить не надо: своя техника, накрутка,
      услуга. Такие строки идут в смету без привязки, и долг по ним не заводится. */
@@ -10656,9 +10693,11 @@ function openEstFromPrice(){
   document.getElementById('estFromPriceModal').classList.add('show');
 }
 function closeEstFromPrice(){ document.getElementById('estFromPriceModal').classList.remove('show'); }
+/* Смена рентала переключает только прайс под поиском. Набранное остаётся:
+   каждая позиция помнит своего рентала, поэтому смету можно собрать из нескольких
+   ренталов за один заход — раньше выбор при переключении молча обнулялся. */
 function efpChangeRental(v){
   efp.rental = v;
-  efp.qty = {};        // количества относятся к позициям прежнего рентала
   renderEfpList();
   renderEfpTotal();
 }
@@ -10673,7 +10712,9 @@ function efpAddCustom(){
   const qty = Number(qtyEl && qtyEl.value) || 1;
   if(!name){ askNotice('Впиши название позиции.', 'Нужно название'); return; }
   if(!(price > 0)){ askNotice('Впиши цену за смену.', 'Нужна цена'); return; }
-  efp.custom.push({name, price, qty});
+  // рентал запоминается сейчас: потом наверху можно переключиться, эта строка не поедет
+  efp.custom.push({name, price, qty, rental:efp.rental});
+  efp.last = 'custom:' + (efp.custom.length - 1);
   nameEl.value = '';
   if(priceEl) priceEl.value = '';
   if(qtyEl) qtyEl.value = '';
@@ -10694,11 +10735,19 @@ function efpSetQty(id, v){
   if(n > 0) efp.qty[id] = n; else delete efp.qty[id];
   renderEfpTotal();   // список не трогаем: иначе поле, в котором печатают, пересоздастся
 }
+/* Шаг количества отдельно от рисования: ноль-дельта — убрать строку целиком.
+   Вынесено, чтобы поведение проверялось самопроверкой, а не только глазами. */
+function efpBumpQty(map, id, delta){
+  const n = delta === 0 ? 0 : (Number(map[id]) || 0) + delta;
+  if(n > 0) map[id] = n; else delete map[id];
+  return n > 0 ? n : 0;
+}
 /* Тап по строке добавляет позицию: первый — одна штука, следующий — ещё одна.
    Раньше приходилось лезть в поле количества и менять ноль на единицу —
    ради одной позиции это три движения вместо одного. */
 function efpBump(id){
-  efp.qty[id] = (Number(efp.qty[id]) || 0) + 1;
+  efpBumpQty(efp.qty, id, 1);
+  efp.last = 'p:' + id;
   renderEfpList();
   renderEfpTotal();
 }
@@ -10706,6 +10755,45 @@ function efpDrop(id){
   delete efp.qty[id];
   renderEfpList();
   renderEfpTotal();
+}
+/* Плюс, минус и крестик в наборе. Ключ помнит, откуда строка: из прайса или своя. */
+function efpStep(key, delta){
+  if(String(key).startsWith('custom:')){
+    const i = Number(String(key).slice(7));
+    const c = (efp.custom || [])[i];
+    if(!c) return;
+    const n = delta === 0 ? 0 : (Number(c.qty) || 0) + delta;
+    if(n > 0){ c.qty = n; efp.last = key; }
+    else efp.custom.splice(i, 1);
+  } else {
+    const id = String(key).slice(2);
+    const n = efpBumpQty(efp.qty, id, delta);
+    efp.last = n ? key : null;
+  }
+  renderEfpList();
+  renderEfpTotal();
+}
+/* Что уже набрано — позиции прайса и вписанные руками, одним списком.
+   Смены считаются по условиям того рентала, чья это позиция: у разных ренталов
+   «3 дня = 2 смены» выглядит по-разному, и складывать их по одному правилу нельзя. */
+function efpLines(){
+  const out = [];
+  Object.keys(efp.qty).forEach(id => {
+    const it = priceItem(id);
+    const qty = Number(efp.qty[id]) || 0;
+    if(!it || !(qty > 0)) return;
+    const shifts = payShifts(it.rental, efp.days);
+    out.push({key:'p:' + id, id, name:it.name, sec:it.sec, qty, price:it.price,
+      rental:it.rental || '', shifts, sum:qty * shifts * it.price});
+  });
+  (efp.custom || []).forEach((c, i) => {
+    const qty = Number(c.qty) || 0;
+    if(!(qty > 0)) return;
+    const shifts = payShifts(c.rental, efp.days);
+    out.push({key:'custom:' + i, name:c.name, qty, price:c.price, custom:true,
+      rental:c.rental || '', shifts, sum:qty * shifts * c.price});
+  });
+  return out;
 }
 function renderEfpList(){
   const q = (document.getElementById('efpSearch').value || '').trim().toLowerCase();
@@ -10721,21 +10809,15 @@ function renderEfpList(){
       <input class="efp-qty" id="efpCustomQty" type="number" min="1" step="1" placeholder="кол-во" value="1">
       <button class="btn ghost tiny" onclick="efpAddCustom()">+</button>
     </div>`;
-  const picked = (efp.custom || []).map((c, i) => `
-    <div class="pb-prev-row">
-      <span class="pb-prev-name">${esc(c.name)} <span class="pill pill-muted">своя</span></span>
-      <span class="pb-prev-price">${c.qty} × ${fmtMoney(c.price)}</span>
-      <button class="db-del" title="Убрать" onclick="efpDropCustom(${i})">✕</button>
-    </div>`).join('');
   if(!items.length){
-    box.innerHTML = picked + customRow + (q
+    box.innerHTML = customRow + (q
       ? '<div class="empty-hint">В прайсе такого нет — можно вписать своей строкой выше.</div>'
       : '<div class="empty-hint">У этого рентала пустой прайс. Открой его карточку и загрузи прайс — или вписывай позиции руками.</div>');
     return;
   }
   items.sort((a, b) => (EST_SECTIONS.indexOf(a.sec) - EST_SECTIONS.indexOf(b.sec)) ||
     (a.name || '').localeCompare(b.name || '', 'ru'));
-  box.innerHTML = picked + customRow + items.map(i => {
+  box.innerHTML = customRow + items.map(i => {
     const q = Number(efp.qty[i.id]) || 0;
     return `<div class="pb-prev-row efp-pick${q ? ' on' : ''}" onclick="efpBump('${i.id}')" title="Нажми — добавится одна штука">
       <span class="pb-prev-name">${esc(i.name)}</span>
@@ -10747,12 +10829,55 @@ function renderEfpList(){
     </div>`;
   }).join('');
 }
+/* Набранное на виду, пока идёт выбор: поиск и переключение рентала прячут строки
+   прайса, а этот список показывает всё, что уже отобрано, с ценой и итогом. */
+function renderEfpCart(){
+  const box = document.getElementById('efpCart');
+  if(!box) return;
+  const lines = efpLines();
+  box.style.display = lines.length ? 'block' : 'none';
+  // подсказка нужна до первого тапа; дальше место важнее слов
+  const hint = document.getElementById('efpHint');
+  if(hint) hint.style.display = lines.length ? 'none' : '';
+  const list = document.getElementById('efpList');
+  if(list) list.classList.toggle('squeeze', lines.length > 0);
+  if(!lines.length){ box.innerHTML = ''; efp.last = null; return; }
+  const total = lines.reduce((s, l) => s + l.sum, 0);
+  const groups = [...new Set(lines.map(l => l.rental))];
+  box.innerHTML = `
+    <div class="efp-cart-head">
+      <span>Набрано: <b>${lines.length}</b> ${plural(lines.length, 'позиция', 'позиции', 'позиций')}</span>
+      <span style="flex:1;"></span><b>${fmtMoney(total)}</b>
+    </div>
+    <div class="efp-cart-body">
+      ${groups.map(g => {
+        const rows = lines.filter(l => l.rental === g);
+        const sh = rows[0].shifts;
+        return `<div class="efp-cart-grp">${g ? esc(g) : 'Мои позиции — без рентала'} ·
+          ${sh} ${plural(sh, 'смена', 'смены', 'смен')} · ${fmtMoney(rows.reduce((s, l) => s + l.sum, 0))}</div>
+        ${rows.map(l => `
+          <div class="efp-cart-row${efp.last === l.key ? ' hit' : ''}">
+            <span class="efp-cart-name">${esc(l.name)}${l.custom ? ' <span class="pill pill-muted">своя</span>' : ''}</span>
+            <span class="efp-cart-sum">${fmtMoney(l.sum)}</span>
+            <button class="efp-step" title="Минус один" onclick="efpStep('${l.key}',-1)">−</button>
+            <span class="efp-cart-qty">${l.qty}</span>
+            <button class="efp-step" title="Плюс один" onclick="efpStep('${l.key}',1)">+</button>
+            <button class="db-del" title="Убрать" onclick="efpStep('${l.key}',0)">✕</button>
+          </div>`).join('')}`;
+      }).join('')}
+    </div>`;
+  /* Показываем последнюю добавленную строку, но двигаем только сам список:
+     scrollIntoView тянул за собой всё окно, и оно прыгало к низу после каждого тапа. */
+  const body = box.querySelector('.efp-cart-body');
+  const hit = box.querySelector('.efp-cart-row.hit');
+  if(body && hit){
+    const top = hit.offsetTop, bottom = top + hit.offsetHeight;
+    if(top < body.scrollTop) body.scrollTop = top;
+    else if(bottom > body.scrollTop + body.clientHeight) body.scrollTop = bottom - body.clientHeight;
+  }
+}
 function renderEfpTotal(){
   const shifts = payShifts(efp.rental, efp.days);
-  const chosen = Object.keys(efp.qty).map(id => ({it:priceItem(id), qty:efp.qty[id]})).filter(x => x.it);
-  const custom = efp.custom || [];
-  const sum = chosen.reduce((s, x) => s + x.qty * shifts * x.it.price, 0)
-    + custom.reduce((s, c) => s + c.qty * shifts * c.price, 0);
   const terms = ((RENTAL_TERMS[efp.rental] || {}).steps || []).length;
   if(!efp.rental){
     document.getElementById('efpTermsNote').innerHTML =
@@ -10760,44 +10885,30 @@ function renderEfpTotal(){
   } else
   document.getElementById('efpTermsNote').innerHTML = terms
     ? `По условиям «${esc(efp.rental)}» аренда на ${efp.days} ${plural(efp.days, 'день', 'дня', 'дней')} считается как <b>${shifts}</b> ${plural(shifts, 'смена', 'смены', 'смен')}.`
-    : `Условия по дням у «${esc(efp.rental)}» не заданы — каждый день считается полной сменой. Задать можно в карточке рентала.`;
-  const count = chosen.length + custom.length;
-  const box = document.getElementById('efpTotal');
-  box.style.display = count ? 'block' : 'none';
-  box.innerHTML = count
-    ? `Выбрано позиций: <b>${count}</b>${custom.length ? ` (своих: ${custom.length})` : ''} · ${shifts} ${plural(shifts, 'смена', 'смены', 'смен')} · итого <b>${fmtMoney(sum)}</b>`
-    : '';
+    : `Условий по дням у «${esc(efp.rental)}» нет: день = смена. Задать — в карточке рентала.`;
+  renderEfpCart();
+  const count = efpLines().length;
   document.getElementById('efpAddBtn').textContent = count
-    ? `Добавить в смету — ${count} ${plural(count, 'позиция', 'позиции', 'позиций')}` : 'Добавить в смету';
+    ? `Добавить — ${count} ${plural(count, 'позиция', 'позиции', 'позиций')}` : 'Добавить в смету';
 }
 function efpAdd(){
   const p = PROJECTS.find(x => x.id === currentProjectId);
   if(!p) return;
-  const chosen = Object.keys(efp.qty).map(id => ({it:priceItem(id), qty:efp.qty[id]})).filter(x => x.it);
-  const custom = efp.custom || [];
-  if(!chosen.length && !custom.length){ askNotice('Проставь количество хотя бы у одной позиции или впиши свою.', 'Нечего добавлять'); return; }
-  const shifts = payShifts(efp.rental, efp.days);
+  const lines = efpLines();
+  if(!lines.length){ askNotice('Нажми на позицию в списке — она попадёт в набор.', 'Нечего добавлять'); return; }
   const day = activeDay(p);
-  chosen.forEach(x => {
+  lines.forEach(l => {
     day.estimate.push({
-      sec:x.it.sec || 'Оборудование',
-      name:x.it.name,
-      qty:x.qty,
+      sec:l.custom ? 'Оборудование' : (l.sec || 'Оборудование'),
+      name:l.name,
+      qty:l.qty,
       days:efp.days,        // календарные дни — для понимания, сколько техника на площадке
-      payDays:shifts,       // оплачиваемые смены — по ним и считается сумма
-      price:x.it.price,     // снимок цены: обновление прайса эту смету не тронет
+      payDays:l.shifts,     // оплачиваемые смены — по условиям своего рентала
+      price:l.price,        // снимок цены: обновление прайса эту смету не тронет
       client:true,
       // без рентала — это моя позиция: долг по ней не заводится
-      ...(efp.rental ? {rental:efp.rental} : {}),
-      priceId:x.it.id,
-    });
-  });
-  custom.forEach(c => {
-    day.estimate.push({
-      sec:'Оборудование', name:c.name, qty:c.qty,
-      days:efp.days, payDays:shifts, price:c.price, client:true,
-      ...(efp.rental ? {rental:efp.rental} : {}),
-      byHand:true,          // вписана руками — в прайсе такой нет
+      ...(l.rental ? {rental:l.rental} : {}),
+      ...(l.custom ? {byHand:true} : {priceId:l.id}),
     });
   });
   resyncRentals(p);        // оплата ренталу пересобирается вместе со сметой
@@ -10805,8 +10916,9 @@ function efpAdd(){
   closeEstFromPrice();
   renderEstimate(p); renderInfo(p); renderFiles(p); renderPayTab(p);
   refreshAll();
-  const total = chosen.length + custom.length;
-  askNotice(`Добавлено позиций: ${total}${efp.rental ? `, оплата ренталу «${efp.rental}» пересчитана` : ', без привязки к ренталу'}.`,
+  const rentals = [...new Set(lines.map(l => l.rental).filter(Boolean))];
+  askNotice(`Добавлено позиций: ${lines.length}${rentals.length
+      ? `, оплата пересчитана: ${rentals.join(', ')}` : ', без привязки к ренталу'}.`,
     'Позиции в смете');
 }
 
@@ -13297,6 +13409,37 @@ const SELF_CHECK_CASES = [
     expect:1},
   {group:'План дня', name:'Сегодняшняя съёмка ещё не прошедшая (граница — вчера)',
     run:()=>isPastProject({date:TODAY_ISO, dates:[TODAY_ISO]}, TODAY_ISO) ? 0 : 1,
+    expect:1},
+
+  // ---- Сборка сметы из прайса ----
+  {group:'Сбор из прайса', name:'Набор держит позиции разных ренталов и считает смены по каждому',
+    run:()=>{
+      const book = PRICE_BOOK, terms = RENTAL_TERMS, saved = efp;
+      try{
+        PRICE_BOOK = [{id:'pbA', rental:'А', sec:'Оборудование', name:'Прибор', price:1000},
+                      {id:'pbB', rental:'Б', sec:'Оборудование', name:'Штатив', price:500}];
+        RENTAL_TERMS = {'А':{steps:[{days:3, pay:2}]}, 'Б':{}};
+        efp = {rental:'А', days:3, qty:{pbA:2, pbB:1}, custom:[], last:null};
+        return efpLines().reduce((s, l) => s + l.sum, 0);   // 2×2смены×1000 + 1×3смены×500
+      } finally { PRICE_BOOK = book; RENTAL_TERMS = terms; efp = saved; }
+    },
+    expect:2*2*1000 + 1*3*500},
+  {group:'Сбор из прайса', name:'Своя позиция попадает в набор наравне с прайсовой',
+    run:()=>{
+      const book = PRICE_BOOK, terms = RENTAL_TERMS, saved = efp;
+      try{
+        PRICE_BOOK = [{id:'pbA', rental:'А', sec:'Оборудование', name:'Прибор', price:1000}];
+        RENTAL_TERMS = {};
+        efp = {rental:'', days:2, qty:{pbA:1}, custom:[{name:'Накрутка', price:700, qty:1, rental:''}], last:null};
+        return efpLines().length;
+      } finally { PRICE_BOOK = book; RENTAL_TERMS = terms; efp = saved; }
+    },
+    expect:2},
+  {group:'Сбор из прайса', name:'Минус на единице убирает позицию из набора',
+    run:()=>{ const m = {pbA:1}; efpBumpQty(m, 'pbA', -1); return Object.keys(m).length === 0 ? 1 : 0; },
+    expect:1},
+  {group:'Сбор из прайса', name:'Крестик снимает позицию любого количества',
+    run:()=>{ const m = {pbA:7}; efpBumpQty(m, 'pbA', 0); return Object.keys(m).length === 0 ? 1 : 0; },
     expect:1},
 ];
 
