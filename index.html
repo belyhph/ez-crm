@@ -6949,6 +6949,9 @@ async function migrateFilesToBlobStore(){
   const all = [];
   PROJECTS.forEach(p => (p.files || []).forEach(f => all.push(f)));
   (DB_FILES || []).forEach(f => all.push(f));
+  // фото заметок — такие же байты внутри состояния, им там тоже не место
+  (QUICK_NOTES || []).forEach(n => (n.photos || []).forEach(ph => all.push(ph)));
+  PROJECTS.forEach(p => allDays(p).forEach(d => (d.notes || []).forEach(n => (n.photos || []).forEach(ph => all.push(ph)))));
   const heavy = all.filter(f => f && f.dataUrl && f.dataUrl.length > 4096);
   const notInCloud = cloudOn() ? all.filter(f => f && f.blobKey && !f.cloud && !f.cloudNote) : [];
   if(!heavy.length && !notInCloud.length) return false;
@@ -7326,6 +7329,30 @@ function openDbFileView(i){
   openFileView({name: f.name, meta: fileMetaLine(f),
     missing: 'Этот файл добавлен как отметка, без содержимого — показывать нечего. Замени его файлом с устройства, и он будет открываться здесь.',
     load: () => ezFileData(f)});
+}
+/* Миниатюры: сами байты лежат в отдельном хранилище, поэтому картинки
+   подставляются после отрисовки. Следим за экраном наблюдателем, чтобы это
+   работало на любом списке заметок, где бы он ни рисовался. */
+function ezFillPhotos(){
+  document.querySelectorAll('img[data-ph]:not([data-ph-done])').forEach(img => {
+    img.setAttribute('data-ph-done', '1');
+    const parts = String(img.getAttribute('data-ph')).split('|');
+    let note = null;
+    if(parts[0] === 'q') note = QUICK_NOTES.find(n => String(n.id) === parts[1]);
+    else {
+      const p = PROJECTS.find(x => x.id === currentProjectId);
+      note = p ? (activeDay(p).notes || [])[+parts[1]] : null;
+    }
+    const ph = note && note.photos && note.photos[+parts[2]];
+    if(!ph) return;
+    if(ph.dataUrl){ img.src = ph.dataUrl; return; }
+    ezFileData(ph).then(d => { if(d) img.src = d; });
+  });
+}
+let ezPhotoFillTimer = null;
+function ezFillPhotosSoon(){
+  if(ezPhotoFillTimer) return;
+  ezPhotoFillTimer = setTimeout(() => { ezPhotoFillTimer = null; ezFillPhotos(); }, 60);
 }
 // Фото из заметки проекта — заметки лежат в самом проекте
 function openProjectNotePhoto(noteIdx, photoIdx){
@@ -8152,7 +8179,7 @@ function drawNotes(p){
     }
     return `<div class="note">
       <div class="ntext">${n.source==='notes'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Заметки</span> ':''}${n.source==='quick'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>Быстрая</span> ':''}${esc(n.text)}</div>
-      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl}" class="qn-photo-thumb" onclick="openProjectNotePhoto(${idx},${pi})" title="Открыть фото">`).join('')}</div>`:''}
+      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl||''}" data-ph="p|${idx}|${pi}" class="qn-photo-thumb" onclick="openProjectNotePhoto(${idx},${pi})" title="Открыть фото">`).join('')}</div>`:''}
       <div class="nmeta">
         <span>${n.parsed?'✓ перенесено в смету':'не разобрано'}</span>
         <span style="display:flex;gap:.4rem;">
@@ -8283,13 +8310,54 @@ function confirmParse(idx){
   showTab('estimate');         // сразу показываем результат, а не оставляем на вкладке заметок
 }
 
-/* ============= Быстрая заметка (дэшборд) ============= */
+/* ============= Быстрая заметка (дэшборд) =============
+   Фото с телефона весит мегабайты, а в заметке нужен снимок «что где стояло».
+   Поэтому перед сохранением ужимаем: 1600 точек по длинной стороне и jpeg.
+   Место экономится в разы, разобрать схему света это не мешает. */
+function ezShrinkPhoto(dataUrl, maxSide, quality){
+  return new Promise(res => {
+    try{
+      const src = String(dataUrl || '');
+      if(!/^data:image\//.test(src)) return res(dataUrl);
+      const img = new Image();
+      img.onload = () => {
+        try{
+          const m = maxSide || 1600;
+          const k = Math.min(1, m / Math.max(img.naturalWidth, img.naturalHeight));
+          if(k >= 1 && src.length < 400000) return res(dataUrl);   // и так небольшое
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.naturalWidth * k));
+          c.height = Math.max(1, Math.round(img.naturalHeight * k));
+          const g = c.getContext('2d');
+          g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height);
+          g.drawImage(img, 0, 0, c.width, c.height);
+          const out = c.toDataURL('image/jpeg', quality || .72);
+          res(out && out.length < src.length ? out : dataUrl);
+        }catch(e){ res(dataUrl); }
+      };
+      img.onerror = () => res(dataUrl);     // не прочиталось — кладём как есть
+      img.src = src;
+    }catch(e){ res(dataUrl); }
+  });
+}
+/* Байты фото — в отдельное хранилище браузера и в облако, как файлы ренталов.
+   В самих данных остаётся только ссылка, поэтому сохранение больше не пухнет. */
+async function ezStashNotePhotos(note){
+  const list = (note && note.photos) || [];
+  let moved = false;
+  for(const ph of list){
+    if(ph && ph.dataUrl){ await ezFileStash(ph); moved = true; }
+  }
+  if(moved){ saveState(); ezFillPhotos(); }
+}
 function handleQuickNotePhotos(files){
   [...files].forEach(f=>{
     const reader = new FileReader();
     reader.onload = e=>{
-      quickNotePhotos.push({name:f.name, dataUrl:e.target.result});
-      renderQuickNotePhotoPreview();
+      ezShrinkPhoto(e.target.result).then(small => {
+        quickNotePhotos.push({name:f.name, dataUrl:small});
+        renderQuickNotePhotoPreview();
+      });
     };
     reader.readAsDataURL(f);
   });
@@ -8316,6 +8384,7 @@ function saveQuickNote(projectId){
   } else {
     QUICK_NOTES.push(note);
   }
+  ezStashNotePhotos(note);      // байты — вон из состояния, в хранилище и облако
   textEl.value = '';
   quickNotePhotos = [];
   renderQuickNotePhotoPreview();
@@ -8514,7 +8583,7 @@ function renderNotesArchive(){
   el.innerHTML = QUICK_NOTES.length ? QUICK_NOTES.map((n,idx)=>`
     <div class="note">
       <div class="ntext">${esc(n.text)}</div>
-      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl}" class="qn-photo-thumb" onclick="openNotePhoto('${n.id}',${pi})" title="Открыть фото">`).join('')}</div>`:''}
+      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl||''}" data-ph="q|${n.id}|${pi}" class="qn-photo-thumb" onclick="openNotePhoto('${n.id}',${pi})" title="Открыть фото">`).join('')}</div>`:''}
       <div class="nmeta">
         <span class="mono">${fmtDate(n.createdAt)}</span>
         <button class="btn ghost tiny" onclick="attachArchivedNote(${idx})"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 21s7-7.5 7-12a7 7 0 1 0-14 0c0 4.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>Прикрепить к проекту →</button>
@@ -12747,17 +12816,40 @@ function storedSavedAt(){
 }
 /* Резервные копии: «на момент входа» пишется при каждом запуске, часовая —
    перед перезаписью, если прежнему сейву больше часа. Обе возвращаются из Базы данных. */
+/* Автокопии («на момент входа» и часовая) лежат в отдельном хранилище, а не рядом
+   с данными: в localStorage три копии одного состояния съедали место втрое быстрее,
+   и именно на этом сохранение упиралось в переполнение. Метку времени копии держим
+   маленькой строчкой рядом — по ней рисуется кнопка, не поднимая всю копию. */
+function backupPut(suffix, raw){
+  const at = (String(raw).match(/"savedAt":"([^"]+)"/) || [])[1] || '';
+  try{ localStorage.setItem(stateKey() + suffix + '-at', at); }catch(e){}
+  return ezBlobPut('backup:' + stateKey() + suffix, raw);
+}
+function backupGet(suffix){ return ezBlobGet('backup:' + stateKey() + suffix); }
+function backupAt(suffix){
+  try{ return localStorage.getItem(stateKey() + suffix + '-at') || ''; }catch(e){ return ''; }
+}
 function backupBeforeWrite(){
   try{
     const raw = localStorage.getItem(stateKey());
     if(!raw) return;
     const curAt = (raw.match(/"savedAt":"([^"]+)"/) || [])[1];
-    const hr = localStorage.getItem(stateKey() + '-hourly');
-    const hrAt = hr ? (hr.match(/"savedAt":"([^"]+)"/) || [])[1] : null;
+    const hrAt = backupAt('-hourly');
     if(!hrAt || (curAt && (new Date(curAt) - new Date(hrAt)) > 60 * 60 * 1000)){
-      localStorage.setItem(stateKey() + '-hourly', raw);
+      backupPut('-hourly', raw);
     }
   }catch(e){}
+}
+/* Разовый переезд старых копий: они уже лежат в localStorage и занимают место
+   прямо сейчас — переносим и удаляем оттуда. */
+function migrateBackupsOut(){
+  ['-boot', '-hourly'].forEach(suffix => {
+    try{
+      const raw = localStorage.getItem(stateKey() + suffix);
+      if(!raw) return;
+      backupPut(suffix, raw).then(ok => { if(ok){ try{ localStorage.removeItem(stateKey() + suffix); }catch(e){} } });
+    }catch(e){}
+  });
 }
 function saveState(){
   if(saveSuppressed) return false;
@@ -13144,11 +13236,24 @@ async function cloudPush(force){
     /* Берём сохранённые байты, а не свежий снимок: у свежего была бы новая метка
        времени, местное хранилище осталось бы со старой — и приложение при каждом
        возврате в окно считало бы облако новее себя и спрашивало про версию. */
+    saveState();                      // сперва на устройство, потом наружу
+    const live = JSON.stringify(collectState());
+    const strip = t => String(t).replace(/"savedAt":"[^"]*",?/, '');
     let text = null;
     try{ text = localStorage.getItem(stateKey()); }catch(e){}
-    if(!text){ saveState(); try{ text = localStorage.getItem(stateKey()); }catch(e){} }
-    if(!text){ cloudSay('ok'); return false; }
-    const snapAt = (text.match(/"savedAt":"([^"]+)"/) || [])[1] || '';
+    let snapAt = text ? ((text.match(/"savedAt":"([^"]+)"/) || [])[1] || '') : '';
+    if(!text || strip(text) !== strip(live)){
+      /* На устройство не записалось — почти всегда переполнено хранилище.
+         Тогда отправляем то, что в памяти: облако станет главным источником,
+         и устройство потом заберёт правки оттуда. Отправить старое и промолчать
+         нельзя — именно так однажды потерялась работа, сделанная на айпаде. */
+      text = live;
+      snapAt = (live.match(/"savedAt":"([^"]+)"/) || [])[1] || new Date().toISOString();
+      stateStamp = snapAt;
+    }
+    // ровно это уже лежит в облаке — второй раз не пишем
+    const already = cloudMark();
+    if(!force && already && already.sha && already.stamp === snapAt){ cloudSay('ok'); return true; }
     const c = cloudCfg();
     const msg = 'EZ CRM · ' + (c.label || 'устройство')
       + ' · ' + new Date().toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})
@@ -13442,9 +13547,8 @@ function renderDbBackups(){
   const el = document.getElementById('dbBackups');
   if(!el) return;
   const slot = (suffix, label) => {
-    const raw = localStorage.getItem(stateKey() + suffix);
-    if(!raw) return '';
-    const at = (raw.match(/"savedAt":"([^"]+)"/) || [])[1];
+    const at = backupAt(suffix);
+    if(!at) return '';
     const when = at ? new Date(at).toLocaleString('ru-RU', {day:'numeric', month:'long', hour:'2-digit', minute:'2-digit'}) : '—';
     return `<button class="btn ghost tiny" onclick="restoreBackup('${suffix}')">${label} · ${when}</button>`;
   };
@@ -13454,9 +13558,9 @@ function renderDbBackups(){
        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem;">${btns}</div>`
     : '';
 }
-function restoreBackup(suffix){
-  const raw = localStorage.getItem(stateKey() + suffix);
-  if(!raw) return;
+async function restoreBackup(suffix){
+  const raw = await backupGet(suffix);
+  if(!raw){ askNotice('Эта копия не нашлась на устройстве.', 'Нечего возвращать'); return; }
   askConfirm({title:'Вернуть резервную копию?',
     text:'Текущие данные этого режима будут заменены копией. Если сомневаешься — сначала нажми «Выгрузить файл».',
     okText:'Вернуть', danger:true}, () => {
@@ -14510,7 +14614,7 @@ migrateAllSettlements();   // демо-данные приводим к моде
 const hadSave = loadState();   // поднимаем сохранённое ДО первой отрисовки
 cloudBootStamp = stateStamp;   // с чем пришли — с тем и сверяемся при первой встрече с облаком
 // копия «на момент входа»: если эта сессия что-то испортит, будет точка возврата
-try{ const raw0 = localStorage.getItem(stateKey()); if(raw0) localStorage.setItem(stateKey() + '-boot', raw0); }catch(e){}
+try{ migrateBackupsOut(); const raw0 = localStorage.getItem(stateKey()); if(raw0) backupPut('-boot', raw0); }catch(e){}
 // просим систему закрепить хранилище: где разрешат — данные переживут чистки
 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
 /* Первый запуск рабочего режима: проекты и деньги — с чистого листа,
@@ -14549,6 +14653,9 @@ function adoptNewerState(){
     }
   }catch(e){}
 }
+// миниатюры фото подставляются после отрисовки, где бы список заметок ни рисовался
+try{ new MutationObserver(ezFillPhotosSoon).observe(document.body, {childList:true, subtree:true}); }catch(e){}
+ezFillPhotos();
 window.addEventListener('pageshow', adoptNewerState);
 window.addEventListener('focus', adoptNewerState);
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) adoptNewerState(); });
