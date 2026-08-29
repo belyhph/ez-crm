@@ -874,6 +874,28 @@
   .db-files{display:flex;flex-direction:column;gap:.4rem;}
   .db-file{display:flex;align-items:center;gap:.5rem;border:1px solid var(--line);
     border-radius:9px;padding:.45rem .6rem;background:var(--bg-sunk);}
+  /* Предпросмотр файла — одно окно на все прикреплённые файлы: картинку,
+     pdf, документ и таблицу. Что нельзя показать — честно говорим и даём
+     сохранить или переслать. */
+  .fv-body{border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);
+    padding:.5rem;display:flex;align-items:center;justify-content:center;min-height:120px;}
+  .fv-body img{max-width:100%;max-height:min(62vh,560px);border-radius:8px;display:block;}
+  .fv-frame{width:100%;height:min(62vh,560px);border:none;border-radius:8px;background:#fff;}
+  /* Документ свёрстан под лист, а телефон узкий: показываем лист целиком,
+     ужимая его по ширине окна — иначе половина таблицы уезжает за край. */
+  .fv-sheet{position:relative;width:100%;height:min(62vh,560px);overflow:hidden;
+    border-radius:8px;background:#fff;}
+  .fv-sheet iframe{position:absolute;top:0;left:0;border:none;background:#fff;}
+  .fv-text{width:100%;max-height:min(62vh,560px);overflow:auto;margin:0;padding:.2rem .1rem;
+    font-family:var(--font-mono);font-size:.72rem;line-height:1.5;color:var(--ink);
+    white-space:pre-wrap;word-break:break-word;}
+  .fv-none{color:var(--ink-muted);font-size:.82rem;text-align:center;padding:1rem .4rem;}
+  .fv-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem;}
+  .fv-note{color:var(--ink-muted);font-size:.72rem;margin-top:.5rem;}
+  /* Строка файла открывается нажатием — показываем это курсором и подсветкой */
+  .file-open{cursor:pointer;}
+  .file-open:hover .ef-name, .file-open:hover .db-file-name, .filerow.file-open:hover .fname{color:var(--accent-ink);}
+  .qn-photo-thumb{cursor:pointer;}
   .db-file-name{flex:1;min-width:0;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .db-file-meta{font-family:var(--font-mono);font-size:.62rem;color:var(--ink-muted);}
   .db-file-rental{flex:none;max-width:150px;font-size:.72rem;padding:.22rem .35rem;}
@@ -2147,10 +2169,21 @@
       Прикрепи чек или скриншот из банка — потом не придётся искать его в переписке.</div>
     <input type="file" id="proofInput" accept="image/*,application/pdf" style="display:none;" onchange="attachProof(this.files)">
     <div id="proofPreview" style="margin-top:.6rem;"></div>
-    <div style="display:flex;gap:.5rem;margin-top:.8rem;flex-wrap:wrap;">
-      <button class="btn" onclick="document.getElementById('proofInput').click()">Прикрепить файл</button>
-      <button class="btn ghost" onclick="skipProof()">Пропустить</button>
+    <div class="fv-actions" id="proofActions"></div>
+  </div>
+</div>
+
+<!-- Предпросмотр прикреплённого файла: смотрим, сохраняем, пересылаем -->
+<div class="modal-overlay" id="fileViewModal">
+  <div class="modal-card db-card">
+    <div class="db-head">
+      <h3 id="fvTitle">Файл</h3>
+      <button class="btn ghost tiny" onclick="closeFileView()">✕</button>
     </div>
+    <div class="db-file-meta" id="fvMeta" style="margin:.2rem 0 .6rem;"></div>
+    <div class="fv-body" id="fvBody"></div>
+    <div class="fv-note" id="fvNote"></div>
+    <div class="fv-actions" id="fvActions"></div>
   </div>
 </div>
 
@@ -3121,7 +3154,7 @@ function renderDbFiles(){
   el.innerHTML = DB_FILES.length ? DB_FILES.map((f,i)=>`
     <div class="db-file">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:none;opacity:.6;"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
-      <span class="db-file-name">${esc(f.name)}</span>
+      <span class="db-file-name file-open" onclick="openDbFileView(${i})" title="Открыть предпросмотр">${esc(f.name)}</span>
       <select class="role-select db-file-rental" onchange="dbSetFileRental(${i},this.value)" title="К какому ренталу относится">
         <option value="">Без рентала</option>
         ${RENTALS.map(r=>`<option value="${esc(r)}" ${f.rental===r?'selected':''}>${esc(r)}</option>`).join('')}
@@ -3144,17 +3177,30 @@ function fileKind(name){
 }
 // После загрузки сразу спрашиваем, чей это прайс — иначе файл потом не найти среди ренталов
 let dbPendingFileIdxs = [];
-function dbAddFiles(files){
+async function dbAddFiles(files){
   dbPendingFileIdxs = [];
-  [...files].forEach(f=>{
-    DB_FILES.push({name:f.name, kind:fileKind(f.name),
-      size:(f.size/1024).toFixed(0)+' КБ', added:TODAY_ISO, rental:''});
+  const list = [...files];
+  const added = [];
+  list.forEach(f=>{
+    const entry = {name:f.name, kind:fileKind(f.name),
+      size:(f.size/1024).toFixed(0)+' КБ', added:TODAY_ISO, rental:''};
+    DB_FILES.push(entry);
+    added.push({file:f, entry});
     dbPendingFileIdxs.push(DB_FILES.length-1);
   });
   document.getElementById('dbFileInput').value = '';
   renderDbFiles();
   scheduleSave();
   if(dbPendingFileIdxs.length) openRentalPick();
+  // содержимое дочитываем следом: карточка появляется сразу, файл открывается чуть позже
+  for(const {file, entry} of added){
+    const data = await ezReadFileData(file);
+    if(!data) continue;
+    entry.dataUrl = data;
+    await ezFileStash(entry);
+  }
+  renderDbFiles();
+  saveState();
 }
 /* Выбор рентала для одной позиции сметы. Переиспользуем то же окно, что и для
    файлов прайса, — заголовок и подпись ставим свои, обработчик разовый. */
@@ -3234,17 +3280,23 @@ function dbStartReplace(i){
   dbFileReplaceIdx = i;
   document.getElementById('dbFileReplaceInput').click();
 }
-function dbReplaceFile(files){
+async function dbReplaceFile(files){
   const f = files[0];
-  if(f && dbFileReplaceIdx!=null){
-    const prevRental = DB_FILES[dbFileReplaceIdx].rental || '';
-    DB_FILES[dbFileReplaceIdx] = {name:f.name, kind:fileKind(f.name),
-      size:(f.size/1024).toFixed(0)+' КБ', added:TODAY_ISO, rental:prevRental};
-  }
+  const idx = dbFileReplaceIdx;
   dbFileReplaceIdx = null;
   document.getElementById('dbFileReplaceInput').value = '';
+  if(!f || idx == null) return;
+  const prev = DB_FILES[idx] || {};
+  if(prev.blobKey) ezBlobDel(prev.blobKey);       // старое содержимое больше не нужно
+  const entry = {name:f.name, kind:fileKind(f.name),
+    size:(f.size/1024).toFixed(0)+' КБ', added:TODAY_ISO, rental:prev.rental || ''};
+  DB_FILES[idx] = entry;
   renderDbFiles();
   refreshAll();
+  const data = await ezReadFileData(f);
+  if(data){ entry.dataUrl = data; await ezFileStash(entry); }
+  renderDbFiles();
+  saveState();
 }
 function dbRemoveFile(i){
   const gone = DB_FILES[i];
@@ -6530,7 +6582,7 @@ function renderEstimate(p){
       ].filter(Boolean).join(' · ');
       return `<div class="est-file">
         <span class="ef-kind">${esc(f.kind || 'файл')}</span>
-        <div class="ef-info">
+        <div class="ef-info file-open" onclick="openProjectFileView('${p.id}',${idx})" title="Открыть предпросмотр">
           <div class="ef-name">${esc(f.name)}</div>
           <div class="ef-meta">${meta}</div>
         </div>
@@ -7059,6 +7111,238 @@ function downloadProjectFile(pid, idx){
     }
     ezSaveFile(f.name, blob);
   });
+}
+
+/* ============= Предпросмотр прикреплённого файла =============
+   Одно окно на всё, что прикреплено: картинку и pdf показываем как есть,
+   документ — страницей, таблицу показать нечем — для неё остаются «Сохранить»
+   и «Поделиться». Набор кнопок зависит от того, что за файл открыт. */
+let fvCur = null;   // {name, blob, type, url, opened}
+
+function fvType(name, mime){
+  const m = String(mime || '').toLowerCase();
+  const ext = String(name || '').split('.').pop().toLowerCase();
+  if(m.startsWith('image/') || ['png','jpg','jpeg','gif','webp','bmp','heic','svg'].includes(ext)) return 'image';
+  if(m === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if(m === 'text/html' || ['html','htm'].includes(ext)) return 'html';
+  if(m.startsWith('text/') || ['txt','csv','md','json','log'].includes(ext)) return 'text';
+  return 'other';
+}
+/* На входе бывает и dataUrl из хранилища, и документ, собранный на лету
+   (смета, договор) — приводим к одному виду. */
+function fvToBlob(data, name){
+  if(!data) return null;
+  if(data instanceof Blob) return data;
+  const str = String(data);
+  if(/^data:/.test(str)) return ezDataUrlToBlob(str);
+  const mime = fvType(name, '') === 'html' ? 'text/html;charset=utf-8' : 'text/plain;charset=utf-8';
+  return new Blob([str], {type:mime});
+}
+/* src: {name, meta, missing, load} — load отдаёт dataUrl, Blob или готовый html */
+async function openFileView(src){
+  closeFileView();                     // прошлый файл отпускаем, чтобы не копить ссылки
+  const modal = document.getElementById('fileViewModal');
+  document.getElementById('fvTitle').textContent = src.name || 'Файл';
+  document.getElementById('fvMeta').textContent = src.meta || '';
+  document.getElementById('fvNote').textContent = '';
+  document.getElementById('fvActions').innerHTML = '';
+  document.getElementById('fvBody').innerHTML = '<div class="fv-none">Открываю…</div>';
+  modal.classList.add('show');
+  syncLayerLock();
+  let data = null;
+  try{ data = await src.load(); }catch(e){ data = null; }
+  if(!modal.classList.contains('show')) return;      // успели закрыть, пока читали
+  const blob = fvToBlob(data, src.name);
+  if(!blob){
+    document.getElementById('fvBody').innerHTML = `<div class="fv-none">${esc(src.missing
+      || 'Содержимого этого файла на устройстве нет — показывать нечего.')}</div>`;
+    return;
+  }
+  fvCur = {name: src.name || 'файл', blob, type: fvType(src.name, blob.type), url: URL.createObjectURL(blob)};
+  fvRender();
+}
+function fvRender(){
+  const body = document.getElementById('fvBody');
+  const note = document.getElementById('fvNote');
+  const t = fvCur.type;
+  if(t === 'image'){
+    body.innerHTML = `<img src="${fvCur.url}" alt="${esc(fvCur.name)}">`;
+  } else if(t === 'pdf'){
+    body.innerHTML = `<iframe class="fv-frame" src="${fvCur.url}#view=FitH" title="${esc(fvCur.name)}"></iframe>`;
+    note.textContent = 'Пусто вместо документа? Нажми «Открыть» — на телефоне pdf показывается отдельной страницей.';
+  } else if(t === 'html'){
+    /* Документ чужой — показываем его в песочнице, без скриптов и доступа к приложению.
+       Лист свёрстан под ширину страницы, поэтому ужимаем его под окно: так видно
+       весь документ, а не левую половину таблицы. */
+    const sheetW = 800;
+    const box = Math.max(240, body.clientWidth - 18);
+    const k = Math.min(1, box / sheetW);
+    body.innerHTML = `<div class="fv-sheet" style="width:${Math.round(sheetW * k)}px;">
+        <iframe sandbox="" src="${fvCur.url}" title="${esc(fvCur.name)}"
+          style="width:${sheetW}px;height:${Math.round(560 / k)}px;transform:scale(${k});transform-origin:0 0;"></iframe>
+      </div>`;
+    note.textContent = 'Документ ужат по ширине окна — «Открыть» покажет его в полном размере.';
+  } else if(t === 'text'){
+    body.innerHTML = '<pre class="fv-text">Читаю…</pre>';
+    fvCur.blob.text().then(txt => {
+      const pre = body.querySelector('pre');
+      if(pre) pre.textContent = txt.length > 200000 ? txt.slice(0, 200000) + '\n\n— дальше не показываю, файл слишком длинный —' : txt;
+    }).catch(() => { const pre = body.querySelector('pre'); if(pre) pre.textContent = 'Прочитать не получилось.'; });
+  } else {
+    body.innerHTML = `<div class="fv-none">Такой файл здесь не показать — его открывает родная программа
+      (таблица, документ, архив). Сохрани его на устройство или перешли.</div>`;
+  }
+  document.getElementById('fvActions').innerHTML = fvActionsHTML();
+}
+function fvActionsHTML(){
+  const t = fvCur.type;
+  const btns = ['<button class="btn" onclick="fvShare()">Поделиться</button>'];
+  if(t === 'image' || t === 'text' || t === 'html')
+    btns.push(`<button class="btn ghost" id="fvCopyBtn" onclick="fvCopy()">${t === 'image' ? 'Скопировать' : 'Скопировать текст'}</button>`);
+  if(t === 'pdf' || t === 'html')
+    btns.push('<button class="btn ghost" onclick="fvOpenExternal()">Открыть</button>');
+  btns.push('<button class="btn ghost" onclick="fvSave()">Сохранить</button>');
+  return btns.join('');
+}
+/* «Поделиться» — та же системная шторка, откуда файл уходит в мессенджер или
+   почту. Где шторки нет (компьютер) — отдаём файл обычным сохранением. */
+async function fvShare(){
+  if(!fvCur) return;
+  const file = new File([fvCur.blob], fvCur.name, {type: fvCur.blob.type || 'application/octet-stream'});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title: fvCur.name});
+      return;
+    }
+    if(navigator.share){
+      await navigator.share({title: fvCur.name, text: fvCur.name});
+      return;
+    }
+  }catch(e){ if(e && e.name === 'AbortError') return; }   // просто закрыл шторку
+  ezSaveFile(fvCur.name, fvCur.blob);
+}
+// картинку буфер берёт только как png — остальные форматы перерисовываем
+function fvPngBlob(blob){
+  if(blob.type === 'image/png') return Promise.resolve(blob);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => b ? resolve(b) : reject(new Error('png')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); };
+    img.src = url;
+  });
+}
+// из документа копируем читаемый текст, а не разметку
+async function fvPlainText(cur){
+  const raw = await cur.blob.text();
+  if(cur.type !== 'html') return raw;
+  try{
+    const doc = new DOMParser().parseFromString(raw, 'text/html');
+    const txt = (doc.body && (doc.body.innerText || doc.body.textContent)) || raw;
+    return txt.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }catch(e){ return raw; }
+}
+function fvCopy(){
+  if(!fvCur) return;
+  const btn = document.getElementById('fvCopyBtn');
+  const label = btn ? btn.textContent : '';
+  const done = ok => {
+    if(!btn) return;
+    btn.textContent = ok ? 'Скопировано ✓' : 'Не вышло скопировать';
+    setTimeout(() => { if(btn) btn.textContent = label; }, 1600);
+  };
+  if(fvCur.type === 'image'){
+    if(!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)){ done(false); return; }
+    try{
+      const item = new ClipboardItem({'image/png': fvPngBlob(fvCur.blob)});
+      navigator.clipboard.write([item]).then(() => done(true), () => done(false));
+    }catch(e){ done(false); }
+    return;
+  }
+  fvPlainText(fvCur).then(text => {
+    if(navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(() => done(true), () => fallbackCopy(text, () => done(true)));
+    else fallbackCopy(text, () => done(true));
+  }, () => done(false));
+}
+function fvSave(){ if(fvCur) ezSaveFile(fvCur.name, fvCur.blob); }
+function fvOpenExternal(){
+  if(!fvCur) return;
+  let w = null;
+  try{ w = window.open(fvCur.url, '_blank'); }catch(e){ w = null; }
+  if(w){ fvCur.opened = true; return; }              // ссылку держим ещё минуту — вкладке она нужна
+  askConfirm({title:'Отдельная страница не открылась',
+    text:'Браузер не дал открыть файл новой вкладкой. Сохранить его — и открыть уже из файлов устройства?',
+    okText:'Сохранить', cancelText:'Отмена'}, () => fvSave());
+}
+function closeFileView(){
+  const modal = document.getElementById('fileViewModal');
+  if(modal) modal.classList.remove('show');
+  if(fvCur && fvCur.url){
+    const url = fvCur.url;
+    // если файл открыт в соседней вкладке — ссылку отпускаем не сразу, иначе там станет пусто
+    if(fvCur.opened) setTimeout(() => URL.revokeObjectURL(url), 120000);
+    else URL.revokeObjectURL(url);
+  }
+  fvCur = null;
+  const body = document.getElementById('fvBody');
+  if(body) body.innerHTML = '';
+  syncLayerLock();
+}
+/* Откуда файл открыли — из проекта, из базы данных, из заметки или из
+   подтверждения оплаты. Содержимое ищется одинаково: сначала хранилище
+   устройства, потом облако; документы приложения собираются заново. */
+async function projectFileData(p, f){
+  if(ezFileHasData(f) || ezFileEverywhere(f)) return await ezFileData(f);
+  if(f.sourceType === 'estimate') return estimateStandaloneHTML(p, 'Смета');
+  if(f.sourceType === 'contract'){
+    const c = CLIENTS.find(x => x.id === f.clientId) || CLIENTS.find(x => x.name === p.client);
+    if(c) return contractStandaloneHTML(c);
+  }
+  return null;
+}
+function fileMetaLine(f, extra){
+  return [f.kind, f.size, f.rental, f.added ? 'добавлен ' + fmtDate(f.added) : '',
+          ezFileEverywhere(f) ? 'есть в облаке' : (ezFileHasData(f) ? 'только на этом устройстве' : ''),
+          extra].filter(Boolean).join(' · ');
+}
+function openProjectFileView(pid, idx){
+  const p = PROJECTS.find(x => x.id === pid);
+  const f = p && p.files[idx];
+  if(!f) return;
+  openFileView({name: f.name, meta: fileMetaLine(f),
+    missing: 'Этот файл добавлен как отметка, без содержимого — показывать нечего. Прикрепи его заново, и он будет открываться прямо здесь.',
+    load: () => projectFileData(p, f)});
+}
+function openDbFileView(i){
+  const f = DB_FILES[i];
+  if(!f) return;
+  openFileView({name: f.name, meta: fileMetaLine(f),
+    missing: 'Этот файл добавлен как отметка, без содержимого — показывать нечего. Замени его файлом с устройства, и он будет открываться здесь.',
+    load: () => ezFileData(f)});
+}
+// Фото из заметки проекта — заметки лежат в самом проекте
+function openProjectNotePhoto(noteIdx, photoIdx){
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  const note = p && (p.notes || [])[noteIdx];
+  const ph = note && note.photos && note.photos[photoIdx];
+  if(!ph) return;
+  openFileView({name: ph.name || 'Фото', meta: note.createdAt ? fmtDate(note.createdAt) : '',
+    load: () => ezFileData(ph)});
+}
+// Фото из архивной заметки — по нажатию на миниатюру
+function openNotePhoto(noteId, idx){
+  const note = QUICK_NOTES.find(n => String(n.id) === String(noteId));
+  const ph = note && note.photos && note.photos[idx];
+  if(!ph) return;
+  openFileView({name: ph.name || 'Фото', meta: note.createdAt ? fmtDate(note.createdAt) : '',
+    load: () => ezFileData(ph)});
 }
 
 let estLinesDraft = [];
@@ -7868,7 +8152,7 @@ function drawNotes(p){
     }
     return `<div class="note">
       <div class="ntext">${n.source==='notes'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Заметки</span> ':''}${n.source==='quick'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>Быстрая</span> ':''}${esc(n.text)}</div>
-      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map(ph=>`<img src="${ph.dataUrl}" class="qn-photo-thumb">`).join('')}</div>`:''}
+      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl}" class="qn-photo-thumb" onclick="openProjectNotePhoto(${idx},${pi})" title="Открыть фото">`).join('')}</div>`:''}
       <div class="nmeta">
         <span>${n.parsed?'✓ перенесено в смету':'не разобрано'}</span>
         <span style="display:flex;gap:.4rem;">
@@ -8230,7 +8514,7 @@ function renderNotesArchive(){
   el.innerHTML = QUICK_NOTES.length ? QUICK_NOTES.map((n,idx)=>`
     <div class="note">
       <div class="ntext">${esc(n.text)}</div>
-      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map(ph=>`<img src="${ph.dataUrl}" class="qn-photo-thumb">`).join('')}</div>`:''}
+      ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl}" class="qn-photo-thumb" onclick="openNotePhoto('${n.id}',${pi})" title="Открыть фото">`).join('')}</div>`:''}
       <div class="nmeta">
         <span class="mono">${fmtDate(n.createdAt)}</span>
         <button class="btn ghost tiny" onclick="attachArchivedNote(${idx})"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 21s7-7.5 7-12a7 7 0 1 0-14 0c0 4.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>Прикрепить к проекту →</button>
@@ -9407,25 +9691,78 @@ function askProof(target, what){
 }
 function renderProofPreview(){
   const el = document.getElementById('proofPreview');
+  renderProofActions();
   if(!proofTarget || !proofTarget.proof){ el.innerHTML = ''; return; }
   const pr = proofTarget.proof;
-  el.innerHTML = pr.dataUrl && pr.kind==='image'
-    ? `<img src="${pr.dataUrl}" alt="" style="max-width:100%;border-radius:10px;border:1px solid var(--line);">
-       <div class="db-file-meta" style="margin-top:.3rem;">${esc(pr.name)}</div>`
-    : `<div class="db-file"><span class="db-file-name">${esc(pr.name)}</span>
-         <span class="db-file-meta">${esc(pr.kind)}</span></div>`;
+  if(pr.kind === 'image'){
+    el.innerHTML = `<div class="file-open" onclick="openProofFile()" title="Открыть предпросмотр">
+        <img id="proofThumb" alt="" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;">
+        <div class="db-file-meta" style="margin-top:.3rem;">${esc(pr.name)} · нажми, чтобы открыть</div>
+      </div>`;
+    // содержимое лежит отдельно от состояния — подставляем, когда прочиталось
+    ezFileData(pr).then(data => { const img = document.getElementById('proofThumb'); if(img && data) img.src = data; });
+  } else {
+    el.innerHTML = `<div class="db-file file-open" onclick="openProofFile()" title="Открыть предпросмотр">
+        <span class="db-file-name">${esc(pr.name)}</span>
+        <span class="db-file-meta">${esc(pr.kind)}</span>
+      </div>`;
+  }
+}
+/* Пока файла нет — «Прикрепить» и «Пропустить». Как только чек приложен,
+   главной кнопкой становится «Готово»: раньше окно было некуда закрыть,
+   кроме «Пропустить», и казалось, что файл не сохранился. */
+function renderProofActions(){
+  const el = document.getElementById('proofActions');
+  if(!el) return;
+  el.innerHTML = (proofTarget && proofTarget.proof)
+    ? `<button class="btn" onclick="finishProof()">Готово</button>
+       <button class="btn ghost" onclick="document.getElementById('proofInput').click()">Заменить файл</button>
+       <button class="btn ghost" onclick="removeProof()">Убрать</button>`
+    : `<button class="btn" onclick="document.getElementById('proofInput').click()">Прикрепить файл</button>
+       <button class="btn ghost" onclick="skipProof()">Пропустить</button>`;
+}
+function openProofFile(){
+  const pr = proofTarget && proofTarget.proof;
+  if(!pr) return;
+  openFileView({name: pr.name,
+    meta: [pr.kind === 'image' ? 'изображение' : pr.kind, pr.size,
+           pr.added ? 'добавлен ' + fmtDate(pr.added) : ''].filter(Boolean).join(' · '),
+    load: () => ezFileData(pr)});
+}
+function finishProof(){
+  document.getElementById('proofModal').classList.remove('show');
+  proofTarget = null;
+  syncLayerLock();
+}
+function removeProof(){
+  const pr = proofTarget && proofTarget.proof;
+  if(!pr) return;
+  askConfirm({title:'Убрать подтверждение?',
+    text:`«${pr.name}» открепится от этой оплаты. Сама оплата останется на месте.`,
+    okText:'Убрать', cancelText:'Отмена'}, () => {
+    if(pr.blobKey) ezBlobDel(pr.blobKey);
+    delete proofTarget.proof;
+    renderProofPreview();
+    refreshAll();
+    const p = PROJECTS.find(x=>x.id===currentProjectId);
+    if(p) renderPayTab(p);
+  });
 }
 function attachProof(files){
   const f = files && files[0];
   if(!f || !proofTarget) return;
   const reader = new FileReader();
   reader.onload = e=>{
-    proofTarget.proof = {name:f.name, kind: f.type.startsWith('image/') ? 'image' : fileKind(f.name),
-                         dataUrl: e.target.result, added: TODAY_ISO};
+    const entry = {name:f.name, kind: f.type.startsWith('image/') ? 'image' : fileKind(f.name),
+                   dataUrl: e.target.result, added: TODAY_ISO,
+                   size: Math.max(1, Math.round(f.size/1024)) + ' КБ'};
+    proofTarget.proof = entry;
     renderProofPreview();
     refreshAll();
     const p = PROJECTS.find(x=>x.id===currentProjectId);
     if(p) renderPayTab(p);
+    // скрин из банка весит немало — держим его отдельно от состояния, как и остальные файлы
+    ezFileStash(entry).then(() => { saveState(); renderProofPreview(); });
   };
   reader.readAsDataURL(f);
   document.getElementById('proofInput').value = '';
@@ -9433,6 +9770,7 @@ function attachProof(files){
 function skipProof(){
   document.getElementById('proofModal').classList.remove('show');
   proofTarget = null;
+  syncLayerLock();
 }
 // Открыть уже приложенное подтверждение
 // Подтверждение по поступлению от клиента (выплаты команде и ренталам — через settleProof)
@@ -9476,18 +9814,44 @@ function toggleFilesAutoSync(on){
     }, 30*60*1000); // раз в 30 минут, пока приложение открыто
   }
 }
-function importFilesToProject(files){
-  const p = PROJECTS.find(x=>x.id===currentProjectId);
-  [...files].forEach(f=>{
-    const ext = (f.name.split('.').pop()||'FILE').toUpperCase();
-    p.files.push({name:f.name, kind:ext, auto:false});
+/* Файл с устройства читаем целиком: без содержимого его потом не открыть,
+   не переслать и не сохранить — раньше от него оставалась одна строчка в списке. */
+function ezReadFileData(file){
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
   });
-  renderFiles(p);
+}
+async function importFilesToProject(files){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const list = [...files];
+  if(!list.length) return;
+  const add = async () => {
+    for(const f of list){
+      const entry = {name:f.name, kind:fileKind(f.name), auto:false,
+        size:Math.max(1, Math.round(f.size/1024))+' КБ', added:TODAY_ISO};
+      const data = await ezReadFileData(f);
+      if(data) entry.dataUrl = data;
+      p.files.push(entry);
+      renderFiles(p);
+      if(data) await ezFileStash(entry);   // байты — в отдельное хранилище, состояние остаётся лёгким
+    }
+    renderFiles(p);
+    saveState();
+  };
+  const heavy = list.filter(f => f.size > 3000*1024);
+  if(heavy.length){
+    askConfirm({title:'Файл тяжёлый',
+      text:`${heavy.length>1?'Несколько файлов весят':'«'+heavy[0].name+'» весит'} больше 3 МБ. Хранилище на устройстве ограничено — если таких файлов будет много, оно может переполниться.\n\nПрикрепить всё равно?`,
+      okText:'Прикрепить', cancelText:'Отмена'}, add);
+  } else add();
 }
 function renderFiles(p){
   const pane = document.getElementById('pane-files');
   const head = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem;">
-    <label class="btn ghost tiny"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 15V4m0 0l-4 4m4-4l4 4"/><path d="M4 18v1.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V18"/></svg>Импорт<input type="file" multiple style="display:none;" onchange="importFilesToProject(this.files)"></label>
+    <label class="btn ghost tiny"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 15V4m0 0l-4 4m4-4l4 4"/><path d="M4 18v1.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V18"/></svg>Импорт<input type="file" multiple style="display:none;" onchange="importFilesToProject(this.files);this.value='';"></label>
     <button class="btn ghost tiny" onclick="manualSyncFiles('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M4 12a8 8 0 0 1 14-5.3M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-14 5.3M4 20v-4h4"/></svg>Синхронизировать смету</button>
     <label style="display:flex;align-items:center;gap:.35rem;font-size:.74rem;color:var(--ink-muted);cursor:pointer;">
       <input type="checkbox" ${filesAutoSyncEnabled?'checked':''} onchange="toggleFilesAutoSync(this.checked)">
@@ -9495,11 +9859,11 @@ function renderFiles(p){
     </label>
   </div>`;
   if(!p.files.length){ pane.innerHTML = head + '<div class="empty-hint">Файлов пока нет — импортируй с устройства, либо синхронизируй смету/договор.</div>'; return; }
-  pane.innerHTML = head + p.files.map((f,i)=>`<div class="filerow">
+  pane.innerHTML = head + p.files.map((f,i)=>`<div class="filerow file-open" onclick="openProjectFileView('${p.id}',${i})" title="Открыть предпросмотр">
       <div class="fico">${esc(f.kind)}</div>
       <div style="flex:1;min-width:0;">${esc(f.name)}${f.auto?' <span class="pill pill-muted">авто</span>':''}${f.sourceType==='rental-estimate'?` <span class="pill pill-muted">${esc(f.rental||'от рентала')}</span>`:''}${f.sourceType==='generated-estimate'?` <span class="pill ${f.phase==='actual'?'pill-ok':'pill-muted'}">${f.phase==='actual'?'фактическая':'первичная'}</span>`:''}
         ${f.size?`<div class="db-file-meta">${esc(f.size)}</div>`:''}</div>
-      ${(ezFileHasData(f) || ezFileEverywhere(f))?`<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
+      ${(ezFileHasData(f) || ezFileEverywhere(f))?`<button class="btn ghost tiny" onclick="event.stopPropagation();downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
     </div>`).join('');
 }
 
@@ -11776,7 +12140,9 @@ function openContractAttachPicker(clientId){
 function attachContractTo(pid){
   const c = CLIENTS.find(x=>x.id===contractBeingAttached);
   const p = PROJECTS.find(x=>x.id===pid);
-  const entry = {name:`Договор — ${c.name}.html`, kind:'HTML', auto:true, sourceType:'contract', updatedAt:TODAY_ISO};
+  // clientId — чтобы договор потом собрался заново для предпросмотра, даже если клиента переименовали
+  const entry = {name:`Договор — ${c.name}.html`, kind:'HTML', auto:true, sourceType:'contract',
+                 clientId:c.id, updatedAt:TODAY_ISO};
   const idx = p.files.findIndex(f=>f.sourceType==='contract');
   if(idx>-1) p.files[idx] = entry; else p.files.push(entry);
   p.contractSent = true;
@@ -13967,6 +14333,23 @@ const SELF_CHECK_CASES = [
     expect:1},
   {group:'Сбор из прайса', name:'Крестик снимает позицию любого количества',
     run:()=>{ const m = {pbA:7}; efpBumpQty(m, 'pbA', 0); return Object.keys(m).length === 0 ? 1 : 0; },
+    expect:1},
+
+  // ---- Файлы ----
+  // Предпросмотр выбирает вид по имени и mime: ошибись здесь — и картинка
+  // поедет в текстовое окно, а смета останется без кнопки «Открыть».
+  {group:'Файлы', name:'Вид файла определяется по имени и mime',
+    run:()=>(fvType('чек.png','image/png') === 'image' ? 1 : 0)
+           + (fvType('смета.pdf','') === 'pdf' ? 10 : 0)
+           + (fvType('Договор — Ромашка.html','') === 'html' ? 100 : 0)
+           + (fvType('прайс.csv','') === 'text' ? 1000 : 0)
+           + (fvType('смета рентала.xlsx','') === 'other' ? 10000 : 0),
+    expect:11111},
+  {group:'Файлы', name:'Документ, собранный на лету, становится html-файлом',
+    run:()=>{
+      const b = fvToBlob('<html><body>смета</body></html>', 'Смета — Витрина.html');
+      return b && b.type.indexOf('text/html') === 0 ? 1 : 0;
+    },
     expect:1},
 
   // ---- Хранилище ----
