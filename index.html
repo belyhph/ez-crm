@@ -2620,6 +2620,7 @@
     <h3>Освоение</h3>
     <div class="form-hint">Когда прошло/будет освоение по проекту «<span id="scoutProjectName"></span>»? Стоимость сама подставится в смету.</div>
     <input type="date" id="scoutDateInput" title="Дата освоения" aria-label="Дата освоения">
+    <div class="form-hint" id="scoutLimitHint" style="margin-top:.35rem;"></div>
     <div class="dial-toggles" style="max-width:none;margin:.7rem 0 0;">
       <button class="dial-toggle on" id="scoutDurShort" onclick="setScoutDuration('short')">До 4 ч · 11 000 ₽</button>
       <button class="dial-toggle" id="scoutDurLong" onclick="setScoutDuration('long')">Свыше 4 ч · 22 000 ₽</button>
@@ -3016,6 +3017,17 @@ function setPickerValue(v){
   el.dispatchEvent(new Event('input', {bubbles:true}));
   el.dispatchEvent(new Event('change', {bubbles:true}));
 }
+/* Системный календарь на телефоне открывается сам, по касанию поля, и наш
+   поверх него давал два календаря разом. Поэтому для даты свой рисуем только
+   там, где системного нет: внутри артефакта страница живёт в песочнице
+   и showPicker там запрещён. Время остаётся своим всегда — системного поля
+   времени мы намеренно не используем. */
+function nativeDateOk(el){
+  try{ if(window.self !== window.top) return false; }catch(e){ return false; }  // мы во фрейме — это артефакт
+  if(typeof el.showPicker === 'function') return true;
+  // Safari без showPicker: на телефоне календарь всё равно откроется по касанию
+  return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+}
 // Открытие: клик по правой зоне поля, где нарисована иконка
 document.addEventListener('click', e=>{
   const el = e.target;
@@ -3025,6 +3037,11 @@ document.addEventListener('click', e=>{
   if(el.disabled || el.readOnly) return;
   const r = el.getBoundingClientRect();
   if(e.clientX < r.right - PICKER_ZONE) return;    // клик по цифрам — не мешаем набирать
+  if(!isTime && nativeDateOk(el)){
+    closePicker();                                  // свой не показываем — календарь тут один, системный
+    try{ if(el.showPicker) el.showPicker(); }catch(err){}
+    return;
+  }
   e.preventDefault();
   if(isTime) openTimePicker(el); else openDatePicker(el);
 });
@@ -6297,12 +6314,27 @@ function toggleStep(i){
 /* ============= Освоение — опциональная услуга, дата + стоимость → в смету и в календарь ============= */
 let scoutProjectId = null;
 let scoutDuration = 'short'; // short = до 4ч = 11 000₽, long = свыше 4ч = 22 000₽
+/* Освоение всегда идёт до съёмки: как только смена началась, ставить его
+   уже некуда. Поэтому подставляем крайний возможный день — накануне первой
+   смены, а не сегодняшнее число: от него удобнее отсчитывать назад. */
+function scoutLatestIso(p){
+  const first = projectDates(p).filter(Boolean).sort()[0];
+  return first ? isoShift(first, -1) : TODAY_ISO;
+}
 function openScoutModal(pid){
   scoutProjectId = pid;
   scoutDuration = 'short';
   const p = PROJECTS.find(x=>x.id===pid);
   document.getElementById('scoutProjectName').textContent = p.name;
-  document.getElementById('scoutDateInput').value = p.scoutDate || TODAY_ISO;
+  const firstShoot = projectDates(p).filter(Boolean).sort()[0];
+  const latest = scoutLatestIso(p);
+  const dateInput = document.getElementById('scoutDateInput');
+  // у проекта без даты съёмки ограничивать нечем — тогда просто сегодняшний день
+  if(firstShoot) dateInput.max = latest; else dateInput.removeAttribute('max');
+  dateInput.value = p.scoutDate || latest;
+  document.getElementById('scoutLimitHint').textContent = firstShoot
+    ? `Съёмка ${fmtDate(firstShoot)} — освоение не позже ${fmtDate(latest)}.`
+    : '';
   // подписи берём из ставок проекта — они могли поменяться в «Базе данных»
   const sr = projectRates(p);
   document.getElementById('scoutDurShort').textContent = `До 4 ч · ${fmtMoney(sr.scoutShort)}`;
@@ -6318,7 +6350,15 @@ function setScoutDuration(d){
 }
 function saveScout(){
   const p = PROJECTS.find(x=>x.id===scoutProjectId);
-  p.scoutDate = document.getElementById('scoutDateInput').value || TODAY_ISO;
+  const latest = scoutLatestIso(p);
+  const chosen = document.getElementById('scoutDateInput').value || latest;
+  const hasShootDate = !!projectDates(p).filter(Boolean).sort()[0];
+  // дату можно набрать и руками, минуя календарь, — здесь она и проверяется
+  if(hasShootDate && chosen > latest){
+    askNotice(`Освоение проходит до съёмки — позже ${fmtDate(latest)} его не поставить.`, 'Дата не подходит');
+    return;
+  }
+  p.scoutDate = chosen;
   const sr = projectRates(p);
   addScoutToEstimate(p, scoutDuration==='short' ? sr.scoutShort : sr.scoutLong);
   document.getElementById('scoutModal').classList.remove('show');
@@ -14437,6 +14477,14 @@ const SELF_CHECK_CASES = [
     expect:1},
   {group:'Сбор из прайса', name:'Крестик снимает позицию любого количества',
     run:()=>{ const m = {pbA:7}; efpBumpQty(m, 'pbA', 0); return Object.keys(m).length === 0 ? 1 : 0; },
+    expect:1},
+
+  // ---- Освоение ----
+  {group:'Освоение', name:'По умолчанию освоение — накануне съёмки',
+    run:()=>scoutLatestIso({date:'2026-09-10', dates:['2026-09-10']}) === '2026-09-09' ? 1 : 0,
+    expect:1},
+  {group:'Освоение', name:'Многодневный проект: считаем от самой ранней смены',
+    run:()=>scoutLatestIso({date:'2026-09-12', dates:['2026-09-12','2026-09-05','2026-09-13']}) === '2026-09-04' ? 1 : 0,
     expect:1},
 
   // ---- Файлы ----
