@@ -6314,26 +6314,31 @@ function toggleStep(i){
 /* ============= Освоение — опциональная услуга, дата + стоимость → в смету и в календарь ============= */
 let scoutProjectId = null;
 let scoutDuration = 'short'; // short = до 4ч = 11 000₽, long = свыше 4ч = 22 000₽
-/* Освоение всегда идёт до съёмки: как только смена началась, ставить его
-   уже некуда. Поэтому подставляем крайний возможный день — накануне первой
-   смены, а не сегодняшнее число: от него удобнее отсчитывать назад. */
+/* Освоение идёт до съёмки, но на многодневном проекте — до последней смены:
+   осваивать вторую локацию посреди проекта нормально. Поэтому крайний
+   возможный день считаем от последней смены, его же и подставляем:
+   от него удобно отматывать назад, а сегодняшнее число у прошедшего
+   проекта оказывалось уже после съёмки. */
 function scoutLatestIso(p){
-  const first = projectDates(p).filter(Boolean).sort()[0];
-  return first ? isoShift(first, -1) : TODAY_ISO;
+  const last = projectDates(p).filter(Boolean).sort().pop();
+  return last ? isoShift(last, -1) : TODAY_ISO;
 }
 function openScoutModal(pid){
   scoutProjectId = pid;
   scoutDuration = 'short';
   const p = PROJECTS.find(x=>x.id===pid);
   document.getElementById('scoutProjectName').textContent = p.name;
-  const firstShoot = projectDates(p).filter(Boolean).sort()[0];
+  const shootDays = projectDates(p).filter(Boolean).sort();
+  const lastShoot = shootDays[shootDays.length - 1];
   const latest = scoutLatestIso(p);
   const dateInput = document.getElementById('scoutDateInput');
   // у проекта без даты съёмки ограничивать нечем — тогда просто сегодняшний день
-  if(firstShoot) dateInput.max = latest; else dateInput.removeAttribute('max');
+  if(lastShoot) dateInput.max = latest; else dateInput.removeAttribute('max');
   dateInput.value = p.scoutDate || latest;
-  document.getElementById('scoutLimitHint').textContent = firstShoot
-    ? `Съёмка ${fmtDate(firstShoot)} — освоение не позже ${fmtDate(latest)}.`
+  document.getElementById('scoutLimitHint').textContent = lastShoot
+    ? (shootDays.length > 1
+        ? `Съёмка ${fmtDate(shootDays[0])} — ${fmtDate(lastShoot)} — освоение не позже ${fmtDate(latest)}.`
+        : `Съёмка ${fmtDate(lastShoot)} — освоение не позже ${fmtDate(latest)}.`)
     : '';
   // подписи берём из ставок проекта — они могли поменяться в «Базе данных»
   const sr = projectRates(p);
@@ -6352,7 +6357,7 @@ function saveScout(){
   const p = PROJECTS.find(x=>x.id===scoutProjectId);
   const latest = scoutLatestIso(p);
   const chosen = document.getElementById('scoutDateInput').value || latest;
-  const hasShootDate = !!projectDates(p).filter(Boolean).sort()[0];
+  const hasShootDate = !!projectDates(p).filter(Boolean).length;
   // дату можно набрать и руками, минуя календарь, — здесь она и проверяется
   if(hasShootDate && chosen > latest){
     askNotice(`Освоение проходит до съёмки — позже ${fmtDate(latest)} его не поставить.`, 'Дата не подходит');
@@ -14483,8 +14488,14 @@ const SELF_CHECK_CASES = [
   {group:'Освоение', name:'По умолчанию освоение — накануне съёмки',
     run:()=>scoutLatestIso({date:'2026-09-10', dates:['2026-09-10']}) === '2026-09-09' ? 1 : 0,
     expect:1},
-  {group:'Освоение', name:'Многодневный проект: считаем от самой ранней смены',
-    run:()=>scoutLatestIso({date:'2026-09-12', dates:['2026-09-12','2026-09-05','2026-09-13']}) === '2026-09-04' ? 1 : 0,
+  {group:'Освоение', name:'Многодневный проект: крайний день — накануне последней смены',
+    run:()=>scoutLatestIso({date:'2026-09-12', dates:['2026-09-12','2026-09-05','2026-09-13']}) === '2026-09-12' ? 1 : 0,
+    expect:1},
+  {group:'Освоение', name:'Освоение в середине многодневного проекта проходит',
+    run:()=>{
+      const p = {date:'2026-09-05', dates:['2026-09-05','2026-09-06','2026-09-07']};
+      return ('2026-09-06' <= scoutLatestIso(p)) ? 1 : 0;   // осваиваем вторую локацию между сменами
+    },
     expect:1},
 
   // ---- Файлы ----
