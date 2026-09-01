@@ -612,6 +612,29 @@
   .est-open-row{display:flex;justify-content:flex-start;align-items:center;gap:.5rem;
     flex-wrap:wrap;margin:.9rem 0 .8rem;}
 
+  /* ===== Деньги проекта одним экраном ===== */
+  .money-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;margin-bottom:.75rem;}
+  .ms-tile{border:1px solid var(--line);border-radius:12px;padding:.5rem .6rem;background:var(--bg-raised);min-width:0;}
+  .ms-name{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);}
+  .ms-main{font-size:.92rem;margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ms-sub{font-size:.64rem;color:var(--ink-muted);margin-top:.1rem;line-height:1.35;}
+  .ms-tile.ok .ms-main{color:var(--ok);}
+  .ms-tile.warn .ms-main{color:var(--warn);}
+  .money-block{border:1px solid var(--line);border-radius:14px;margin-bottom:.6rem;
+    background:var(--bg-raised);overflow:hidden;}
+  .mb-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
+    background:none;color:var(--ink);font-family:inherit;padding:.7rem .8rem;cursor:pointer;}
+  .mb-name{flex:1;min-width:0;font-size:.92rem;font-weight:600;}
+  .mb-sub{display:block;font-size:.68rem;font-weight:400;color:var(--ink-muted);margin-top:1px;}
+  .mb-amt{font-size:.9rem;white-space:nowrap;flex:none;}
+  .mb-chev{color:var(--ink-muted);flex:none;font-size:1.05rem;line-height:1;
+    transition:transform .15s var(--ease);}
+  .money-block.open .mb-chev{transform:rotate(90deg);}
+  .mb-body{display:none;border-top:1px solid var(--line);padding:.7rem .8rem .85rem;}
+  .money-block.open .mb-body{display:block;}
+  @media (max-width:620px){
+    .money-sum{grid-template-columns:repeat(2,minmax(0,1fr));}
+  }
   .est-sum{display:flex;flex-direction:column;gap:.4rem;}
   .est-sum-row{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);overflow:hidden;}
   .est-sum-row.editing{border-color:var(--accent);}
@@ -695,6 +718,18 @@
   .est-sum-disc{display:flex;align-items:center;justify-content:space-between;gap:.6rem;
     font-size:.8rem;color:var(--ink-muted);padding:.1rem .15rem;}
   .est-sum-disc .btn.tiny{margin-left:.35rem;}
+  /* Скидка и налог живут в своде: раньше их ставили внутри печатной формы,
+     и свод показывал одно, а сумма проекта — другое. */
+  .est-sum-opt{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;
+    padding:.4rem .1rem;font-size:.8rem;color:var(--ink-muted);}
+  .est-sum-opt > .mono{white-space:nowrap;flex:none;}
+  .est-sum-opt .esr-sub{display:block;margin-top:1px;}
+  .est-opt-in{width:56px;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+    border-radius:7px;padding:.2rem .3rem;font-size:.78rem;font-family:var(--font-mono);
+    text-align:right;outline:none;}
+  .est-opt-in:focus{border-color:var(--accent);}
+  .est-line-note{display:block;font-size:.68rem;color:var(--ink-muted);margin-top:1px;}
+  .est-scope-seg{margin-left:.2rem;}
   .est-sum-total{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem;
     border-top:2px solid var(--ink);margin-top:.45rem;padding-top:.5rem;
     font-weight:700;font-size:.95rem;}
@@ -1813,20 +1848,46 @@
       <button class="tab active" data-tab="info" onclick="showTab('info')">Инфо</button>
       <button class="tab" data-tab="trip" onclick="showTab('trip')" style="display:none;">Поездка</button>
       <button class="tab" data-tab="tasks" onclick="showTab('tasks')">Задачи</button>
-      <button class="tab" data-tab="estimate" onclick="showTab('estimate')">Расчёт</button>
+      <button class="tab" data-tab="money" onclick="showTab('money')">Расчёт</button>
       <button class="tab" data-tab="notes" onclick="showTab('notes')">Заметки</button>
-      <button class="tab" data-tab="crew" onclick="showTab('crew')">Команда</button>
-      <button class="tab" data-tab="pay" onclick="showTab('pay')">Оплаты</button>
       <button class="tab" data-tab="files" onclick="showTab('files')">Файлы</button>
     </div>
 
     <div class="tabpane active" data-pane="info" id="pane-info"></div>
     <div class="tabpane" data-pane="trip" id="pane-trip"></div>
     <div class="tabpane" data-pane="tasks" id="pane-tasks"></div>
-    <div class="tabpane" data-pane="estimate" id="pane-estimate"></div>
+    <!-- Деньги проекта одним экраном: смета, команда и оплаты друг друга дополняют,
+         и разводить их по трём вкладкам значило гонять человека туда-сюда.
+         Панели внутри — те же самые, что были во вкладках, поэтому весь их
+         функционал и все обращения к ним по id продолжают работать. -->
+    <div class="tabpane" data-pane="money" id="pane-money">
+      <div id="moneySummary"></div>
+      <div class="money-block open" id="mb-est">
+        <button class="mb-head" onclick="toggleMoneyBlock('est')">
+          <span class="mb-name">Клиенту<span class="mb-sub" id="mb-sub-est"></span></span>
+          <span class="mb-amt mono" id="mb-amt-est"></span>
+          <span class="mb-chev">›</span>
+        </button>
+        <div class="mb-body"><div id="pane-estimate"></div><div id="pane-client"></div></div>
+      </div>
+      <div class="money-block" id="mb-crew">
+        <button class="mb-head" onclick="toggleMoneyBlock('crew')">
+          <span class="mb-name">Команда<span class="mb-sub" id="mb-sub-crew"></span></span>
+          <span class="mb-amt mono" id="mb-amt-crew"></span>
+          <span class="mb-chev">›</span>
+        </button>
+        <div class="mb-body"><div id="pane-crew"></div></div>
+      </div>
+      <div class="money-block" id="mb-pay">
+        <button class="mb-head" onclick="toggleMoneyBlock('pay')">
+          <span class="mb-name">Ренталы<span class="mb-sub" id="mb-sub-pay"></span></span>
+          <span class="mb-amt mono" id="mb-amt-pay"></span>
+          <span class="mb-chev">›</span>
+        </button>
+        <div class="mb-body"><div id="pane-pay"></div></div>
+      </div>
+    </div>
     <div class="tabpane" data-pane="notes" id="pane-notes"></div>
-    <div class="tabpane" data-pane="crew" id="pane-crew"></div>
-    <div class="tabpane" data-pane="pay" id="pane-pay"></div>
     <div class="tabpane" data-pane="files" id="pane-files"></div>
   </section>
 
@@ -2491,6 +2552,7 @@
       <button class="btn ghost tiny" onclick="closeDocFormat()">✕</button>
     </div>
     <div class="form-hint" id="dfHint" style="margin-top:.3rem;"></div>
+    <div id="dfScope" style="display:none;"></div>
     <div id="dfList"></div>
     <div style="display:flex;gap:.5rem;margin-top:.8rem;">
       <button class="btn ghost" onclick="closeDocFormat()">Отмена</button>
@@ -6447,9 +6509,81 @@ function renderCrewStrip(p){
     <button class="btn ghost crew-strip-more" onclick="showTab('crew')">Все →</button>
   </div>`;
 }
+/* Смета, команда и оплаты живут в одном разделе «Расчёт». Старые имена вкладок
+   остались в коде во множестве мест (чекпойнты, переходы из финансов, ссылки в
+   уведомлениях) — поэтому они не ломаются, а ведут в нужный блок этого раздела. */
+const MONEY_BLOCKS = {estimate:'est', crew:'crew', pay:'pay'};
+let moneyOpen = {est:true, crew:false, pay:false};
 function showTab(name){
-  document.querySelectorAll('#screen-project .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
-  document.querySelectorAll('#screen-project .tabpane').forEach(t=>t.classList.toggle('active', t.dataset.pane===name));
+  const block = MONEY_BLOCKS[name];
+  const tab = block ? 'money' : name;
+  document.querySelectorAll('#screen-project .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.querySelectorAll('#screen-project .tabpane').forEach(t=>t.classList.toggle('active', t.dataset.pane===tab));
+  if(block){
+    moneyOpen[block] = true;
+    applyMoneyBlocks();
+    const el = document.getElementById('mb-' + block);
+    if(el && name !== 'estimate') el.scrollIntoView({block:'start', behavior:'smooth'});
+  }
+}
+function toggleMoneyBlock(key){
+  moneyOpen[key] = !moneyOpen[key];
+  applyMoneyBlocks();
+}
+function applyMoneyBlocks(){
+  Object.keys(moneyOpen).forEach(k => {
+    const el = document.getElementById('mb-' + k);
+    if(el) el.classList.toggle('open', !!moneyOpen[k]);
+  });
+}
+/* Свод денег проекта: сколько выставлено клиенту и сколько от него пришло,
+   сколько начислено команде и ренталам и сколько из этого закрыто, что остаётся
+   мне. Одна и та же арифметика, что во «Финансах», — просто по одному проекту. */
+function moneyTotals(p){
+  const crew = projectCrew(p);
+  const crewDue = crew.reduce((s, c) => s + (c.amount || 0) + (c.extraPay || 0), 0);
+  const crewPaid = crew.reduce((s, c) => s + settlementPaid(c), 0);
+  const rentals = RENTAL_DEBTS.filter(r => r.projectId === p.id);
+  const rentDue = rentals.reduce((s, r) => s + (r.amount || 0), 0);
+  const rentPaid = rentals.reduce((s, r) => s + settlementPaid(r), 0);
+  return {
+    client: p.sum || 0, clientPaid: p.paidAmount || 0,
+    crewDue, crewPaid, crewLeft: Math.max(0, crewDue - crewPaid),
+    rentDue, rentPaid, rentLeft: Math.max(0, rentDue - rentPaid),
+    mine: (p.sum || 0) - crewDue - rentDue - tripSpend(p),
+    fact: projectProfit(p),
+  };
+}
+function renderMoneySummary(p){
+  const box = document.getElementById('moneySummary');
+  if(!box) return;
+  const t = moneyTotals(p);
+  const tile = (name, main, sub, tone) => `
+    <div class="ms-tile${tone ? ' ' + tone : ''}">
+      <div class="ms-name">${esc(name)}</div>
+      <div class="ms-main mono">${main}</div>
+      <div class="ms-sub">${sub}</div>
+    </div>`;
+  box.innerHTML = `<div class="money-sum">
+    ${tile('Клиент', fmtMoney(t.client), t.clientPaid > 0
+      ? `получено ${fmtMoney(t.clientPaid)}${t.client - t.clientPaid > 0 ? ` · ждём ${fmtMoney(t.client - t.clientPaid)}` : ' · закрыт'}`
+      : 'денег ещё нет')}
+    ${tile('Команде', fmtMoney(t.crewDue), t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого')}
+    ${tile('Ренталам', fmtMoney(t.rentDue), t.rentDue ? (t.rentLeft > 0 ? `осталось ${fmtMoney(t.rentLeft)}` : 'все оплачены') : 'долгов нет')}
+    ${tile('Мне', `${t.mine < 0 ? '−' : ''}${fmtMoney(Math.abs(t.mine))}`,
+      (t.clientPaid || t.crewPaid || t.rentPaid)
+        ? `на руках ${t.fact < 0 ? '−' : ''}${fmtMoney(Math.abs(t.fact))}`
+        : 'когда всё закроется', t.mine < 0 ? 'warn' : 'ok')}
+  </div>`;
+  // суммы в шапках блоков — чтобы свёрнутый блок всё равно говорил цифру
+  const set = (id, v) => { const el = document.getElementById(id); if(el) el.innerHTML = v; };
+  set('mb-amt-est', fmtMoney(t.client));
+  set('mb-sub-est', isMultiDay(p) ? ` · смета за ${fmtDate(activeDay(p).iso)}` : ' · смета и документы');
+  set('mb-amt-crew', fmtMoney(t.crewDue));
+  set('mb-sub-crew', t.crewLeft > 0 ? ` · осталось выплатить ${fmtMoney(t.crewLeft)}` : (t.crewDue ? ' · всё выплачено' : ' · смены и часы'));
+  set('mb-amt-pay', fmtMoney(t.rentDue));
+  set('mb-sub-pay', t.rentLeft > 0 ? ` · осталось оплатить ${fmtMoney(t.rentLeft)}` : (t.rentDue ? ' · всё оплачено' : ' · оборудование и долги'));
+  applyMoneyBlocks();
 }
 
 function renderInfo(p){
@@ -6643,18 +6777,26 @@ function renderEstimate(p){
     return;
   }
   let printOpen = false;
+  estRedraw = () => draw();     // чтобы правка скидки пересобрала свод, не схлопывая форму
   function total(items){ return items.reduce((s,i)=>s+lineTotal(i),0); }
   /* Начисление команде за погрузку/разгрузку — это выплата, а не позиция сметы.
      Когда П/Р берётся фиксом, в смете стоит только фикс; чтобы расход не пропал
      из виду вместе с внутренней сметой, показываем его справкой под таблицей —
      но в «Итого» он не идёт, иначе те же деньги посчитаются дважды. */
+  /* Куда П/Р ушла у клиента — зависит от тумблера юнита: внутрь переработки
+     или отдельным фиксом. Команде она начисляется в любом случае, поэтому
+     подпись говорит и то, и другое: сколько людям и что при этом видит клиент. */
   function loadNoteHTML(day){
     const toCrew = (day.units||[]).flatMap(u=>u.crew||[]).reduce((s,c)=>s+(c.loadPay||0), 0);
-    const inEst = (day.estimate||[]).some(i => !i.loadFixedLine && /погрузка\/разгрузка/i.test(i.name||''));
-    if(!toCrew || inEst) return '';
+    if(!toCrew) return '';
+    const asOt = (day.units||[]).some(u => unitLoadAsOt(u) && unitLoadHours(u) > 0);
+    const fix = (day.estimate||[]).some(i => i.loadFixedLine);
+    const where = asOt
+      ? 'Клиенту эти часы ушли внутрь переработки — отдельной строкой их там не видно.'
+      : (fix ? 'Клиенту в смете идёт только фикс.'
+             : 'Клиенту эти часы не выставлены — значит, это мой расход.');
     return `<div class="form-hint" style="margin-top:.5rem;">Команде за погрузку/разгрузку начислено
-      <b>${fmtMoney(toCrew)}</b> — это выплата, она живёт в «Оплатах» и в отчёте.
-      Клиенту в смете идёт только фикс.</div>`;
+      <b>${fmtMoney(toCrew)}</b> — это выплата, она живёт в «Оплатах» и в отчёте. ${where}</div>`;
   }
   /* Внутри группы колонок меньше, чем в полной смете: кол-во и смены сведены
      в одну ячейку («2 × 3»), иначе на телефоне пять колонок рвут рубль на строки. */
@@ -6696,7 +6838,11 @@ function renderEstimate(p){
         const name = (own || idx < 0)
           ? esc(i.name)
           : `<button class="est-line-btn" onclick="pickLineRental('${p.id}',${idx})" title="Привязать позицию к ренталу">${esc(i.name)}${tag}</button>`;
-        return `<tr><td>${name}</td><td class="r num">${i.qty}${sh != 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
+        /* Клиенту в документе видна одна переработка, а мне здесь — из чего она
+           сложилась: сколько часов было погрузкой и сколько это стоит команде. */
+        const inner = i.loadHours > 0
+          ? `<span class="est-line-note">в т.ч. погрузка/разгрузка ${Number(i.loadHours).toFixed(1)} ч · ${fmtMoney(i.loadPay || 0)}</span>` : '';
+        return `<tr><td>${name}${inner}</td><td class="r num">${i.qty}${sh != 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`;
   }
@@ -6723,14 +6869,18 @@ function renderEstimate(p){
   function draw(){
     const day = activeDay(p);
     const items = estItems(day.estimate);
-    // скидка рентала уменьшает итог — так цифра совпадает и с его файлом, и с оплатой
-    const dayTotal = total(items) - rentalDiscountRows(p, items).reduce((sum, r) => sum + r.off, 0);
-    // к оплате считается по всему проекту и с учётом скидки/налога — показываем
-    // отдельной строкой, только когда она и правда отличается от свода дня
-    const payable = estPayable(p, estItems(allEstimate(p))).payable;
+    /* Свод дня считается тем же расчётом, что и документ: скидка рентала,
+       скидка клиенту и налог — здесь же. Раньше скидку ставили только внутри
+       «Открыть смету», и свод показывал одно, а сумма проекта — другое. */
+    const t = estPayable(p, items);
+    const rentalOff = t.rentalOff;
+    const gross = total(items) - rentalOff;      // до скидки клиенту
+    const discOff = t.gear - t.gearDisc;
+    const payableDay = t.payable;
+    const payableAll = estPayable(p, estItems(allEstimate(p))).payable;
     const multi = isMultiDay(p);
     pane.querySelector('.est-body').innerHTML = `
-      ${multi ? `<div class="form-hint" style="margin-bottom:.45rem;">Свод за ${fmtDate(day.iso)}${day.transfer?' · <b>трансферный день, 50%</b> кроме транспорта':''}. Смета по форме собирается по всем дням проекта.</div>` : ''}
+      ${multi ? `<div class="form-hint" style="margin-bottom:.45rem;">Свод за ${fmtDate(day.iso)}${day.transfer?' · <b>трансферный день, 50%</b> кроме транспорта':''}. Документ собирается за этот же день — свести все дни можно переключателем в «Открыть смету» и при выгрузке.</div>` : ''}
       <div class="est-sum">
         ${estSummaryBuckets(items).map(groupRowHTML).join('')}
         ${rentalDiscountRows(p, items).map(r => `
@@ -6740,8 +6890,25 @@ function renderEstimate(p){
             </span>
             <span class="mono">− ${fmtMoney(r.off)}</span>
           </div>`).join('')}
-        <div class="est-sum-total"><span>Итого${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(dayTotal)}</span></div>
-        ${payable !== dayTotal ? `<div class="est-sum-payable"><span>К оплате по смете${multi ? ' (все дни)' : ''}${(p.estDiscount || p.estTax) ? ', со скидкой и налогом' : ''}</span><span class="mono">${fmtMoney(payable)}</span></div>` : ''}
+        <div class="est-sum-total"><span>Итого${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(gross)}</span></div>
+        <div class="est-sum-opt">
+          <span>Скидка клиенту на оборудование
+            <input class="est-opt-in" type="number" min="0" max="100" step="1" value="${p.estDiscount || 0}"
+              onchange="setEstOpt('${p.id}','estDiscount',this.value)"> %
+            <span class="esr-sub">свет, грип и электрика — люди, логистика и прочее не в счёт</span>
+          </span>
+          <span class="mono">${discOff > 0 ? '− ' + fmtMoney(discOff) : '—'}</span>
+        </div>
+        <div class="est-sum-opt">
+          <span>Налог
+            <input class="est-opt-in" type="number" min="0" max="30" step="0.5" value="${p.estTax || 0}"
+              onchange="setEstOpt('${p.id}','estTax',this.value)"> %
+            <span class="esr-sub">накидывается на весь итог</span>
+          </span>
+          <span class="mono">${t.taxSum > 0 ? '+ ' + fmtMoney(t.taxSum) : '—'}</span>
+        </div>
+        <div class="est-sum-payable"><span>К оплате${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(payableDay)}</span></div>
+        ${multi ? `<div class="est-sum-payable"><span>К оплате по проекту · все дни</span><span class="mono">${fmtMoney(payableAll)}</span></div>` : ''}
       </div>` + loadNoteHTML(day);
   }
   // «Открыть смету» — весь документ по формуляру: позиции и люди, сразу целиком.
@@ -6758,19 +6925,17 @@ function renderEstimate(p){
     const area = pane.querySelector('#printArea');
     printBtn.innerHTML = docIcon + (printOpen ? 'Скрыть смету' : 'Открыть смету');
     if(!printOpen){ area.innerHTML=''; return; }
-    const items = estItems(allEstimate(p));
+    const items = estScopeItems(p);
     area.innerHTML = `
-      <div class="ep-opts">
-        <label>Скидка на оборудование, % <input type="number" min="0" max="100" step="1" value="${p.estDiscount||0}" onchange="setEstOpt('${p.id}','estDiscount',this.value)"></label>
-        <label>Налог, % <input type="number" min="0" max="30" step="0.5" value="${p.estTax||0}" onchange="setEstOpt('${p.id}','estTax',this.value)"></label>
-      </div>
+      ${isMultiDay(p) ? `<div class="ep-opts"><span>Смета за:</span>${estScopeSegHTML(p, 'setCardScope')}</div>` : ''}
       <div class="estimate-print" id="estimatePrintCard">${estimateCardInnerHTML(p, items)}</div>
       <div class="print-actions">
         <button class="btn ghost" onclick="printEstimate('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M6 9V4h12v5"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v6H6z"/></svg>Печать</button>
         <button class="btn ghost" onclick="downloadEstimate('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 4v11m0 0l-4-4m4 4l4-4"/><path d="M4 18v1.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V18"/></svg>Сохранить файл</button>
         <button class="btn ghost" id="btnShareEstimate" onclick="shareEstimate('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v5.5A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H11"/></svg>Поделиться</button>
       </div>
-      <div class="form-hint" style="margin-top:.5rem;">Форма по твоему шаблону «Проектная смета». Скидка касается только света и грипа, налог накидывается на весь итог — и то и другое сразу видно в своде и в сумме проекта.</div>`;
+      <div class="form-hint" style="margin-top:.5rem;">Форма по твоему шаблону «Проектная смета».
+        Скидку и налог ставь в своде выше — здесь они уже учтены${isMultiDay(p) ? ', а переключатель сверху решает, за день документ или за весь проект' : ''}.</div>`;
     if(!(navigator.share||navigator.canShare)){
       const shareBtn = document.getElementById('btnShareEstimate');
       if(shareBtn) shareBtn.title = 'В этом браузере нет системного Share Sheet — сработает как «Сохранить файл»';
@@ -6778,6 +6943,18 @@ function renderEstimate(p){
     area.scrollIntoView({behavior:'smooth', block:'start'});
   };
   draw();
+}
+
+/* Переключение «день / весь проект» внутри открытой формы: перерисовываем
+   только саму карточку, чтобы форма не схлопывалась под руками. */
+function setCardScope(id){
+  estDocScope = id;
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(!p) return;
+  const card = document.getElementById('estimatePrintCard');
+  if(card) card.innerHTML = estimateCardInnerHTML(p, estScopeItems(p));
+  const seg = document.querySelector('#printArea .est-scope-seg');
+  if(seg) seg.outerHTML = estScopeSegHTML(p, 'setCardScope');
 }
 
 /* ============= Убрать файл рентала из расчёта =============
@@ -7605,7 +7782,32 @@ function toggleEstGroup(btn){
   const open = row.classList.toggle('open');
   if(open) estOpenGroups.add(row.dataset.key); else estOpenGroups.delete(row.dataset.key);
 }
-function estimateCardInnerHTML(p, items, docLabel){
+/* ============= Область сметы =============
+   В многодневном проекте у каждого дня свои люди и своё оборудование, поэтому
+   и на экране, и в документе смета идёт за выбранный день. Свести все дни в один
+   документ можно переключателем — это отдельный осознанный выбор, а не умолчание. */
+let estDocScope = 'day';
+function estScopeItems(p, scope){
+  const sc = scope || estDocScope;
+  return estItems((sc === 'all' && isMultiDay(p)) ? allEstimate(p) : activeDay(p).estimate);
+}
+function estScopeDates(p, scope){
+  const sc = scope || estDocScope;
+  return (sc === 'all' || !isMultiDay(p)) ? projectDates(p) : [activeDay(p).iso];
+}
+// подпись к документу: за какой день он собран
+function estScopeNote(p, scope){
+  if(!isMultiDay(p)) return '';
+  return (scope || estDocScope) === 'all' ? 'все дни проекта' : fmtDate(activeDay(p).iso);
+}
+/* Переключатель «этот день / весь проект» — общий для окна выгрузки и для
+   развёрнутой формы: выбор один, и он виден в обоих местах. */
+function estScopeSegHTML(p, handler){
+  if(!isMultiDay(p)) return '';
+  const seg = (id, name) => `<button class="${estDocScope === id ? 'on' : ''}" onclick="${handler}('${id}')">${esc(name)}</button>`;
+  return `<div class="seg sm est-scope-seg">${seg('day', fmtDate(activeDay(p).iso))}${seg('all', 'Весь проект')}</div>`;
+}
+function estimateCardInnerHTML(p, items, docLabel, scope){
   const t = estPayable(p, items);
   return `
     <div class="ep-head">
@@ -7618,7 +7820,7 @@ function estimateCardInnerHTML(p, items, docLabel){
     <div class="ep-kind">${esc(docLabel || 'Проектная смета')}</div>
     <div class="ep-project">
       <span><b>ПРОЕКТ:</b> ${esc(p.name)}${p.client && p.client !== p.name ? ' · ' + esc(p.client) : ''}</span>
-      <span><b>ДАТА:</b> ${projectDates(p).map(fmtDate).join(', ')}</span>
+      <span><b>ДАТА:</b> ${estScopeDates(p, scope).map(fmtDate).join(', ')}</span>
     </div>
     ${estimateTableHTML(items, t)}`;
 }
@@ -7651,8 +7853,8 @@ function estimateTableHTML(items, t){
     </table></div>`;
 }
 // Полностью самостоятельный HTML-документ — открывается/скачивается/пересылается без доступа к стилям приложения
-function estimateStandaloneHTML(p, docLabel){
-  const items = estItems(allEstimate(p));
+function estimateStandaloneHTML(p, docLabel, scope){
+  const items = estScopeItems(p, scope);
   return `<!doctype html><html><head><meta charset="utf-8"><title>Смета — ${esc(p.name)}</title>
     <style>
       body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;background:#fff;color:#111;margin:0;padding:24px;}
@@ -7677,27 +7879,34 @@ function estimateStandaloneHTML(p, docLabel){
       .ep-kind{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#555;margin:10px 0 3px;}
       .ep-project{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:12px;margin:0 0 12px;}
     </style></head>
-    <body><div class="estimate-print">${estimateCardInnerHTML(p, items, docLabel)}</div></body></html>`;
+    <body><div class="estimate-print">${estimateCardInnerHTML(p, items, docLabel, scope)}</div></body></html>`;
 }
+/* Скидка и налог правятся в своде, поэтому пересобрать надо всё, что от них
+   зависит: свод, открытую форму, шапку проекта и оплаты — иначе где-то остаётся
+   старая цифра, и они расходятся. */
+let estRedraw = null;
 function setEstOpt(pid, key, v){
   const p = PROJECTS.find(x => x.id === pid);
   if(!p) return;
   p[key] = Math.max(0, Number(String(v).replace(',', '.')) || 0);
   refreshProjectSum(p);   // «Сумма сметы» проекта — это «К ОПЛАТЕ»: скидка и налог входят
   const card = document.getElementById('estimatePrintCard');
-  if(card) card.innerHTML = estimateCardInnerHTML(p, estItems(allEstimate(p)));
+  if(card) card.innerHTML = estimateCardInnerHTML(p, estScopeItems(p));
+  if(estRedraw) estRedraw();
   renderInfo(p);
+  renderPayTab(p);
+  refreshAll();
   scheduleSave();
 }
 /* Смета обычным текстом — на случай, когда html сохранить нельзя.
    Те же разделы и тот же свод, что в форме, только без оформления. */
-function estimateTextVersion(p){
-  const items = estItems(allEstimate(p));
+function estimateTextVersion(p, scope){
+  const items = estScopeItems(p, scope);
   const t = estPayable(p, items);
   const money = n => fmtMoney(n).replace(/ /g, ' ');
   const lines = [`СМЕТА — ${p.name}`];
   if(p.client && p.client !== p.name) lines.push(`Заказчик: ${p.client}`);
-  lines.push(`Даты: ${projectDates(p).map(fmtDate).join(', ')}`, '',
+  lines.push(`Даты: ${estScopeDates(p, scope).map(fmtDate).join(', ')}`, '',
     myHeadName(), ...myContactLines(), '');
   EST_FORM_GROUPS.forEach(g => {
     const rows = items.filter(i => estFormGroup(i.sec || 'Оборудование') === g);
@@ -7957,8 +8166,8 @@ function ezPdfLogo(){
    Порядок и состав те же, что в форме на экране и в html-версии: шапка с
    контактами, разделы формуляра, подытоги, свод. Если строки не помещаются —
    таблица продолжается на следующей странице со своей шапкой. */
-async function estimatePdfBytes(p, docLabel){
-  const items = estItems(allEstimate(p));
+async function estimatePdfBytes(p, docLabel, scope){
+  const items = estScopeItems(p, scope);
   const t = estPayable(p, items);
   const logo = await ezPdfLogo();
   const doc = ezPdfNew();
@@ -7983,7 +8192,7 @@ async function estimatePdfBytes(p, docLabel){
   ezPdfText(doc, (docLabel || 'Проектная смета').toUpperCase(), M, y, {size:8, bold:true, color:EZ_PDF_GREY});
   y -= 15;
   ezPdfText(doc, `ПРОЕКТ: ${p.name}${p.client && p.client !== p.name ? ' · ' + p.client : ''}`, M, y, {size:9.5});
-  ezPdfText(doc, `ДАТА: ${projectDates(p).map(fmtDate).join(', ')}`, M + W, y, {size:9.5, align:'r'});
+  ezPdfText(doc, `ДАТА: ${estScopeDates(p, scope).map(fmtDate).join(', ')}`, M + W, y, {size:9.5, align:'r'});
   y -= 16;
 
   const headRow = () => {
@@ -8121,21 +8330,40 @@ const EZ_DOC_FORMATS = [
   {id:'html', name:'HTML',  hint:'страница для браузера: можно открыть и распечатать'},
   {id:'txt',  name:'Текст', hint:'те же цифры без оформления — влезает в любое сообщение'},
 ];
-let docFormatDo = null;
+let docFormatDo = null, docFormatOpts = null;
 function askDocFormat(opts, cb){
   docFormatDo = cb;
+  docFormatOpts = opts || {};
+  renderDocFormat();
+  document.getElementById('docFormatModal').classList.add('show');
+}
+function renderDocFormat(){
+  const opts = docFormatOpts || {};
+  const proj = opts.project;
   document.getElementById('dfTitle').textContent = opts.title || 'В каком формате сохранить?';
   document.getElementById('dfHint').textContent = opts.hint || '';
+  /* Многодневный проект: прямо здесь видно, что уедет в файл — выбранный день
+     или весь проект. Раньше документ молча собирался по всем дням сразу. */
+  const scopeBox = document.getElementById('dfScope');
+  const multi = !!(proj && isMultiDay(proj));
+  if(scopeBox){
+    scopeBox.style.display = multi ? 'block' : 'none';
+    scopeBox.innerHTML = multi
+      ? '<div class="form-hint" style="margin:.55rem 0 .3rem;">Что выгружаем:</div>' +
+        estScopeSegHTML(proj, 'dfSetScope')
+      : '';
+  }
   document.getElementById('dfList').innerHTML = EZ_DOC_FORMATS.map((f, i) => `
     <button class="df-opt${i ? '' : ' main'}" onclick="pickDocFormat('${f.id}')">
       <span class="df-name">${esc(f.name)}</span>
       <span class="df-hint">${esc(f.hint)}</span>
     </button>`).join('');
-  document.getElementById('docFormatModal').classList.add('show');
 }
+function dfSetScope(id){ estDocScope = id; renderDocFormat(); }
 function closeDocFormat(){
   document.getElementById('docFormatModal').classList.remove('show');
   docFormatDo = null;
+  docFormatOpts = null;
 }
 function pickDocFormat(id){
   const fn = docFormatDo;
@@ -8150,7 +8378,9 @@ function printEstimate(pid){
 /* Один и тот же документ в трёх видах. Собирается на лету из текущей сметы,
    поэтому что на экране — то и в файле. */
 async function estimateDocFile(p, format, docLabel){
-  const base = `${docLabel || 'Смета'} — ${p.name}`;
+  // в имя файла попадает день, если смета собрана за один день многодневного проекта
+  const day = (isMultiDay(p) && estDocScope !== 'all') ? ` · ${fmtDate(activeDay(p).iso)}` : '';
+  const base = `${docLabel || 'Смета'} — ${p.name}${day}`;
   if(format === 'pdf'){
     const bytes = await estimatePdfBytes(p, docLabel);
     return {filename:`${base}.pdf`, data:bytes, mime:'application/pdf'};
@@ -8166,7 +8396,8 @@ function estimateAltText(p, format){
 function downloadEstimate(pid){
   const p = PROJECTS.find(x=>x.id===pid);
   if(!p) return;
-  askDocFormat({title:'Как сохранить смету?', hint:`«${p.name}» — к оплате ${fmtMoney(p.sum)}`}, async fmt => {
+  askDocFormat({title:'Как сохранить смету?', project:p,
+    hint:`«${p.name}» — к оплате ${fmtMoney(p.sum)}`}, async fmt => {
     const f = await estimateDocFile(p, fmt);
     ezSaveFile(f.filename, f.data, f.mime, estimateAltText(p, fmt));
   });
@@ -8174,7 +8405,8 @@ function downloadEstimate(pid){
 function shareEstimate(pid){
   const p = PROJECTS.find(x=>x.id===pid);
   if(!p) return;
-  askDocFormat({title:'Чем поделиться?', hint:`«${p.name}» — файл уйдёт в мессенджер или почту`}, async fmt => {
+  askDocFormat({title:'Чем поделиться?', project:p,
+    hint:`«${p.name}» — файл уйдёт в мессенджер или почту`}, async fmt => {
     const f = await estimateDocFile(p, fmt);
     const file = new File([f.data], f.filename, {type:f.mime});
     try{
@@ -8703,7 +8935,8 @@ function renderCrewTab(p){
           <div class="cright">${debtHtml}
             <div style="margin-top:.3rem;"><button class="btn ghost tiny" onclick="removeFromUnit(${u.id},'${c.id}')">Убрать</button></div>
           </div>
-        </div>`;
+        </div>
+        ${crewPayHTML(p, u, c)}`;
       }).join('') : '<div class="empty-hint">В этом юните пока никого нет.</div>'}
       ${free.length ? `<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;align-items:center;">
         <select id="addto-${u.id}" class="role-select" style="min-width:150px;">
@@ -8720,7 +8953,7 @@ function renderCrewTab(p){
        <button class="btn ghost" onclick="addUnit()">+ Добавить юнит</button>
        <button class="btn ghost" onclick="openCrewPassModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c0-1.7 1.3-3 3-3s3 1.3 3 3"/><path d="M14.5 10h4M14.5 13.5h4"/></svg>Пропуск</button>
        <button class="btn ghost" onclick="openCrewCreditsModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M3 8l2.5-4h3L6 8z"/><path d="M9 8l2.5-4h3L12 8z"/><path d="M15 8l2.5-4h3L18 8z"/><rect x="3" y="8" width="18" height="12" rx="1.5"/></svg>Кредитсы</button>
-       <button class="btn crew-actions-main" onclick="calcPersonnel()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>Расчёт персонала</button>
+       <span class="form-hint" style="align-self:center;">Деньги считаются сами — как только меняешь время, состав или тумблеры.</span>
      </div>
      <div id="calcResult"></div>`;
 }
@@ -8811,6 +9044,16 @@ function toggleUnitFlag(unitId, key){
   const note = document.getElementById('hours-note-'+unitId);
   if(note) note.innerHTML = hoursNoteHTML(u);
   scheduleSave();
+  /* Сняли «П/Р переработка», а часы погрузки есть — значит с клиента берём фикс,
+     и его надо назвать сразу: раньше об этом спрашивала кнопка расчёта,
+     а теперь считает само. */
+  if(key === 'loadAsOt' && !unitLoadAsOt(u) && unitLoadHours(u) > 0
+     && hoursBetween(u.shiftStart, u.shiftEnd) != null && (u.crew.length || unitMeOn(u, 0))){
+    pendingLoadUnits = [u];
+    openLoadPayModal();
+    return;
+  }
+  autoCalcPersonnel(p);
 }
 
 /* «Разрыв» — недосып между сменами, идущими подряд. Каждый такой час оплачивается
@@ -8835,7 +9078,7 @@ function saveGapHours(){
   const v = parseFloat(document.getElementById('gapHoursInput').value);
   u.gapHours = isNaN(v) ? 0 : Math.max(0, v);
   closeGapModal();
-  renderCrewTab(p);
+  autoCalcPersonnel(p);
   scheduleSave();
 }
 function clearGapHours(){
@@ -8867,7 +9110,7 @@ function saveTaxiAmount(){
   const v = parseFloat(document.getElementById('taxiAmountInput').value);
   u.taxi = isNaN(v) ? 0 : Math.max(0, v);
   closeTaxiModal();
-  renderCrewTab(p);
+  autoCalcPersonnel(p);
   scheduleSave();
 }
 function clearTaxiAmount(){
@@ -8932,6 +9175,12 @@ function calcPersonnel(){
   if(pendingLoadUnits.length){ openLoadPayModal(); return; }
   runCalcPersonnel(null);
 }
+/* Что клиент видит как «переработку»: часы и деньги, когда П/Р сложена с ней.
+   Часы складываются, а деньги остаются посчитанными раздельно — переработка по
+   своим ступеням, П/Р всегда по первой. Сложи их по часам — и прогрессия
+   разогналась бы, сумма выросла бы на ровном месте. */
+function otLineHours(ot, loadH, loadAsOt){ return (Number(ot) || 0) + (loadAsOt ? (Number(loadH) || 0) : 0); }
+function otLineSum(otPay, loadPay, loadAsOt){ return (Number(otPay) || 0) + (loadAsOt ? (Number(loadPay) || 0) : 0); }
 // Сколько причитается команде юнита за П/Р: часы × первая ступень, по каждому человеку
 function unitCrewLoadPay(u, rates){
   const h = unitLoadHours(u);
@@ -8978,7 +9227,19 @@ function submitLoadPayProrata(){
   runCalcPersonnel({});
 }
 
-function runCalcPersonnel(loadOverrides){
+/* Пересчёт запускается сам, как только меняются входные данные: время смены,
+   тумблеры, состав юнита, роли. Раньше это делала кнопка, и пока её не нажмёшь,
+   в строке человека и в смете стояли вчерашние цифры.
+   silent — автоматический заход: он не рапортует на весь экран и, если считать
+   пока нечего (время не проставлено), не сносит уже посчитанный персонал. */
+function autoCalcPersonnel(p){
+  const proj = p || PROJECTS.find(x => x.id === currentProjectId);
+  if(!proj) return;
+  const units = activeDay(proj).units || [];
+  if(!units.some((u, i) => (u.crew || []).length || unitMeOn(u, i))) return;
+  runCalcPersonnel(null, true);
+}
+function runCalcPersonnel(loadOverrides, silent){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   const rates = projectRates(p);   // проект считается по своему снимку ставок
   const dayK = activeDay(p).transfer ? TRANSFER_K : 1;
@@ -9016,21 +9277,22 @@ function runCalcPersonnel(loadOverrides){
       const gapPay = Math.round(gapH * p1);
       newLines.push({sec:'Персонал', name:`${prefix}${role} — смена${unitNight(u)?' (ночная)':''}`,
         qty:members.length, days:1, price:base, client:true});
-      if(otPay>0){
+      /* Клиент видит одну статью — переработку. Часы П/Р, когда включён тумблер
+         «П/Р переработка», просто прибавляются к её часам: сколько из них было
+         погрузкой, клиента не касается. Деньги при этом складываются готовыми
+         суммами, а не пересчитываются по общим часам: переработка идёт по своим
+         ступеням, П/Р — всегда по первой, и сложение часов разогнало бы прогрессию.
+         На фиксе (тумблер выключен) клиент видит отдельную строку фикса ниже,
+         а начисление команде остаётся выплатой (c.loadPay) и в смету не пишется. */
+      const otH = otLineHours(ot, loadH, loadAsOt);
+      const otSum = otLineSum(otPay, loadPay, loadAsOt);
+      if(otSum>0){
         const why = [unitNight(u)?'ночная норма '+unitNorm(u,rates)+' ч':'', unitLunch(u)?'текущий обед':'']
           .filter(Boolean).join(', ');
         newLines.push({sec:'Персонал',
-          name:`${prefix}${role} — переработка ${ot.toFixed(1)} ч${prog?'':' (1-я ступень)'}${why?' · '+why:''}`,
-          qty:members.length, days:1, price:otPay, client:true});
-      }
-      // Смета одна, поэтому в неё попадает только то, что клиент оплачивает.
-      // П/Р переработкой — идёт построчно; на фиксе клиент видит одну строку фикса ниже,
-      // а начисление команде остаётся выплатой (c.loadPay) и в смету не пишется —
-      // раньше эти две статьи складывались в одном итоге и цифры расходились.
-      if(loadPay>0 && loadAsOt){
-        newLines.push({sec:'Персонал',
-          name:`${prefix}${role} — погрузка/разгрузка ${loadH.toFixed(1)} ч — 1-я ступень`,
-          qty:members.length, days:1, price:loadPay, client:true});
+          name:`${prefix}${role} — переработка ${otH.toFixed(1)} ч${prog?'':' (1-я ступень)'}${why?' · '+why:''}`,
+          qty:members.length, days:1, price:otSum, client:true,
+          otHours:otH, loadHours:loadAsOt ? loadH : 0, loadPay:loadAsOt ? loadPay : 0});
       }
       // разрыв может быть не у всех: у кого чип «без разрыва» — не начисляем
       const gapMembers = members.filter(c => !c.noGap);
@@ -9063,12 +9325,12 @@ function runCalcPersonnel(loadOverrides){
       const meGap = Math.round(gapH * meP1);
       newLines.push({sec:'Персонал', name:`${prefix}Гафер — смена${unitNight(u)?' (ночная)':''}`,
         qty:1, days:1, price:meBase, client:true, gaffer:true});
-      if(meOt>0) newLines.push({sec:'Персонал',
-        name:`${prefix}Гафер — переработка ${ot.toFixed(1)} ч${prog?'':' (1-я ступень)'}`,
-        qty:1, days:1, price:meOt, client:true, gaffer:true});
-      if(meLoad>0 && loadAsOt) newLines.push({sec:'Персонал',
-        name:`${prefix}Гафер — погрузка/разгрузка ${loadH.toFixed(1)} ч — 1-я ступень`,
-        qty:1, days:1, price:meLoad, client:true, gaffer:true});
+      const meOtH = otLineHours(ot, loadH, loadAsOt);
+      const meOtSum = otLineSum(meOt, meLoad, loadAsOt);
+      if(meOtSum>0) newLines.push({sec:'Персонал',
+        name:`${prefix}Гафер — переработка ${meOtH.toFixed(1)} ч${prog?'':' (1-я ступень)'}`,
+        qty:1, days:1, price:meOtSum, client:true, gaffer:true,
+        otHours:meOtH, loadHours:loadAsOt ? loadH : 0, loadPay:loadAsOt ? meLoad : 0});
       if(meGap>0) newLines.push({sec:'Персонал',
         name:`${prefix}Гафер — разрыв ${fmtHoursShort(gapH)} ч — переработка, 1-я ступень`,
         qty:1, days:1, price:meGap, client:true, gaffer:true});
@@ -9094,7 +9356,10 @@ function runCalcPersonnel(loadOverrides){
   // заменяем только раздел «Персонал», всё остальное в смете остаётся как есть
   // («Освоение» — тоже «Персонал», но это отдельная авто-строка, её не трогаем)
   const day = activeDay(p);
-  day.estimate = day.estimate.filter(i=>i.sec!=='Персонал' || i.scoutLine || i.tripFee).concat(newLines);
+  // тихий пересчёт без результата (нет времени смены) не должен стирать посчитанное
+  if(!(silent && !newLines.length && problems.length)){
+    day.estimate = day.estimate.filter(i=>i.sec!=='Персонал' || i.scoutLine || i.tripFee).concat(newLines);
+  }
   refreshProjectSum(p);
 
   const total = newLines.reduce((s,i)=>s+lineTotal(i),0);
@@ -9109,10 +9374,14 @@ function runCalcPersonnel(loadOverrides){
     </div>`;
 
   syncEstimateToFiles(p);       // смета изменилась — обновляем файл-копию в «Файлах»
-  renderCrewTab(p);            // перерисовывает вкладку и очищает #calcResult
-  renderEstimate(p); renderPayTab(p); renderInfo(p); renderFiles(p);
+  renderCrewTab(p);            // перерисовывает блок и очищает #calcResult
+  renderEstimate(p); renderInfo(p); renderFiles(p);
+  renderMoneySummary(p);
+  const clientPane = document.getElementById('pane-client');
+  if(clientPane) renderPayTab(p);   // ренталы и деньги клиента — те же цифры
   refreshAll();
-  document.getElementById('calcResult').innerHTML = message;
+  const box = document.getElementById('calcResult');
+  if(box && !silent) box.innerHTML = message;
 }
 function hoursNoteHTML(u){
   const proj = PROJECTS.find(x=>x.id===currentProjectId);
@@ -9142,6 +9411,7 @@ function setUnitTime(unitId, field, value){
   u[field] = value;
   const note = document.getElementById('hours-note-'+unitId);
   if(note) note.innerHTML = hoursNoteHTML(u);
+  autoCalcPersonnel(p);     // время изменилось — деньги пересчитались сразу
 }
 /* «Я на смене»: по умолчанию гафер стоит на первом юните дня.
    Явный выбор пользователя хранится в u.me и главнее умолчания. */
@@ -9152,7 +9422,7 @@ function toggleUnitMe(unitId){
   const idx = units.findIndex(x=>x.id===unitId);
   if(idx < 0) return;
   units[idx].me = !unitMeOn(units[idx], idx);
-  renderCrewTab(p);
+  autoCalcPersonnel(p);
   scheduleSave();
 }
 function toggleCrewGap(unitId, cid){
@@ -9160,14 +9430,15 @@ function toggleCrewGap(unitId, cid){
   const c = findUnit(p, unitId).crew.find(x=>x.id===cid);
   if(!c) return;
   c.noGap = !c.noGap;
-  renderCrewTab(p);
+  autoCalcPersonnel(p);
   scheduleSave();
 }
 function setCrewRole(unitId, cid, role){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   const c = findUnit(p, unitId).crew.find(x=>x.id===cid);
   c.role = role;
-  renderCrewTab(p);
+  c.amount = roleShiftRate(projectRates(p), role);   // ставка новой должности
+  autoCalcPersonnel(p);
   renderPayTab(p);
 }
 function setCrewAmount(unitId, cid, value){
@@ -9200,7 +9471,8 @@ function addToUnit(unitId){
   // сумма подставляется из ставок этого проекта — дальше правится вручную
   u.crew.push({id:cid, role, pass:false, credit:false, paid:false,
     amount: roleShiftRate(projectRates(p), role), paymentType:null, paymentDate:null});
-  renderCrewTab(p); renderCrewStrip(p); renderPayTab(p); refreshAll();
+  autoCalcPersonnel(p);
+  renderCrewStrip(p); renderPayTab(p); refreshAll();
 }
 function removeFromUnit(unitId, cid){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
@@ -9208,7 +9480,8 @@ function removeFromUnit(unitId, cid){
   const member = u.crew.find(c=>c.id===cid);
   if(member.paid){ askNotice('По этому человеку уже проведена оплата — убрать нельзя, история должна сохраниться.', 'Не убрал из юнита'); return; }
   u.crew = u.crew.filter(c=>c.id!==cid);
-  renderCrewTab(p); renderCrewStrip(p); renderPayTab(p); refreshAll();
+  autoCalcPersonnel(p);
+  renderCrewStrip(p); renderPayTab(p); refreshAll();
 }
 
 /* ============= Выплаты команде и ренталам =============
@@ -9489,6 +9762,7 @@ function settlementLabel(kind, pid, a, b){
   return person ? person.name : b;
 }
 function renderPayTab(p){
+  renderMoneySummary(p);   // свод наверху экрана считается из тех же цифр
   ensureUniqueUnitIds(p);
   const pane = document.getElementById('pane-pay');
   const remaining = p.sum - p.paidAmount;
@@ -9544,16 +9818,21 @@ function renderPayTab(p){
       <button class="btn ghost tiny" onclick="toggleProjectCancelled('${p.id}')">↺ Восстановить</button>
     </div>` : '';
 
-  pane.innerHTML = cancelBanner + `
+  /* Деньги клиента стоят рядом со сметой — это одна история: сколько выставил,
+     сколько пришло. Ренталы живут своим блоком, выплаты команде — прямо в строках
+     людей, вместе с их часами. */
+  const client = document.getElementById('pane-client');
+  if(client) client.innerHTML = cancelBanner + `
+    <div class="pay-subhead"><span>Деньги от клиента</span></div>
     <div class="kv">
       <div><label>Счёт</label><div class="v">${p.invoiceSent? fmtMoney(p.sum)+' — выставлен' : 'не выставлен'}</div></div>
       <div><label>Договор</label><div class="v">${p.contractSent? 'прикреплён' : 'не прикреплён'}</div></div>
       <div><label>Получено</label><div class="v mono">${fmtMoney(p.paidAmount)} из ${fmtMoney(p.sum)}</div></div>
       <div><label>Остаток</label><div class="v mono" style="${remaining>0?'color:var(--warn)':''}">${fmtMoney(remaining)}</div></div>
     </div>
-    ${clientBlock}
+    ${clientBlock}`;
 
-    <div class="pay-subhead"><span>Ренталам</span></div>
+  pane.innerHTML = `
     ${rentals.length ? rentals.map(r=>settlementRowHTML({
         label:r.rental, item:r, ref:settlementRef('rental', p.id, null, r.rental),
         del:`removeRentalDebt('${jsArg(p.id)}','${jsArg(r.rental)}')`,
@@ -9567,31 +9846,28 @@ function renderPayTab(p){
       <button class="btn ghost" onclick="assignRental('${p.id}')">+ Назначить рентал</button>
     </div>` : ''}
 
-    <div class="pay-subhead"><span>Команде</span></div>
-    ${activeDay(p).units.map(u=>{
-      if(!u.crew.length) return '';
-      return `${activeDay(p).units.length>1?`<div class="form-hint" style="margin:.3rem 0;">${esc(u.name)}</div>`:''}` +
-        u.crew.map(c=>{
-          const person = CREW.find(x=>x.id===c.id);
-          const label = (person?person.name:c.id) + (c.role?` · ${c.role}`:'');
-          // Разбивка перед итогом: сколько за смену, сколько за П/Р, сколько доп. расход
-          const shiftPart = (c.amount||0) - (c.loadPay||0) - (c.extraPay||0);
-          const breakdown = `
-            <div class="pay-breakdown">
-              <div><span>смена и переработки</span><span class="mono">${fmtMoney(shiftPart)}</span></div>
-              ${c.loadPay>0 ? `<div><span>погрузка/разгрузка · ${(c.loadHours||0).toFixed(1)} ч</span><span class="mono">${fmtMoney(c.loadPay)}</span></div>` : ''}
-              ${c.extraPay>0 ? `<div><span>доп. расход${c.extraNote?' · '+esc(c.extraNote):''}</span><span class="mono">${fmtMoney(c.extraPay)}</span></div>` : ''}
-            </div>`;
-          return `<div class="pay-person">
-            ${breakdown}
-            ${settlementRowHTML({label, item:c, ref:settlementRef('crew', p.id, u.id, c.id)})}
-            ${c.paid ? '' : `<div style="display:flex;justify-content:flex-end;margin-top:-.2rem;">
-              <button class="btn ghost tiny" onclick="openExtraModal(${u.id},'${c.id}')">${c.extraPay>0?'✎ Доп. расход':'+ Внести доп. расход'}</button>
-            </div>`}
-          </div>`;
-        }).join('');
-    }).join('') || '<div class="empty-hint">Команда не назначена.</div>'}
   `;
+  renderCrewTab(p);   // выплаты людям рисуются вместе с их часами, в блоке «Команда»
+}
+/* Что причитается человеку и что уже отдано — одним куском. Живёт в строке
+   человека: часы, сумма и оплата рядом, чтобы не сверять два экрана.
+   Платить можно частями — остаток виден тут же. */
+function crewPayHTML(p, u, c){
+  const label = c.paid ? 'Выплачено' : 'К выплате';
+  const shiftPart = (c.amount||0) - (c.loadPay||0) - (c.extraPay||0);
+  const breakdown = `
+    <div class="pay-breakdown">
+      <div><span>смена и переработки</span><span class="mono">${fmtMoney(shiftPart)}</span></div>
+      ${c.loadPay>0 ? `<div><span>погрузка/разгрузка · ${(c.loadHours||0).toFixed(1)} ч</span><span class="mono">${fmtMoney(c.loadPay)}</span></div>` : ''}
+      ${c.extraPay>0 ? `<div><span>доп. расход${c.extraNote?' · '+esc(c.extraNote):''}</span><span class="mono">${fmtMoney(c.extraPay)}</span></div>` : ''}
+    </div>`;
+  return `<div class="pay-person">
+    ${breakdown}
+    ${settlementRowHTML({label, item:c, ref:settlementRef('crew', p.id, u.id, c.id)})}
+    ${c.paid ? '' : `<div style="display:flex;justify-content:flex-end;margin-top:-.2rem;">
+      <button class="btn ghost tiny" onclick="openExtraModal(${u.id},'${c.id}')">${c.extraPay>0?'✎ Доп. расход':'+ Внести доп. расход'}</button>
+    </div>`}
+  </div>`;
 }
 /* Имя внутри inline-обработчика: апостроф в названии рентала не должен ломать вызов */
 function jsArg(v){ return esc(String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
@@ -11560,10 +11836,16 @@ function ezBytesToB64(bytes){
   return btoa(s);
 }
 async function generateEstimateFile(p, phase){
-  const items = estItems(allEstimate(p));
+  /* Файл собирается по тому же правилу, что и экран: за выбранный день, а если
+     переключатель стоит на «весь проект» — по всем дням. У каждого дня свой файл:
+     состав команды и техники там разный, и один снимок на всех врал бы. */
+  const items = estScopeItems(p);
   if(!items.length){ askNotice('Смета пустая — сначала загрузи файл рентала или посчитай персонал.', 'Нечего формировать'); return false; }
   const t = estPayable(p, items);
-  const label = phase === 'actual' ? 'Фактическая смета' : 'Первичная смета';
+  const perDay = isMultiDay(p) && estDocScope !== 'all';
+  const dayIso = perDay ? activeDay(p).iso : null;
+  const label = (phase === 'actual' ? 'Фактическая смета' : 'Первичная смета')
+    + (perDay ? ` · ${fmtDate(dayIso)}` : '');
   /* Файл кладём в pdf: он открывается и печатается одинаково на любом устройстве,
      а html или текст всегда можно собрать заново кнопкой «Сохранить файл».
      Если pdf почему-то не собрался — падаем на прежний html, чтобы смета
@@ -11580,7 +11862,10 @@ async function generateEstimateFile(p, phase){
       added:TODAY_ISO, size:Math.round(html.length / 1024) + ' КБ',
       dataUrl:'data:text/html;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(html))), payable:t.payable};
   }
-  const idx = p.files.findIndex(f => f.sourceType === 'generated-estimate' && f.phase === phase);
+  entry.dayIso = dayIso;
+  // файл дня перезаписывает файл того же дня, а не чужого
+  const idx = p.files.findIndex(f => f.sourceType === 'generated-estimate' && f.phase === phase
+    && (f.dayIso || null) === dayIso);
   if(idx > -1) p.files[idx] = entry; else p.files.push(entry);
   await ezFileStash(entry);   // байты живут отдельно от состояния, иначе оно распухает
   const snap = {sum:t.total, payable:t.payable, at:TODAY_ISO};
@@ -14534,6 +14819,25 @@ const SELF_CHECK_CASES = [
     },
     expect:11},
 
+  // ---- Свод денег проекта ----
+  {group:'Деньги проекта', name:'Свод считает начисленное команде и остаток по нему',
+    run:()=>{
+      const p = {id:'__mt', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:40000,
+        units:[{id:1, name:'Ю1', crew:[{id:'x', amount:30000, extraPay:5000, payments:[{amount:10000}]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[]};
+      const t = moneyTotals(p);
+      return t.crewDue + t.crewLeft / 1000;      // 35 000 начислено, 25 000 осталось
+    },
+    expect:35025},
+  {group:'Деньги проекта', name:'Мой остаток — это смета минус команда, ренталы и командировка',
+    run:()=>{
+      const p = {id:'__mt2', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:0,
+        units:[{id:1, name:'Ю1', crew:[{id:'x', amount:30000, extraPay:0, payments:[]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[]};
+      return moneyTotals(p).mine;
+    },
+    expect:70000},
+
   // ---- Документы в pdf ----
   {group:'Документы', name:'Ширина строки считается по вшитому шрифту (кириллица тоже)',
     run:()=> ezPdfWidth('АБВ', 10, false) > 10 && ezPdfWidth('АБВГД', 10, false) > ezPdfWidth('АБВ', 10, false) ? 1 : 0,
@@ -14544,6 +14848,25 @@ const SELF_CHECK_CASES = [
   {group:'Документы', name:'Символа нет в шрифте — вместо пустоты знак вопроса',
     run:()=> ezPdfHex('漢', false) === ezPdfHex('?', false) ? 1 : 0,
     expect:1},
+  // ---- Погрузка/разгрузка внутри переработки ----
+  {group:'П/Р и разрыв', name:'Тумблер включён — часы П/Р прибавляются к часам переработки',
+    run:()=>otLineHours(4, 3, true), expect:7},
+  {group:'П/Р и разрыв', name:'Тумблер включён — деньги складываются готовыми суммами, без разгона ступеней',
+    run:()=>otLineSum(8*2900, 3*2900, true), expect:8*2900 + 3*2900},
+  {group:'П/Р и разрыв', name:'Тумблер выключен — переработка остаётся своей, П/Р клиенту не идёт',
+    run:()=>otLineHours(4, 3, false) * 1000 + otLineSum(11600, 8700, false), expect:4*1000 + 11600},
+
+  // ---- Скидка клиенту ----
+  {group:'Смета', name:'Скидка клиенту режет только оборудование, персонал не трогает',
+    run:()=>estPayable({estDiscount:10, estTax:0}, [
+      {sec:'Оборудование', name:'Прибор', qty:1, days:1, price:10000, client:true},
+      {sec:'Персонал', name:'Осветитель — смена', qty:1, days:1, price:10000, client:true}]).payable,
+    expect:9000 + 10000},
+  {group:'Смета', name:'Налог накидывается на весь итог после скидки',
+    run:()=>estPayable({estDiscount:10, estTax:5}, [
+      {sec:'Оборудование', name:'Прибор', qty:1, days:1, price:10000, client:true}]).payable,
+    expect:9000 + 450},
+
   {group:'Документы', name:'Собранный файл — настоящий pdf: подпись формата и конец файла на месте',
     run:()=>{
       const doc = ezPdfNew();
