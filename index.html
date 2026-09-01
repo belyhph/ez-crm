@@ -612,9 +612,59 @@
   .est-open-row{display:flex;justify-content:flex-start;align-items:center;gap:.5rem;
     flex-wrap:wrap;margin:.9rem 0 .8rem;}
 
+  /* Человек в команде — одна строка; детали открываются по тапу. */
+  .cm{border:1px solid var(--line);border-radius:10px;margin-bottom:.3rem;
+    background:var(--bg-sunk);overflow:hidden;}
+  .cm-head{display:flex;align-items:center;gap:.45rem;width:100%;border:none;background:none;
+    color:var(--ink);font-family:inherit;padding:.35rem .45rem;text-align:left;cursor:pointer;}
+  .cm-name{flex:1;min-width:0;font-size:.84rem;font-weight:600;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;}
+  .cm-role{display:block;font-size:.64rem;font-weight:400;color:var(--ink-muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cm-tag{margin-left:.3rem;padding:.02rem .25rem;border-radius:4px;background:var(--bg-raised);}
+  .cm-tag.ok{color:var(--ok);}
+  .cm-tag.warn{color:var(--warn);}
+  .cm-sum{font-size:.82rem;white-space:nowrap;flex:none;}
+  .cm-chev{color:var(--ink-muted);font-size:.95rem;line-height:1;flex:none;
+    transition:transform .15s var(--ease);}
+  .cm.open .cm-chev{transform:rotate(90deg);}
+  .cm-body{display:none;padding:0 .45rem .4rem;}
+  .cm.open .cm-body{display:block;}
+  .cm-tools{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;margin:.1rem 0 .35rem;}
+  /* Внутри раскрытой строки рамка вокруг выплаты только утяжеляет: человек уже
+     в своей карточке, второй контур ничего не разделяет. */
+  .cm-body .pay-row{border:none;background:none;padding:.3rem 0;}
+  .cm-body .pay-row-wrap{margin:0;}
+  .cm-head .pill{flex:none;}
+  .avatar.sm{width:26px;height:26px;min-width:26px;font-size:.6rem;}
+  /* Вылет: строка в своде и окно распределения */
+  .money-over{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+    border:1px solid var(--warn);border-radius:12px;padding:.4rem .6rem;margin-bottom:.6rem;
+    font-size:.78rem;color:var(--ink);background:var(--warn-soft, transparent);}
+  .ov-total{display:flex;align-items:center;gap:.5rem;margin:.6rem 0 .5rem;flex-wrap:wrap;}
+  .ov-total label{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--ink-muted);}
+  .ov-total input{width:110px;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+    border-radius:8px;padding:.3rem .4rem;font-size:.85rem;font-family:var(--font-mono);
+    text-align:right;outline:none;}
+  .ov-total input:focus{border-color:var(--accent);}
+  .ov-row{display:flex;align-items:center;gap:.4rem;padding:.35rem .1rem;
+    border-bottom:1px solid var(--line);}
+  .ov-row:last-child{border-bottom:none;}
+  .ov-row.on{background:var(--accent-soft);border-radius:8px;}
+  .ov-info{flex:1;min-width:0;}
+  .ov-name{font-size:.82rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ov-note{font-size:.66rem;color:var(--ink-muted);margin-top:1px;}
+  .ov-in{width:88px;flex:none;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+    border-radius:8px;padding:.28rem .35rem;font-size:.8rem;font-family:var(--font-mono);
+    text-align:right;outline:none;}
+  .ov-in:focus{border-color:var(--accent);}
+  .ov-foot{margin-top:.6rem;border-top:1px solid var(--line);padding-top:.45rem;}
+  .ov-line{display:flex;justify-content:space-between;gap:.6rem;font-size:.8rem;padding:.15rem 0;}
+  .ov-line.warn{color:var(--warn);}
+  .pay-tools{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
   /* ===== Деньги проекта одним экраном ===== */
-  .money-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;margin-bottom:.75rem;}
-  .ms-tile{border:1px solid var(--line);border-radius:12px;padding:.5rem .6rem;background:var(--bg-raised);min-width:0;}
+  .money-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;margin-bottom:.55rem;}
+  .ms-tile{border:1px solid var(--line);border-radius:12px;padding:.4rem .5rem;background:var(--bg-raised);min-width:0;}
   .ms-name{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);}
   .ms-main{font-size:.92rem;margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .ms-sub{font-size:.64rem;color:var(--ink-muted);margin-top:.1rem;line-height:1.35;}
@@ -623,14 +673,14 @@
   .money-block{border:1px solid var(--line);border-radius:14px;margin-bottom:.6rem;
     background:var(--bg-raised);overflow:hidden;}
   .mb-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
-    background:none;color:var(--ink);font-family:inherit;padding:.7rem .8rem;cursor:pointer;}
+    background:none;color:var(--ink);font-family:inherit;padding:.55rem .65rem;cursor:pointer;}
   .mb-name{flex:1;min-width:0;font-size:.92rem;font-weight:600;}
   .mb-sub{display:block;font-size:.68rem;font-weight:400;color:var(--ink-muted);margin-top:1px;}
   .mb-amt{font-size:.9rem;white-space:nowrap;flex:none;}
   .mb-chev{color:var(--ink-muted);flex:none;font-size:1.05rem;line-height:1;
     transition:transform .15s var(--ease);}
   .money-block.open .mb-chev{transform:rotate(90deg);}
-  .mb-body{display:none;border-top:1px solid var(--line);padding:.7rem .8rem .85rem;}
+  .mb-body{display:none;border-top:1px solid var(--line);padding:.55rem .6rem .65rem;}
   .money-block.open .mb-body{display:block;}
   @media (max-width:620px){
     .money-sum{grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -861,7 +911,7 @@
   .hours-note .ot{color:var(--warn);}
   .hours-note .load{color:var(--accent-ink);}
   /* Тумблеры юнита — та же логика вкл/выкл, что и на циферблате смены */
-  .unit-toggles{display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.7rem;}
+  .unit-toggles{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.45rem;}
   .unit-toggle{border:1px solid var(--line);background:var(--bg-raised);color:var(--ink-muted);
     border-radius:9px;padding:.4rem .6rem;font-size:.7rem;font-weight:600;font-family:inherit;
     cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease;}
@@ -946,9 +996,9 @@
   }
 
   /* Разбивка выплаты по человеку: что за смену, что за П/Р, что доп. расход */
-  .pay-person{border-bottom:1px solid var(--line);padding-bottom:.35rem;margin-bottom:.35rem;}
+  .pay-person{padding-bottom:.15rem;}
   .pay-person:last-child{border-bottom:none;}
-  .pay-breakdown{font-size:.72rem;color:var(--ink-muted);padding:.1rem 0 .15rem;}
+  .pay-breakdown{font-size:.7rem;color:var(--ink-muted);padding:0 0 .1rem;}
   .pay-breakdown div{display:flex;justify-content:space-between;gap:.6rem;padding:.05rem 0;}
   .proof-btn{padding:.2rem .4rem;color:var(--ink-muted);}
   .proof-btn.has{color:var(--ok);border-color:var(--ok);}
@@ -2540,6 +2590,34 @@
     <div class="efp-actions">
       <button class="btn" id="efpAddBtn" onclick="efpAdd()">Добавить в смету</button>
       <button class="btn ghost" onclick="closeEstFromPrice()">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<!-- Вылет проекта: денег от клиента меньше, чем стоит проект по смете.
+     Разница раскладывается по тем, кому предстоит платить, — заранее и осознанно,
+     чтобы не выяснилось задним числом, что весь вылет закрыт из моего кармана. -->
+<div class="modal-overlay" id="overrunModal">
+  <div class="modal-card db-card" style="max-width:520px;">
+    <div class="db-head">
+      <h3>Вылет по проекту</h3>
+      <button class="btn ghost tiny" onclick="closeOverrun()">✕</button>
+    </div>
+    <div class="form-hint" id="ovHint" style="margin-top:.3rem;"></div>
+    <div class="ov-total">
+      <label>Сумма вылета
+        <input type="number" id="ovTotal" min="0" step="500" oninput="ovSetTotal(this.value)">
+      </label>
+      <button class="btn ghost tiny" id="ovSuggestBtn" onclick="ovUseSuggested()">Посчитать</button>
+    </div>
+    <div id="ovRows"></div>
+    <div class="form-hint" style="margin-top:.4rem;">Кнопка <b>↦</b> забирает сюда весь нераспределённый остаток.
+      Выплаченным позициям вылет не назначить — деньги уже отданы.</div>
+    <div class="ov-foot" id="ovFoot"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem;">
+      <button class="btn" onclick="saveOverrun()">Сохранить</button>
+      <button class="btn ghost" onclick="clearOverrun()">Убрать вылет</button>
+      <button class="btn ghost" onclick="closeOverrun()">Отмена</button>
     </div>
   </div>
 </div>
@@ -6541,16 +6619,24 @@ function applyMoneyBlocks(){
    мне. Одна и та же арифметика, что во «Финансах», — просто по одному проекту. */
 function moneyTotals(p){
   const crew = projectCrew(p);
-  const crewDue = crew.reduce((s, c) => s + (c.amount || 0) + (c.extraPay || 0), 0);
+  // c.amount уже содержит доп. расход — второй раз его прибавлять нельзя
+  const crewGross = crew.reduce((s, c) => s + (c.amount || 0), 0);
+  const crewCut = crew.reduce((s, c) => s + settlementCut(c), 0);
   const crewPaid = crew.reduce((s, c) => s + settlementPaid(c), 0);
   const rentals = RENTAL_DEBTS.filter(r => r.projectId === p.id);
-  const rentDue = rentals.reduce((s, r) => s + (r.amount || 0), 0);
+  const rentGross = rentals.reduce((s, r) => s + (r.amount || 0), 0);
+  const rentCut = rentals.reduce((s, r) => s + settlementCut(r), 0);
   const rentPaid = rentals.reduce((s, r) => s + settlementPaid(r), 0);
+  const crewDue = Math.max(0, crewGross - crewCut);
+  const rentDue = Math.max(0, rentGross - rentCut);
+  const over = projectOverrun(p);
   return {
     client: p.sum || 0, clientPaid: p.paidAmount || 0,
-    crewDue, crewPaid, crewLeft: Math.max(0, crewDue - crewPaid),
-    rentDue, rentPaid, rentLeft: Math.max(0, rentDue - rentPaid),
-    mine: (p.sum || 0) - crewDue - rentDue - tripSpend(p),
+    crewGross, crewCut, crewDue, crewPaid, crewLeft: Math.max(0, crewDue - crewPaid),
+    rentGross, rentCut, rentDue, rentPaid, rentLeft: Math.max(0, rentDue - rentPaid),
+    overrun: over, cuts: crewCut + rentCut, onMe: overrunOnMe(p),
+    // из моего остатка вылет вычитается ровно в той части, что я не переложил на других
+    mine: (p.sum || 0) - over - crewDue - rentDue - tripSpend(p),
     fact: projectProfit(p),
   };
 }
@@ -6568,8 +6654,12 @@ function renderMoneySummary(p){
     ${tile('Клиент', fmtMoney(t.client), t.clientPaid > 0
       ? `получено ${fmtMoney(t.clientPaid)}${t.client - t.clientPaid > 0 ? ` · ждём ${fmtMoney(t.client - t.clientPaid)}` : ' · закрыт'}`
       : 'денег ещё нет')}
-    ${tile('Команде', fmtMoney(t.crewDue), t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого')}
-    ${tile('Ренталам', fmtMoney(t.rentDue), t.rentDue ? (t.rentLeft > 0 ? `осталось ${fmtMoney(t.rentLeft)}` : 'все оплачены') : 'долгов нет')}
+    ${tile('Команде', fmtMoney(t.crewDue), t.crewCut > 0
+      ? `начислено ${fmtMoney(t.crewGross)} · вылет −${fmtMoney(t.crewCut)}`
+      : (t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого'))}
+    ${tile('Ренталам', fmtMoney(t.rentDue), t.rentCut > 0
+      ? `начислено ${fmtMoney(t.rentGross)} · вылет −${fmtMoney(t.rentCut)}`
+      : (t.rentDue ? (t.rentLeft > 0 ? `осталось ${fmtMoney(t.rentLeft)}` : 'все оплачены') : 'долгов нет'))}
     ${tile('Мне', `${t.mine < 0 ? '−' : ''}${fmtMoney(Math.abs(t.mine))}`,
       (t.clientPaid || t.crewPaid || t.rentPaid)
         ? `на руках ${t.fact < 0 ? '−' : ''}${fmtMoney(Math.abs(t.fact))}`
@@ -6579,6 +6669,13 @@ function renderMoneySummary(p){
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.innerHTML = v; };
   set('mb-amt-est', fmtMoney(t.client));
   set('mb-sub-est', isMultiDay(p) ? ` · смета за ${fmtDate(activeDay(p).iso)}` : ' · смета и документы');
+  if(t.overrun > 0){
+    const box2 = document.getElementById('moneySummary');
+    if(box2) box2.insertAdjacentHTML('beforeend', `<div class="money-over">
+      <span>Вылет по проекту <b>${fmtMoney(t.overrun)}</b>${t.cuts > 0 ? ` · разложено ${fmtMoney(t.cuts)}` : ''}${t.onMe > 0 ? ` · на мне ${fmtMoney(t.onMe)}` : ' · разложен полностью'}</span>
+      <button class="btn ghost tiny" onclick="openOverrun('${p.id}')">Изменить</button>
+    </div>`);
+  }
   set('mb-amt-crew', fmtMoney(t.crewDue));
   set('mb-sub-crew', t.crewLeft > 0 ? ` · осталось выплатить ${fmtMoney(t.crewLeft)}` : (t.crewDue ? ' · всё выплачено' : ' · смены и часы'));
   set('mb-amt-pay', fmtMoney(t.rentDue));
@@ -8321,6 +8418,140 @@ async function contractPdfBytes(c){
   return ezPdfBuild(doc);
 }
 
+/* ============= Вылет: окно распределения =============
+   Показываем всех, кому предстоит платить по этому проекту: команду и ренталы.
+   У каждого — начислено и поле «сколько не доплачиваем». Что не разложено,
+   остаётся на мне: это видно строкой внизу, чтобы решение было явным. */
+let ovProjectId = null, ovDraft = null;
+function ovKey(kind, unitId, id){ return `${kind}|${unitId == null ? '' : unitId}|${id}`; }
+function overrunTargets(p){
+  const list = [];
+  allDays(p).forEach(d => (d.units || []).forEach(u => (u.crew || []).forEach(c => {
+    const person = CREW.find(x => x.id === c.id);
+    list.push({key:ovKey('crew', u.id, c.id), kind:'crew', unitId:u.id, id:c.id, item:c,
+      name:person ? person.name : c.id,
+      note:[c.role || 'команда', (d.iso && isMultiDay(p)) ? fmtDate(d.iso) : ''].filter(Boolean).join(' · '),
+      amount:c.amount || 0, paid:!!c.paid});
+  })));
+  RENTAL_DEBTS.filter(r => r.projectId === p.id).forEach(r => {
+    list.push({key:ovKey('rental', null, r.rental), kind:'rental', unitId:null, id:r.rental, item:r,
+      name:r.rental, note:'рентал', amount:r.amount || 0, paid:!!r.paid});
+  });
+  return list;
+}
+function openOverrun(pid){
+  const p = PROJECTS.find(x => x.id === pid);
+  if(!p) return;
+  ovProjectId = pid;
+  const cuts = {};
+  overrunTargets(p).forEach(t => { if(settlementCut(t.item) > 0) cuts[t.key] = settlementCut(t.item); });
+  const sum = Object.values(cuts).reduce((s, v) => s + v, 0);
+  ovDraft = {total: projectOverrun(p) || suggestedOverrun(p) || sum, cuts};
+  document.getElementById('ovTotal').value = ovDraft.total || '';
+  renderOverrunRows();
+  document.getElementById('overrunModal').classList.add('show');
+}
+function closeOverrun(){
+  document.getElementById('overrunModal').classList.remove('show');
+  ovProjectId = null; ovDraft = null;
+}
+function ovSetTotal(v){
+  if(!ovDraft) return;
+  ovDraft.total = Math.max(0, Number(String(v).replace(',', '.')) || 0);
+  renderOverrunFoot();
+}
+function ovUseSuggested(){
+  const p = PROJECTS.find(x => x.id === ovProjectId);
+  if(!p || !ovDraft) return;
+  const v = Math.max(0, (p.sum || 0) - (p.paidAmount || 0));
+  ovDraft.total = v;
+  document.getElementById('ovTotal').value = v || '';
+  renderOverrunFoot();
+}
+function ovSetCut(key, v, max){
+  if(!ovDraft) return;
+  const n = Math.max(0, Math.min(Number(max) || 0, Number(String(v).replace(',', '.')) || 0));
+  if(n > 0) ovDraft.cuts[key] = n; else delete ovDraft.cuts[key];
+  renderOverrunFoot();
+}
+// «Взять весь остаток отсюда» — частый случай: рентал соглашается на скидку
+function ovTakeRest(key, max){
+  if(!ovDraft) return;
+  const rest = ovDraft.total - Object.entries(ovDraft.cuts)
+    .reduce((s, [k, v]) => s + (k === key ? 0 : v), 0);
+  const n = Math.max(0, Math.min(Number(max) || 0, rest));
+  if(n > 0) ovDraft.cuts[key] = n; else delete ovDraft.cuts[key];
+  renderOverrunRows();
+}
+function ovSpread(){ return Object.values((ovDraft || {}).cuts || {}).reduce((s, v) => s + v, 0); }
+function renderOverrunRows(){
+  const p = PROJECTS.find(x => x.id === ovProjectId);
+  if(!p || !ovDraft) return;
+  const targets = overrunTargets(p);
+  const paidNote = suggestedOverrun(p);
+  document.getElementById('ovHint').innerHTML = p.paidAmount > 0
+    ? `По смете ${fmtMoney(p.sum)}, пришло ${fmtMoney(p.paidAmount)} — разница ${fmtMoney(paidNote)}.`
+    : `Денег от клиента ещё не приходило — впиши сумму вылета сам, если она уже известна.`;
+  document.getElementById('ovRows').innerHTML = targets.length
+    ? targets.map(t => {
+        const cut = ovDraft.cuts[t.key] || 0;
+        const net = Math.max(0, t.amount - cut);
+        return `<div class="ov-row${cut > 0 ? ' on' : ''}">
+          <div class="ov-info">
+            <div class="ov-name">${esc(t.name)}</div>
+            <div class="ov-note">${esc(t.note)} · начислено <span class="mono">${fmtMoney(t.amount)}</span>${cut > 0 ? ` → к выплате <span class="mono">${fmtMoney(net)}</span>` : ''}</div>
+          </div>
+          ${t.paid
+            ? '<span class="pill pill-ok">уже выплачено</span>'
+            : `<input class="ov-in" type="number" min="0" step="500" value="${cut || ''}" placeholder="0"
+                 oninput="ovSetCut('${t.key}',this.value,${t.amount})">
+               <button class="btn ghost tiny" title="Забрать сюда весь остаток" onclick="ovTakeRest('${t.key}',${t.amount})">↦</button>`}
+        </div>`;
+      }).join('')
+    : '<div class="empty-hint">Ни команды, ни ренталов по проекту нет — раскладывать не на кого.</div>';
+  renderOverrunFoot();
+}
+function renderOverrunFoot(){
+  if(!ovDraft) return;
+  const spread = ovSpread();
+  const onMe = Math.max(0, ovDraft.total - spread);
+  const over = spread > ovDraft.total;
+  document.getElementById('ovFoot').innerHTML = `
+    <div class="ov-line"><span>Разложено по другим</span><span class="mono">${fmtMoney(spread)}</span></div>
+    <div class="ov-line${over ? ' warn' : ''}"><span>${over ? 'Разложено больше вылета' : 'Закрываю собой'}</span>
+      <span class="mono">${over ? '+' + fmtMoney(spread - ovDraft.total) : fmtMoney(onMe)}</span></div>`;
+}
+function saveOverrun(){
+  const p = PROJECTS.find(x => x.id === ovProjectId);
+  if(!p || !ovDraft) return;
+  const targets = overrunTargets(p);
+  targets.forEach(t => {
+    const cut = ovDraft.cuts[t.key] || 0;
+    if(t.paid) return;                        // выплаченное не трогаем: деньги уже отданы
+    if(cut > 0) t.item.cut = cut; else delete t.item.cut;
+  });
+  p.overrun = ovDraft.total;
+  closeOverrun();
+  renderPayTab(p); renderEstimate(p); renderInfo(p);
+  refreshAll();
+  scheduleSave();
+  const onMe = overrunOnMe(p);
+  askNotice(p.overrun > 0
+    ? `Вылет ${fmtMoney(p.overrun)} записан${projectCuts(p).total > 0 ? `, из него ${fmtMoney(projectCuts(p).total)} разложено по выплатам` : ''}${onMe > 0 ? `, на мне ${fmtMoney(onMe)}` : ''}.`
+    : 'Вылет снят — выплаты вернулись к начисленным суммам.', 'Вылет по проекту');
+}
+function clearOverrun(){
+  const p = PROJECTS.find(x => x.id === ovProjectId);
+  if(!p) return;
+  overrunTargets(p).forEach(t => { delete t.item.cut; });
+  delete p.overrun;
+  closeOverrun();
+  renderPayTab(p); renderEstimate(p); renderInfo(p);
+  refreshAll();
+  scheduleSave();
+  askNotice('Вылет убран — все выплаты снова по начислению.', 'Вылет по проекту');
+}
+
 /* ============= Выбор формата =============
    pdf стоит первым и предлагается по умолчанию: его открывают все и везде.
    html оставлен для правок в браузере, текст — на случай, когда окно
@@ -8916,27 +9147,38 @@ function renderCrewTab(p){
       </div>
       <div class="hours-note" id="hours-note-${u.id}">${hoursNoteHTML(u)}</div>
       ${u.crew.length ? u.crew.map(c=>{
+        /* Человек — одна строка: имя, роль и сумма к выплате. Всё остальное
+           (разбивка, доп. расход, оплата, роль) раскрывается по тапу: при
+           восьми осветителях развёрнутый список превращался в бесконечный скролл. */
         const person = CREW.find(x=>x.id===c.id);
         const initials = person? person.name.split(' ').map(w=>w[0]).join('') : '?';
-        const debtHtml = c.paid ? `<span class="pill pill-ok">оплачено</span>`
-          : isCrewDebt(p, c) ? '<span class="pill pill-warn">имеется задолженность</span>'
-          : '';   // клиент ещё не заплатил — долга нет, ничего не пишем
-        return `<div class="crewcard" style="cursor:default;align-items:flex-start;">
-          <div class="avatar">${initials}</div>
-          <div style="flex:1;min-width:0;">
-            <div class="cname" style="cursor:pointer;" onclick="openCrewDetail('${c.id}')">${esc(person?person.name:c.id)}</div>
-            <div class="role-row">
+        const key = crewRowKey(u.id, c.id);
+        const open = crewOpenRows.has(key);
+        const cut = settlementCut(c);
+        const status = c.paid ? '<span class="cm-tag ok">оплачено</span>'
+          : isCrewDebt(p, c) ? '<span class="cm-tag warn">долг</span>' : '';
+        const cutTag = cut > 0 ? `<span class="cm-tag">вылет −${fmtMoney(cut)}</span>` : '';
+        return `<div class="cm${open ? ' open' : ''}">
+          <button class="cm-head" onclick="toggleCrewRow(${u.id},'${c.id}')">
+            <span class="avatar sm">${initials}</span>
+            <span class="cm-name">${esc(person?person.name:c.id)}
+              <span class="cm-role">${esc(c.role||'')}${status}${cutTag}</span></span>
+            <span class="cm-sum mono">${fmtMoney(settlementNet(c))}</span>
+            <span class="cm-chev">›</span>
+          </button>
+          <div class="cm-body">
+            <div class="cm-tools">
               <select class="role-select" onchange="setCrewRole(${u.id},'${c.id}',this.value)" title="Позиция на проекте">
                 ${ROLES.map(r=>`<option value="${r}" ${c.role===r?'selected':''}>${r}</option>`).join('')}
               </select>
               ${unitGapHours(u)>0 ? `<button class="btn ghost tiny" onclick="toggleCrewGap(${u.id},'${c.id}')" title="Начислять ли разрыв этому человеку">${c.noGap ? 'без разрыва' : 'разрыв ✓'}</button>` : ''}
+              ${c.paid ? '' : `<button class="btn ghost tiny" onclick="openExtraModal(${u.id},'${c.id}')">${c.extraPay>0?'✎ Доп расход':'Доп расход'}</button>`}
+              <button class="btn ghost tiny" onclick="openCrewDetail('${c.id}')">Карточка</button>
+              <button class="btn ghost tiny" onclick="removeFromUnit(${u.id},'${c.id}')">Убрать</button>
             </div>
+            ${crewPayHTML(p, u, c)}
           </div>
-          <div class="cright">${debtHtml}
-            <div style="margin-top:.3rem;"><button class="btn ghost tiny" onclick="removeFromUnit(${u.id},'${c.id}')">Убрать</button></div>
-          </div>
-        </div>
-        ${crewPayHTML(p, u, c)}`;
+        </div>`;
       }).join('') : '<div class="empty-hint">В этом юните пока никого нет.</div>'}
       ${free.length ? `<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;align-items:center;">
         <select id="addto-${u.id}" class="role-select" style="min-width:150px;">
@@ -9400,7 +9642,7 @@ function hoursNoteHTML(u){
         ? ` · <span class="load">погрузка/разгрузка: ${loadH.toFixed(1)} ч</span>`
           + (unitLoadAsOt(u)
               ? ' — считаем переработкой по 1-й ступени'
-              : ' — отдельная статья выплаты, сумму спросим при расчёте')
+              : ' — берём с клиента фиксом, его спрашиваем при снятии тумблера')
         : '')
     + (gapH>0 ? ` · <span class="ot">разрыв: ${fmtHoursShort(gapH)} ч</span> — по 1-й ступени` : '');
 }
@@ -9491,8 +9733,31 @@ function removeFromUnit(unitId, cid){
    Пока позиция не закрыта, сумму можно править (скидки, доплаты).
    После закрытия ничего не меняется, и во всей отчётности фигурирует ФАКТ. */
 function settlementPaid(o){ return (o.payments||[]).reduce((s,x)=>s+(x.amount||0), 0); }
-function settlementDue(o){ return o.paid ? settlementPaid(o) : (o.amount||0); }
-function settlementLeft(o){ return o.paid ? 0 : Math.max(0, (o.amount||0) - settlementPaid(o)); }
+/* ===== Вылет проекта =====
+   Вылет — это когда денег от клиента меньше, чем стоит проект по смете.
+   Разницу надо разложить заранее: кому-то не доплачиваем, что-то забирает
+   рентал, остальное закрываю собой. Удержание живёт прямо на позиции выплаты
+   (cut), поэтому оно само расходится по всему приложению: остаток, долги,
+   лента, «Финансы» и отчёт считаются через эти же две функции.
+   Начисление при этом не переписывается — видно и сколько человек отработал,
+   и сколько из этого решено не выплачивать. */
+function settlementCut(o){ return Math.max(0, Number(o && o.cut) || 0); }
+function settlementNet(o){ return Math.max(0, (o && o.amount || 0) - settlementCut(o)); }
+function settlementDue(o){ return o.paid ? settlementPaid(o) : settlementNet(o); }
+function settlementLeft(o){ return o.paid ? 0 : Math.max(0, settlementNet(o) - settlementPaid(o)); }
+function projectOverrun(p){ return Math.max(0, Number(p && p.overrun) || 0); }
+function projectCuts(p){
+  const crew = projectCrew(p).reduce((s, c) => s + settlementCut(c), 0);
+  const rent = RENTAL_DEBTS.filter(r => r.projectId === p.id).reduce((s, r) => s + settlementCut(r), 0);
+  return {crew, rent, total:crew + rent};
+}
+// что не разложено по другим — то на мне: мой остаток уменьшается ровно на эту сумму
+function overrunOnMe(p){ return Math.max(0, projectOverrun(p) - projectCuts(p).total); }
+/* Подсказка суммы: смета минус то, что реально пришло. Пока денег нет вовсе,
+   ничего не подсказываем — вылет тогда определяется договорённостью, а не фактом. */
+function suggestedOverrun(p){
+  return (p && p.paidAmount > 0) ? Math.max(0, (p.sum || 0) - p.paidAmount) : 0;
+}
 // Старые записи (и демо-данные) знали только «оплачено/нет» — разворачиваем их в один платёж
 function migrateSettlement(o){
   if(o.payments) return;
@@ -9692,7 +9957,8 @@ function closeReport(){ document.getElementById('reportModal').classList.remove(
 function settlementRowHTML(o){
   const paidSum = settlementPaid(o.item);
   const left = settlementLeft(o.item);
-  const due = o.item.amount || 0;
+  const cut = settlementCut(o.item);
+  const due = settlementNet(o.item);      // к выплате: начислено минус вылет
   const closed = !!o.item.paid;
   const fact = settlementDue(o.item);
 
@@ -9724,6 +9990,7 @@ function settlementRowHTML(o){
          <button class="btn ghost tiny" onclick="settleEditAmount(${ref})" title="Изменить сумму">✎</button>
          ${discBtn}
          ${grossNote}
+         ${cut > 0 ? `<span class="pay-progress">начислено ${fmtMoney(o.item.amount || 0)} · вылет −${fmtMoney(cut)}</span>` : ''}
          ${paidSum>0 ? `<span class="pay-progress">внесено ${fmtMoney(paidSum)}, остаток ${fmtMoney(left)}</span>` : ''}
        </div>`;
 
@@ -9780,10 +10047,18 @@ function renderPayTab(p){
           <button class="db-del" title="Удалить запись о поступлении" onclick="deletePayment('${p.id}',${i})">✕</button>
         </div>
       </div>`).join('')}` : '';
+  /* Вылет живёт рядом с деньгами клиента: именно здесь видно, что пришло
+     меньше сметы, и здесь же решается, за чей счёт эта разница. */
+  const over = projectOverrun(p);
+  const overrunBtn = `<button class="btn ghost" onclick="openOverrun('${p.id}')">
+      ${over > 0 ? `Вылет · ${fmtMoney(over)}` : 'Вылет'}</button>`;
   const clientBlock = !p.sum ? '<div class="empty-hint">Смета не собрана — счёт выставлять не из чего.</div>' :
     (remaining>0
       ? `<div style="margin-top:.7rem;">
-          <button class="btn ghost" onclick="toggleAddPayment()">+ Добавить оплату</button>
+          <div class="pay-tools">
+            <button class="btn ghost" onclick="toggleAddPayment()">+ Добавить оплату</button>
+            ${overrunBtn}
+          </div>
           <div class="form-slot" id="addPaymentForm" style="display:none;">
             <div class="form-hint">Вноси по факту полученной суммы — можно частями. Остаток и статус проекта посчитаются сами.</div>
             <div class="frow">
@@ -9798,7 +10073,8 @@ function renderPayTab(p){
           </div>
           ${paymentsHistory}
         </div>`
-      : `<div class="pay-fact" style="margin-top:.7rem;"><span class="pill pill-ok">${payTypeLabel(p.paymentType)}</span><span class="pay-date">${fmtDate(p.paymentDate)}</span></div>${paymentsHistory}`);
+      : `<div class="pay-fact" style="margin-top:.7rem;"><span class="pill pill-ok">${payTypeLabel(p.paymentType)}</span><span class="pay-date">${fmtDate(p.paymentDate)}</span></div>
+         <div class="pay-tools">${overrunBtn}</div>${paymentsHistory}`);
 
   // отменённый проект остаётся в «Оплатах» ради неустойки — сразу видно, сколько и сколько осталось
   const penTotal = p.cancelInfo ? (p.cancelInfo.total||0) : 0;
@@ -9864,10 +10140,17 @@ function crewPayHTML(p, u, c){
   return `<div class="pay-person">
     ${breakdown}
     ${settlementRowHTML({label, item:c, ref:settlementRef('crew', p.id, u.id, c.id)})}
-    ${c.paid ? '' : `<div style="display:flex;justify-content:flex-end;margin-top:-.2rem;">
-      <button class="btn ghost tiny" onclick="openExtraModal(${u.id},'${c.id}')">${c.extraPay>0?'✎ Доп. расход':'+ Внести доп. расход'}</button>
-    </div>`}
   </div>`;
+}
+/* Раскрытые строки помним по ключу: пересчёт денег перерисовывает блок,
+   и без этого открытая карточка человека схлопывалась под руками. */
+const crewOpenRows = new Set();
+function crewRowKey(unitId, cid){ return `${unitId}|${cid}`; }
+function toggleCrewRow(unitId, cid){
+  const key = crewRowKey(unitId, cid);
+  if(crewOpenRows.has(key)) crewOpenRows.delete(key); else crewOpenRows.add(key);
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(p) renderCrewTab(p);
 }
 /* Имя внутри inline-обработчика: апостроф в названии рентала не должен ломать вызов */
 function jsArg(v){ return esc(String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
@@ -14826,9 +15109,9 @@ const SELF_CHECK_CASES = [
         units:[{id:1, name:'Ю1', crew:[{id:'x', amount:30000, extraPay:5000, payments:[{amount:10000}]}]}],
         estimate:[], notes:[], payments:[], files:[], steps:[]};
       const t = moneyTotals(p);
-      return t.crewDue + t.crewLeft / 1000;      // 35 000 начислено, 25 000 осталось
+      return t.crewDue + t.crewLeft / 1000;      // 30 000 начислено (доп. расход уже внутри), 20 000 осталось
     },
-    expect:35025},
+    expect:30020},
   {group:'Деньги проекта', name:'Мой остаток — это смета минус команда, ренталы и командировка',
     run:()=>{
       const p = {id:'__mt2', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:0,
@@ -14837,6 +15120,37 @@ const SELF_CHECK_CASES = [
       return moneyTotals(p).mine;
     },
     expect:70000},
+
+  // ---- Вылет проекта ----
+  {group:'Вылет', name:'Удержание уменьшает выплату, но не стирает начисление',
+    run:()=>{
+      const c = {amount:33500, cut:5000, payments:[]};
+      return settlementNet(c) + settlementLeft(c) / 1000;   // 28 500 к выплате, столько же осталось
+    },
+    expect:28528.5},
+  {group:'Вылет', name:'Частичный платёж уменьшает остаток от суммы с вылетом',
+    run:()=>settlementLeft({amount:33500, cut:5000, payments:[{amount:8500}]}),
+    expect:20000},
+  {group:'Вылет', name:'Что не разложено по людям и ренталам — остаётся на мне',
+    run:()=>{
+      const p = {id:'__ov', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:85000,
+        units:[{id:1, name:'Ю1', crew:[{id:'x', amount:30000, cut:5000, payments:[]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[], overrun:15000};
+      return overrunOnMe(p);
+    },
+    expect:10000},
+  {group:'Вылет', name:'Мой остаток падает ровно на ту часть вылета, что я не переложил',
+    run:()=>{
+      const p = {id:'__ov2', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:0,
+        units:[{id:1, name:'Ю1', crew:[{id:'x', amount:30000, cut:5000, payments:[]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[], overrun:15000};
+      // 100 000 − 15 000 вылета − 25 000 команде = 60 000
+      return moneyTotals(p).mine;
+    },
+    expect:60000},
+  {group:'Вылет', name:'Без вылета суммы остаются прежними',
+    run:()=>settlementNet({amount:12000, payments:[]}) + settlementLeft({amount:12000, payments:[]}) / 1000,
+    expect:12012},
 
   // ---- Документы в pdf ----
   {group:'Документы', name:'Ширина строки считается по вшитому шрифту (кириллица тоже)',
