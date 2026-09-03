@@ -624,7 +624,8 @@
   .cm-tag{margin-left:.3rem;padding:.02rem .25rem;border-radius:4px;background:var(--bg-raised);}
   .cm-tag.ok{color:var(--ok);}
   .cm-tag.warn{color:var(--warn);}
-  .cm-sum{font-size:.82rem;white-space:nowrap;flex:none;}
+  .cm-sum{font-size:.82rem;white-space:nowrap;flex:none;text-align:right;}
+  .cm-sum-sub{display:block;font-size:.62rem;color:var(--ink-muted);font-family:inherit;}
   .cm-chev{color:var(--ink-muted);font-size:.95rem;line-height:1;flex:none;
     transition:transform .15s var(--ease);}
   .cm.open .cm-chev{transform:rotate(90deg);}
@@ -662,15 +663,34 @@
   .ov-line{display:flex;justify-content:space-between;gap:.6rem;font-size:.8rem;padding:.15rem 0;}
   .ov-line.warn{color:var(--warn);}
   .pay-tools{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+  /* Назначить рентал: список, сумма и кнопка в одну строку на любой ширине */
+  .rental-add{display:flex;gap:.4rem;align-items:center;flex-wrap:nowrap;margin-top:.4rem;}
+  .rental-add .role-select{flex:1 1 0;min-width:0;}
+  .rental-add .ov-in{width:84px;flex:none;}
+  .rental-add .btn{flex:none;white-space:nowrap;}
+  /* Деньги клиента отделены от сметы чертой и воздухом — кнопки не липнут к следующему */
+  #pane-client{padding-bottom:.75rem;margin-bottom:.8rem;border-bottom:1px solid var(--line);}
+  #pane-client:empty{display:none;}
+  /* Панель команды под полосой */
+  .crew-panel{margin:-.55rem 0 1rem;border:1px solid var(--line);border-top:none;
+    border-radius:0 0 12px 12px;padding:.6rem .6rem .5rem;background:var(--bg-raised);}
+  .crew-strip.open{border-radius:10px 10px 0 0;margin-bottom:0;}
+  .crew-strip-toggle{border:none;background:none;cursor:pointer;display:inline-flex;align-items:center;
+    gap:.3rem;padding:0;font-family:var(--font-mono);}
+  .crew-strip-chev{display:inline-block;font-size:1rem;line-height:1;transition:transform .15s var(--ease);
+    color:var(--ink-muted);font-family:inherit;}
+  .crew-strip.open .crew-strip-chev{transform:rotate(90deg);}
   /* ===== Деньги проекта одним экраном ===== */
   .money-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;margin-bottom:.55rem;}
   .ms-tile{border:1px solid var(--line);border-radius:12px;padding:.4rem .5rem;background:var(--bg-raised);min-width:0;}
   .ms-name{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);}
   .ms-main{font-size:.92rem;margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* «получено / всего» длиннее одной суммы — мельче, чтобы влезло в плитку */
+  .ms-pair{font-size:.72rem;letter-spacing:-.01em;}
   .ms-sub{font-size:.64rem;color:var(--ink-muted);margin-top:.1rem;line-height:1.35;}
   .ms-tile.ok .ms-main{color:var(--ok);}
   .ms-tile.warn .ms-main{color:var(--warn);}
-  .money-block{border:1px solid var(--line);border-radius:14px;margin-bottom:.6rem;
+  .money-block{border:1px solid var(--line);border-radius:14px;margin:.85rem 0 .6rem;
     background:var(--bg-raised);overflow:hidden;}
   .mb-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
     background:none;color:var(--ink);font-family:inherit;padding:.55rem .65rem;cursor:pointer;}
@@ -685,6 +705,18 @@
   @media (max-width:620px){
     .money-sum{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
+  /* Кнопки сметы — одной строкой на любую ширину */
+  .est-actions{display:flex;gap:.4rem;margin:0 0 .5rem;}
+  .est-actions .btn{flex:1 1 0;min-width:0;white-space:nowrap;justify-content:center;}
+  /* Низ свода: итог, скидка с налогом и «к оплате» — три компактные строки */
+  .est-foot{margin-top:.4rem;border-top:1px solid var(--line);padding-top:.4rem;}
+  .est-foot-row{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;
+    font-size:.82rem;padding:.1rem 0;}
+  .est-foot-row.big{font-weight:600;font-size:.95rem;}
+  .est-foot-opts{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;
+    font-size:.72rem;color:var(--ink-muted);padding:.15rem 0 .25rem;}
+  .est-foot-opts label{display:inline-flex;align-items:center;gap:.25rem;}
+  .est-foot-off{min-width:0;margin-right:.45rem;font-size:.72rem;color:var(--ink-muted);}
   .est-sum{display:flex;flex-direction:column;gap:.4rem;}
   .est-sum-row{position:relative;border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);overflow:hidden;}
   .est-sum-row.editing{border-color:var(--accent);}
@@ -774,8 +806,8 @@
     padding:.4rem .1rem;font-size:.8rem;color:var(--ink-muted);}
   .est-sum-opt > .mono{white-space:nowrap;flex:none;}
   .est-sum-opt .esr-sub{display:block;margin-top:1px;}
-  .est-opt-in{width:56px;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
-    border-radius:7px;padding:.2rem .3rem;font-size:.78rem;font-family:var(--font-mono);
+  .est-opt-in{width:44px;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+    border-radius:7px;padding:.15rem .25rem;font-size:.76rem;font-family:var(--font-mono);
     text-align:right;outline:none;}
   .est-opt-in:focus{border-color:var(--accent);}
   .est-line-note{display:block;font-size:.68rem;color:var(--ink-muted);margin-top:1px;}
@@ -844,11 +876,15 @@
   .crew-warn .crew-warn-actions{margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap;}
   .crew-warn .crew-warn-actions .btn{margin-left:0;}
   .crew-solo-note{font-size:.78rem;color:var(--ink-muted);}
-  .crew-strip{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:var(--bg-raised);
+  .crew-strip{display:flex;align-items:center;gap:.45rem;flex-wrap:nowrap;overflow-x:auto;
+    scrollbar-width:none;-webkit-overflow-scrolling:touch;background:var(--bg-raised);
     border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;margin-bottom:1rem;}
   .crew-strip-label{font-family:var(--font-mono);font-size:.68rem;text-transform:uppercase;
     letter-spacing:.05em;color:var(--ink-muted);margin-right:.2rem;}
-  .crew-chip{display:inline-flex;align-items:center;gap:.4rem;background:var(--bg-sunk);
+  .crew-strip::-webkit-scrollbar{display:none;}
+  .crew-strip-label{flex:none;}
+  .crew-chip{display:inline-flex;align-items:center;gap:.4rem;flex:none;cursor:pointer;
+    border:none;font-family:inherit;color:var(--ink);background:var(--bg-sunk);
     border:1px solid var(--line);border-radius:99px;padding:.15rem .65rem .15rem .15rem;font-size:.78rem;}
   .chip-avatar{width:20px;height:20px;border-radius:50%;background:var(--line);color:var(--ink-muted);
     display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;flex:none;}
@@ -1062,6 +1098,9 @@
     overscroll-behavior:contain;touch-action:none;}
   #panelBackdrop.show{display:block;animation:fade .18s var(--ease);}
   /* Быстрая заметка: половина экрана по вертикали, четверть по горизонтали */
+  /* Быстрая заметка: вдвое меньше — она для двух строк на бегу, а не для эссе */
+  #quickNoteModal .panel-pop-card{width:min(18vw,360px);min-width:260px;
+    height:30vh;height:30dvh;min-height:210px;padding:.7rem .8rem;}
   #quickNoteModal .panel-pop-card textarea{flex:1;width:100%;resize:none;
     border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);border-radius:10px;
     padding:.6rem .7rem;font-family:inherit;font-size:.88rem;outline:none;margin-bottom:.5rem;}
@@ -1073,6 +1112,7 @@
     .panel-pop{left:50%!important;top:50%!important;transform:translate(-50%,-50%) scale(.98);}
     .panel-pop.show{transform:translate(-50%,-50%) scale(1);}
     .panel-pop-card{width:min(92vw,520px);height:70vh;height:70dvh;}
+    #quickNoteModal .panel-pop-card{width:min(88vw,420px);height:38vh;height:38dvh;min-height:230px;}
     #dialOverlay.panel-pop .panel-pop-card{width:min(92vw,560px);height:92vh;height:92dvh;
       padding-left:.75rem;padding-right:.75rem;}
   }
@@ -1121,10 +1161,9 @@
     font-family:var(--font-mono);padding:.1rem .4rem;border-radius:5px;border:1px solid var(--line);
     color:var(--ink-muted);}
   .day-chip.transfer .day-chip-n:after{content:' ✈';opacity:.75;}
-  .day-transfer-bar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:-.25rem;
+  .day-transfer-bar{display:flex;align-items:center;gap:.4rem;flex-wrap:nowrap;margin-top:-.25rem;
     margin-bottom:.5rem;font-size:.72rem;color:var(--ink-muted);}
-  .day-transfer-bar .dtb-copy{margin-left:0;}
-  @media(min-width:560px){ .day-transfer-bar .dtb-copy{margin-left:auto;} }
+  .day-transfer-bar .dtb-copy{margin-left:auto;white-space:nowrap;}
   .day-strip{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;
     border:1px solid var(--line);border-radius:12px;background:var(--bg-raised);
     padding:.5rem .6rem;margin-bottom:.7rem;}
@@ -1893,13 +1932,17 @@
     <div class="checklist" id="pChecklist"></div>
     <div id="pDayStrip"></div>
     <div id="pCrewStrip"></div>
+    <!-- Команда живёт под своей полосой: полоса — как была, а по тапу под ней
+         разворачиваются юниты, время и выплаты. Отдельный блок в «Расчёте» для
+         этого не нужен — команда одна, и место у неё одно. -->
+    <div id="pCrewPanel" class="crew-panel" style="display:none;"><div id="pane-crew"></div></div>
 
     <div class="tabs">
       <button class="tab active" data-tab="info" onclick="showTab('info')">Инфо</button>
       <button class="tab" data-tab="trip" onclick="showTab('trip')" style="display:none;">Поездка</button>
+      <button class="tab" data-tab="notes" onclick="showTab('notes')">Заметки</button>
       <button class="tab" data-tab="tasks" onclick="showTab('tasks')">Задачи</button>
       <button class="tab" data-tab="money" onclick="showTab('money')">Расчёт</button>
-      <button class="tab" data-tab="notes" onclick="showTab('notes')">Заметки</button>
       <button class="tab" data-tab="files" onclick="showTab('files')">Файлы</button>
     </div>
 
@@ -1915,17 +1958,9 @@
          и выплатами, и держать её всегда развёрнутой незачем. -->
     <div class="tabpane" data-pane="money" id="pane-money">
       <div id="moneySummary"></div>
+      <div id="pane-client"></div>
       <div id="pane-estimate"></div>
       <div id="pane-rentals"></div>
-      <div id="pane-client"></div>
-      <div class="money-block" id="mb-crew">
-        <button class="mb-head" onclick="toggleMoneyBlock('crew')">
-          <span class="mb-name">Команда<span class="mb-sub" id="mb-sub-crew"></span></span>
-          <span class="mb-amt mono" id="mb-amt-crew"></span>
-          <span class="mb-chev">›</span>
-        </button>
-        <div class="mb-body"><div id="pane-crew"></div></div>
-      </div>
     </div>
     <div class="tabpane" data-pane="notes" id="pane-notes"></div>
     <div class="tabpane" data-pane="files" id="pane-files"></div>
@@ -2240,9 +2275,14 @@
       <h3>Внести оплату</h3>
       <button class="btn ghost tiny" onclick="closeSettleModal()">✕</button>
     </div>
-    <div class="form-hint"><b id="settleWho"></b> · <span id="settleType"></span>.
-      Осталось выплатить: <b id="settleLeft" class="mono"></b>.
+    <div class="form-hint"><b id="settleWho"></b> · осталось <b id="settleLeft" class="mono"></b>.
       Можно внести часть — остаток останется висеть.</div>
+    <!-- способ оплаты выбирается здесь, а не двумя кнопками в каждой строке -->
+    <div class="seg sm" id="settleTypeSeg" style="margin-top:.55rem;">
+      <button id="settleTypeCash" onclick="settleSetType('cash')">наличкой</button>
+      <button id="settleTypeNoncash" onclick="settleSetType('noncash')">безнал</button>
+    </div>
+    <span id="settleType" style="display:none;"></span>
     <div class="frow" style="margin-top:.6rem;">
       <input type="number" min="0" step="500" id="settleAmount" placeholder="Сумма, ₽">
       <input type="date" id="settleDate" title="Дата платежа" aria-label="Дата платежа">
@@ -6056,13 +6096,11 @@ function renderDayStrip(p){
 function dayToolsHTML(p){
   const d = activeDay(p);
   const n = transferDaysCount(p);
+  // подсказка убрана: смысл кнопок понятен, а на телефоне текст ломал строку надвое
   return `<div class="day-transfer-bar">
     <button class="unit-toggle ${d.transfer?'on':''}" onclick="toggleDayTransfer()"
-      title="День переезда: всё, кроме транспорта, считается по половине — и клиенту, и команде">✈ Трансферный день</button>
-    <span>${d.transfer
-      ? 'Этот день идёт по 50% — кроме транспорта и такси.'
-      : (n ? `Половинных дней в проекте: ${n}.` : 'Дни переезда отмечаются здесь.')}</span>
-    <button class="btn ghost tiny dtb-copy" onclick="copyDayToAll()">Продублировать на все дни</button>
+      title="День переезда: всё, кроме транспорта, считается по половине — и клиенту, и команде">✈ Трансфер${d.transfer ? ' · 50%' : (n ? ` · ${n}` : '')}</button>
+    <button class="btn ghost tiny dtb-copy" onclick="copyDayToAll()" title="Скопировать состав и время этого дня на остальные">Продублировать</button>
   </div>`;
 }
 /* Позиции рентала в половинном дне стоят вполовину — значит и оплата ему
@@ -6595,7 +6633,7 @@ function renderCrewStrip(p){
     el.innerHTML = `<div class="crew-warn">⚠ Команда ${isMultiDay(p)?'на этот день ':''}ещё не назначена — не забудь собрать команду
       <div class="crew-warn-actions">
         <button class="btn ghost" onclick="setSoloCrew('${p.id}')" title="Работаю один: убрать это предупреждение и задачи по команде">Соло проект</button>
-        <button class="btn ghost" onclick="showTab('crew')">Назначить →</button>
+        <button class="btn ghost" onclick="showTab('crew')">Назначить ↓</button>
       </div></div>`;
     return;
   }
@@ -6603,14 +6641,18 @@ function renderCrewStrip(p){
     const person = CREW.find(x=>x.id===c.id);
     if(!person) return '';
     const initials = person.name.split(' ').map(w=>w[0]).join('');
-    return `<span class="crew-chip" title="${esc(person.name)}">
-      <span class="chip-avatar">${initials}</span>${esc(person.name.split(' ')[0])}</span>`;
+    return `<button class="crew-chip" title="Открыть карточку: ${esc(person.name)}" onclick="openCrewDetail('${person.id}')">
+      <span class="chip-avatar">${initials}</span>${esc(person.name.split(' ')[0])}</button>`;
   }).join('');
-  el.innerHTML = `<div class="crew-strip">
-    <span class="crew-strip-label">Команда · ${crew.length}${activeDay(p).units.length>1?' · '+activeDay(p).units.length+' юнита':''}</span>
+  /* Полоса не переносится, а прокручивается вбок: на телефоне при пяти именах
+     она разъезжалась на три ряда, а кнопка «Все» не влезала. Теперь тап по
+     человеку ведёт прямо в его карточку. */
+  el.innerHTML = `<div class="crew-strip${crewPanelOpen ? ' open' : ''}">
+    <button class="crew-strip-label crew-strip-toggle" onclick="toggleCrewPanel()" title="Развернуть команду">
+      <span class="crew-strip-chev">›</span>Команда · ${crew.length}${activeDay(p).units.length>1?' · '+activeDay(p).units.length+' юнита':''}</button>
     ${chips}
-    <button class="btn ghost crew-strip-more" onclick="showTab('crew')">Все →</button>
   </div>`;
+  setCrewPanel(crewPanelOpen);
 }
 /* Смета, команда и оплаты живут в одном разделе «Расчёт». Старые имена вкладок
    остались в коде во множестве мест (чекпойнты, переходы из финансов, ссылки в
@@ -6619,29 +6661,32 @@ function renderCrewStrip(p){
    сворачиваемым блоком под ними. Старые имена вкладок остались во множестве мест
    (чекпойнты, переходы из финансов, кнопки в уведомлениях), поэтому они не ломаются,
    а ведут в нужное место этого экрана. */
-const MONEY_ANCHORS = {estimate:'pane-estimate', pay:'pane-rentals', crew:'mb-crew'};
-let moneyOpen = {crew:false};
+const MONEY_ANCHORS = {estimate:'pane-estimate', pay:'pane-rentals'};
+let crewPanelOpen = false;
 function showTab(name){
+  // «Команда» — не вкладка, а панель под полосой команды в шапке проекта
+  if(name === 'crew'){
+    setCrewPanel(true);
+    const strip = document.getElementById('pCrewStrip');
+    if(strip) strip.scrollIntoView({block:'start', behavior:'smooth'});
+    return;
+  }
   const anchor = MONEY_ANCHORS[name];
   const tab = anchor ? 'money' : name;
   document.querySelectorAll('#screen-project .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.querySelectorAll('#screen-project .tabpane').forEach(t=>t.classList.toggle('active', t.dataset.pane===tab));
   if(!anchor) return;
-  if(name === 'crew') moneyOpen.crew = true;
-  applyMoneyBlocks();
   const el = document.getElementById(anchor);
   if(el && name !== 'estimate') el.scrollIntoView({block:'start', behavior:'smooth'});
 }
-function toggleMoneyBlock(key){
-  moneyOpen[key] = !moneyOpen[key];
-  applyMoneyBlocks();
+function setCrewPanel(open){
+  crewPanelOpen = !!open;
+  const panel = document.getElementById('pCrewPanel');
+  if(panel) panel.style.display = crewPanelOpen ? 'block' : 'none';
+  const strip = document.querySelector('#pCrewStrip .crew-strip');
+  if(strip) strip.classList.toggle('open', crewPanelOpen);
 }
-function applyMoneyBlocks(){
-  Object.keys(moneyOpen).forEach(k => {
-    const el = document.getElementById('mb-' + k);
-    if(el) el.classList.toggle('open', !!moneyOpen[k]);
-  });
-}
+function toggleCrewPanel(){ setCrewPanel(!crewPanelOpen); }
 /* Свод денег проекта: сколько выставлено клиенту и сколько от него пришло,
    сколько начислено команде и ренталам и сколько из этого закрыто, что остаётся
    мне. Одна и та же арифметика, что во «Финансах», — просто по одному проекту. */
@@ -6679,9 +6724,8 @@ function renderMoneySummary(p){
       <div class="ms-sub">${sub}</div>
     </div>`;
   box.innerHTML = `<div class="money-sum">
-    ${tile('Клиент', fmtMoney(t.client), t.clientPaid > 0
-      ? `получено ${fmtMoney(t.clientPaid)}${t.client - t.clientPaid > 0 ? ` · ждём ${fmtMoney(t.client - t.clientPaid)}` : ' · закрыт'}`
-      : 'денег ещё нет')}
+    ${tile('От клиента', `<span class="ms-pair">${fmtMoney(t.clientPaid).replace(' ₽', '')} / ${fmtMoney(t.client)}</span>`,
+      t.client - t.clientPaid > 0 ? `остаток ${fmtMoney(t.client - t.clientPaid)}` : (t.client ? 'закрыт' : 'сметы нет'))}
     ${tile('Команде', fmtMoney(t.crewDue), t.crewCut > 0
       ? `начислено ${fmtMoney(t.crewGross)} · вылет −${fmtMoney(t.crewCut)}`
       : (t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого'))}
@@ -6702,9 +6746,6 @@ function renderMoneySummary(p){
       <button class="btn ghost tiny" onclick="openOverrun('${p.id}')">Изменить</button>
     </div>`);
   }
-  set('mb-amt-crew', fmtMoney(t.crewDue));
-  set('mb-sub-crew', t.crewLeft > 0 ? ` · осталось выплатить ${fmtMoney(t.crewLeft)}` : (t.crewDue ? ' · всё выплачено' : ' · смены и часы'));
-  applyMoneyBlocks();
 }
 
 function renderInfo(p){
@@ -6763,6 +6804,8 @@ function renderInfo(p){
       <div><label>Статус</label><div class="v">${statusPill(p)}</div></div>
       <div><label>Сумма сметы</label><div class="v mono">${sumCell}</div></div>
       <div><label>Ожидаемая дата оплаты</label><div class="v">${paymentDateCell}</div></div>
+      <div><label>Счёт</label><div class="v">${p.invoiceSent ? fmtMoney(p.sum) + ' — выставлен' : 'не выставлен'}</div></div>
+      <div><label>Договор</label><div class="v">${p.contractSent ? 'прикреплён' : 'не прикреплён'}</div></div>
     </div>
     <!-- Опасные действия — в самом низу, подальше от рабочих кнопок -->
     <div style="display:flex;justify-content:flex-end;gap:.4rem;flex-wrap:wrap;
@@ -6852,18 +6895,17 @@ function saveInfoEdit(){
 /* ============= Estimate + печатная форма ============= */
 function renderEstimate(p){
   const pane = document.getElementById('pane-estimate');
+  /* Две кнопки в одну строку: на телефоне длинные подписи занимали три ряда.
+     Первичная смета отсюда убрана совсем — работаем сразу с основной и выкатываем
+     клиенту её версии, отдельный промежуточный документ только путал. */
   const importBlock = `
-    <div class="form-slot" style="margin-top:0;">
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-        <button class="btn" onclick="openEstImport()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 3v12M8 11l4 4 4-4M4 21h16"/></svg>Загрузить файл рентала</button>
-        <button class="btn ghost" onclick="openEstFromPrice()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 5v14M5 12h14"/></svg>Добавить позиции</button>
-        <button class="btn ghost" onclick="genEstimate('${p.id}','primary')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>Сформировать первичную смету</button>
-      </div>
-    </div>`;
+      <button class="btn" onclick="openEstImport()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M8 12.5l6.5-6.5a3 3 0 1 1 4.2 4.2L11 18a5 5 0 1 1-7-7l7.5-7.5"/></svg>Файл</button>
+      <button class="btn ghost" onclick="openEstFromPrice()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 5v14M5 12h14"/></svg>Позиция</button>`;
   const day = activeDay(p);
   if(!day.estimate.length){
-    pane.innerHTML = importBlock
+    pane.innerHTML = `<div class="est-actions">${importBlock}</div>`
       + '<div class="empty-hint">Считать пока нечего — загрузи файл рентала или посчитай команду.</div>';
+
     return;
   }
   let printOpen = false;
@@ -6881,12 +6923,8 @@ function renderEstimate(p){
     if(!toCrew) return '';
     const asOt = (day.units||[]).some(u => unitLoadAsOt(u) && unitLoadHours(u) > 0);
     const fix = (day.estimate||[]).some(i => i.loadFixedLine);
-    const where = asOt
-      ? 'Клиенту эти часы ушли внутрь переработки — отдельной строкой их там не видно.'
-      : (fix ? 'Клиенту в смете идёт только фикс.'
-             : 'Клиенту эти часы не выставлены — значит, это мой расход.');
-    return `<div class="form-hint" style="margin-top:.5rem;">Команде за погрузку/разгрузку начислено
-      <b>${fmtMoney(toCrew)}</b> — это выплата, она живёт в «Оплатах» и в отчёте. ${where}</div>`;
+    const where = asOt ? 'клиенту — в переработке' : (fix ? 'клиенту — фиксом' : 'клиенту не выставлена');
+    return `<div class="form-hint" style="margin-top:.4rem;">Выплата команде за П/Р: <b>${fmtMoney(toCrew)}</b> · ${where}</div>`;
   }
   /* Внутри группы колонок меньше, чем в полной смете: кол-во и смены сведены
      в одну ячейку («2 × 3»), иначе на телефоне пять колонок рвут рубль на строки. */
@@ -6962,50 +7000,19 @@ function renderEstimate(p){
     /* Свод дня считается тем же расчётом, что и документ: скидка рентала,
        скидка клиенту и налог — здесь же. Раньше скидку ставили только внутри
        «Открыть смету», и свод показывал одно, а сумма проекта — другое. */
-    const t = estPayable(p, items);
-    const rentalOff = t.rentalOff;
-    const gross = total(items) - rentalOff;      // до скидки клиенту
-    const discOff = t.gear - t.gearDisc;
-    const payableDay = t.payable;
-    const payableAll = estPayable(p, estItems(allEstimate(p))).payable;
     const multi = isMultiDay(p);
     pane.querySelector('.est-body').innerHTML = `
-      ${multi ? `<div class="form-hint" style="margin-bottom:.45rem;">Свод за ${fmtDate(day.iso)}${day.transfer?' · <b>трансферный день, 50%</b> кроме транспорта':''}. Документ собирается за этот же день — свести все дни можно переключателем в «Открыть смету» и при выгрузке.</div>` : ''}
+      ${multi ? `<div class="form-hint" style="margin-bottom:.4rem;">За ${fmtDate(day.iso)}${day.transfer?' · <b>50%</b>':''}</div>` : ''}
       <div class="est-sum">
-        ${estSummaryBuckets(items).map(groupRowHTML).join('')}
-        ${rentalDiscountRows(p, items).map(r => `
-          <div class="est-sum-disc">
-            <span>Скидка рентала «${esc(r.rental)}» · ${esc(r.label)}
-              <button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(r.rental)}')" title="Изменить скидку">%</button>
-            </span>
-            <span class="mono">− ${fmtMoney(r.off)}</span>
-          </div>`).join('')}
-        <div class="est-sum-total"><span>Итого${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(gross)}</span></div>
-        <div class="est-sum-opt">
-          <span>Скидка клиенту на оборудование
-            <input class="est-opt-in" type="number" min="0" max="100" step="1" value="${p.estDiscount || 0}"
-              onchange="setEstOpt('${p.id}','estDiscount',this.value)"> %
-            <span class="esr-sub">свет, грип и электрика — люди, логистика и прочее не в счёт</span>
-          </span>
-          <span class="mono">${discOff > 0 ? '− ' + fmtMoney(discOff) : '—'}</span>
-        </div>
-        <div class="est-sum-opt">
-          <span>Налог
-            <input class="est-opt-in" type="number" min="0" max="30" step="0.5" value="${p.estTax || 0}"
-              onchange="setEstOpt('${p.id}','estTax',this.value)"> %
-            <span class="esr-sub">накидывается на весь итог</span>
-          </span>
-          <span class="mono">${t.taxSum > 0 ? '+ ' + fmtMoney(t.taxSum) : '—'}</span>
-        </div>
-        <div class="est-sum-payable"><span>К оплате${multi ? ' за день' : ''}</span><span class="mono">${fmtMoney(payableDay)}</span></div>
-        ${multi ? `<div class="est-sum-payable"><span>К оплате по проекту · все дни</span><span class="mono">${fmtMoney(payableAll)}</span></div>` : ''}
+        ${estSummaryBuckets(items, p).map(groupRowHTML).join('')}
       </div>` + loadNoteHTML(day);
   }
   // «Открыть смету» — весь документ по формуляру: позиции и люди, сразу целиком.
   const docIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>`;
-  pane.innerHTML = importBlock + `
-    <div class="est-open-row">
-      <button class="btn" id="btnPrint">${docIcon}Открыть смету</button>
+  pane.innerHTML = `
+    <div class="est-actions">
+      ${importBlock}
+      <button class="btn ghost" id="btnPrint">${docIcon}Смета</button>
     </div>
     <div class="est-body"></div>
     <div id="printArea"></div>`;
@@ -7013,7 +7020,7 @@ function renderEstimate(p){
   printBtn.onclick = ()=>{
     printOpen = !printOpen;
     const area = pane.querySelector('#printArea');
-    printBtn.innerHTML = docIcon + (printOpen ? 'Скрыть смету' : 'Открыть смету');
+    printBtn.innerHTML = docIcon + (printOpen ? 'Скрыть' : 'Смета');
     if(!printOpen){ area.innerHTML=''; return; }
     const items = estScopeItems(p);
     area.innerHTML = `
@@ -7782,38 +7789,47 @@ function estPayable(p, items){
    лежат в разделе «Персонал», но в своде вынесены отдельными статьями — про них
    спрашивают первыми. Порядок правил важен: строку забирает первое подошедшее,
    поэтому «Персонал» стоит после такси и П/Р, иначе он забрал бы их себе. */
+/* Разделы свода на экране крупнее, чем главы в файле сметы: электрика и прочее
+   входят в оборудование, погрузка — в персонал. В самом документе у них свои
+   главы, там дробность к месту, а на телефоне каждая лишняя строка — это скролл.
+   Порядок в массиве — порядок ПОИСКА (первое совпадение выигрывает), поэтому
+   «Оборудование» ловит всё оставшееся и стоит последним; на экран разделы
+   выводятся в порядке order. */
 const EST_SUM_GROUPS = [
-  /* Электрика на экране — часть оборудования: скидка на неё та же, и отдельной
-     строкой она только дробила свод. В самом файле сметы у неё своя глава —
-     там клиент привык видеть её отдельно, и это осталось как было. */
-  {key:'gear', name:'Оборудование', sub:'свет, грип и электрика — на них идёт скидка',
-   test:i => i.sec === 'Свет' || i.sec === 'Грип' || i.sec === 'Оборудование' || i.sec === 'Электрика'},
-  {key:'logi', name:'Логистика', sub:'транспорт — без скидки',
+  {key:'logi', name:'Логистика', sub:'транспорт — без скидки', order:2,
    test:i => i.sec === 'Логистика'},
-  {key:'load', name:'Погрузка/разгрузка', sub:'',
-   test:i => i.loadFixedLine || (i.sec === 'Персонал' && /погрузка\/разгрузка/i.test(i.name || ''))},
-  {key:'taxi', name:'Такси', sub:'',
+  {key:'taxi', name:'Такси', sub:'', order:3,
    test:i => i.taxiLine || (i.sec === 'Персонал' && /такси/i.test(i.name || ''))},
-  {key:'crew', name:'Персонал', sub:'смены, переработки, разрывы',
-   test:i => i.sec === 'Персонал'},
-  {key:'other', name:'Прочее', sub:'услуги и позиции без раздела',
+  {key:'crew', name:'Персонал', sub:'смены, переработки, П/Р', order:4,
+   test:i => i.sec === 'Персонал' || i.loadFixedLine},
+  {key:'gear', name:'Оборудование', sub:'свет, грип, электрика и прочее', order:1,
    test:() => true},
 ];
-function estSummaryBuckets(items){
-  const buckets = EST_SUM_GROUPS.map(g => ({key:g.key, name:g.name, sub:g.sub, items:[], sum:0}));
+function estSummaryBuckets(items, p){
+  const buckets = EST_SUM_GROUPS.map(g => ({key:g.key, name:g.name, sub:g.sub, order:g.order, items:[], sum:0}));
   (items || []).forEach(i => {
     const idx = EST_SUM_GROUPS.findIndex(g => g.test(i));
     const b = buckets[idx < 0 ? buckets.length - 1 : idx];
     b.items.push(i); b.sum += lineTotal(i);
   });
-  // сколько внутри оборудования занимает электрика — видно подписью, без отдельной строки
+  /* Скидка рентала уже сидит в его файле, поэтому и раздел показываем с ней:
+     цифра на экране совпадает с присланной сметой рубль в рубль. Отдельной
+     строкой скидка больше не висит — иначе она вычиталась бы дважды. */
   const gear = buckets.find(b => b.key === 'gear');
   if(gear){
+    const parts = [];
     const elec = gear.items.filter(i => (i.sec || '') === 'Электрика')
       .reduce((sum, i) => sum + lineTotal(i), 0);
-    if(elec > 0) gear.sub = `свет, грип и электрика · в т.ч. электрика ${fmtMoney(elec)}`;
+    if(elec > 0) parts.push(`электрика ${fmtMoney(elec)}`);
+    const off = p ? rentalDiscountRows(p, items).reduce((sum, r) => sum + r.off, 0) : 0;
+    if(off > 0){
+      gear.sum -= off;
+      gear.discount = off;
+      parts.push(`скидка ренталов −${fmtMoney(off)}`);
+    }
+    if(parts.length) gear.sub = parts.join(' · ');
   }
-  return buckets.filter(b => b.items.length);
+  return buckets.filter(b => b.items.length).sort((a, b) => (a.order || 0) - (b.order || 0));
 }
 /* Раскрытые группы помним по ключу: перерисовка вкладки — смена дня, пересчёт
    персонала — не должна схлопывать то, что открыто. Тап меняет только класс,
@@ -9167,7 +9183,7 @@ function renderCrewTab(p){
               <span class="avatar sm">${initials}</span>
               <span class="cm-name">${esc(person ? person.name : 'Я')}
                 <span class="cm-role">Гафер<span class="cm-tag">это я</span></span></span>
-              <span class="cm-sum mono">${fmtMoney(fee)}</span>
+              <span class="cm-sum mono">${fee > 0 ? fmtMoney(fee) : '<span class="cm-sum-sub">гонорар в смете</span>'}</span>
               <span class="cm-chev">›</span>
             </button>
             <div class="cm-body">
@@ -9667,10 +9683,7 @@ function hoursNoteHTML(u){
       ? 'Часы смены посчитаются, когда проставишь начало и конец смены.'
       : `Смена: <b>${shiftH.toFixed(1)} ч</b> · норма ${norm} ч${why?` (${why})`:''} · ${ot>0?`<span class="ot">переработка ${ot.toFixed(1)} ч${progNote}</span>`:'без переработки'}`)
     + (loadH>0
-        ? ` · <span class="load">погрузка/разгрузка: ${loadH.toFixed(1)} ч</span>`
-          + (unitLoadAsOt(u)
-              ? ' — считаем переработкой по 1-й ступени'
-              : ' — берём с клиента фиксом, его спрашиваем при снятии тумблера')
+        ? ` · <span class="load">П/Р ${loadH.toFixed(1)} ч</span>${unitLoadAsOt(u) ? ' → в переработку' : ' → фикс'}`
         : '')
     + (gapH>0 ? ` · <span class="ot">разрыв: ${fmtHoursShort(gapH)} ч</span> — по 1-й ступени` : '');
 }
@@ -10003,16 +10016,7 @@ function settlementRowHTML(o){
 
   // ref — что именно оплачиваем; все действия идут через один диспетчер
   const ref = o.ref;
-  // История платежей: у безналичных — скрепка с подтверждением
-  const history = (o.item.payments||[]).map((pm,i)=>`
-    <div class="pay-sub-row">
-      <span>${payTypeLabel(pm.type)} · ${fmtDate(pm.date)}</span>
-      <span class="mono">${fmtMoney(pm.amount)}</span>
-      ${pm.type==='noncash'
-        ? `<button class="btn ghost tiny proof-btn ${pm.proof?'has':''}" onclick="settleProof(${ref},${i})" title="${pm.proof?'Открыть подтверждение':'Приложить чек'}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3l8-8"/></svg></button>`
-        : '<span></span>'}
-      ${closed ? '' : `<button class="db-del" title="Удалить платёж" onclick="settleRemovePayment(${ref},${i})">✕</button>`}
-    </div>`).join('');
+  const history = settlementHistoryHTML(o.item, ref, closed);
 
   /* У рентала сумма приходит из его же сметы: показываем, из чего она вышла —
      сумма позиций и скидка. Тогда цифра в приложении читается так же, как в файле. */
@@ -10042,14 +10046,25 @@ function settlementRowHTML(o){
       ${closed
         ? `<div class="pay-fact"><span class="pill pill-ok">закрыто</span><span class="pay-date">${fmtDate(o.item.paymentDate)}</span></div>`
         : `<div class="pay-actions">
-             <button class="btn ghost" onclick="settleOpenPay(${ref},'cash')">наличкой</button>
-             <button class="btn ghost" onclick="settleOpenPay(${ref},'noncash')">безнал</button>
+             <button class="btn ghost" onclick="settleOpenPay(${ref},'cash')">Оплатить</button>
              <button class="btn ghost" onclick="settleClose(${ref})" title="Считать оплату завершённой">✓ Закрыть</button>
            </div>`}
       ${o.del ? `<button class="db-del" title="${esc(o.delTitle||'Убрать запись')}" onclick="${o.del}">✕</button>` : ''}
     </div>
     ${history ? `<div class="pay-sub">${history}</div>` : ''}
   </div>`;
+}
+// История платежей: у безналичных — скрепка с подтверждением
+function settlementHistoryHTML(item, ref, closed){
+  return (item.payments||[]).map((pm,i)=>`
+    <div class="pay-sub-row">
+      <span>${payTypeLabel(pm.type)} · ${fmtDate(pm.date)}</span>
+      <span class="mono">${fmtMoney(pm.amount)}</span>
+      ${pm.type==='noncash'
+        ? `<button class="btn ghost tiny proof-btn ${pm.proof?'has':''}" onclick="settleProof(${ref},${i})" title="${pm.proof?'Открыть подтверждение':'Приложить чек'}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3l8-8"/></svg></button>`
+        : '<span></span>'}
+      ${closed ? '' : `<button class="db-del" title="Удалить платёж" onclick="settleRemovePayment(${ref},${i})">✕</button>`}
+    </div>`).join('');
 }
 /* Ссылка на позицию выплаты: 'rental' + название либо 'crew' + юнит и человек.
    Через неё все действия находят один и тот же объект. */
@@ -10135,14 +10150,20 @@ function renderPayTab(p){
   /* Деньги клиента стоят рядом со сметой — это одна история: сколько выставил,
      сколько пришло. Ренталы живут своим блоком, выплаты команде — прямо в строках
      людей, вместе с их часами. */
+  /* Скидка клиенту и налог живут здесь: это условия сделки с клиентом,
+     а не свойство отдельного дня сметы. Суммы считаются по всему проекту. */
+  const tAll = estPayable(p, estItems(allEstimate(p)));
   const client = document.getElementById('pane-client');
   if(client) client.innerHTML = cancelBanner + `
-    <div class="pay-subhead"><span>Деньги от клиента</span></div>
-    <div class="kv">
-      <div><label>Счёт</label><div class="v">${p.invoiceSent? fmtMoney(p.sum)+' — выставлен' : 'не выставлен'}</div></div>
-      <div><label>Договор</label><div class="v">${p.contractSent? 'прикреплён' : 'не прикреплён'}</div></div>
-      <div><label>Получено</label><div class="v mono">${fmtMoney(p.paidAmount)} из ${fmtMoney(p.sum)}</div></div>
-      <div><label>Остаток</label><div class="v mono" style="${remaining>0?'color:var(--warn)':''}">${fmtMoney(remaining)}</div></div>
+    <div class="est-foot-opts" style="margin:.1rem 0 .4rem;">
+      <label title="Скидка клиенту на оборудование">скидка
+        <input class="est-opt-in" type="number" min="0" max="100" step="1" value="${p.estDiscount || 0}"
+          onchange="setEstOpt('${p.id}','estDiscount',this.value)">%</label>
+      <span class="mono est-foot-off">${tAll.gear - tAll.gearDisc > 0 ? '−' + fmtMoney(tAll.gear - tAll.gearDisc) : ''}</span>
+      <label title="Налог на весь итог">налог
+        <input class="est-opt-in" type="number" min="0" max="30" step="0.5" value="${p.estTax || 0}"
+          onchange="setEstOpt('${p.id}','estTax',this.value)">%</label>
+      <span class="mono est-foot-off">${tAll.taxSum > 0 ? '+' + fmtMoney(tAll.taxSum) : ''}</span>
     </div>
     ${clientBlock}`;
 
@@ -10202,33 +10223,41 @@ function renderRentalCards(p){
         <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
       </div>`;
     }).join('');
+    const ref = debt ? settlementRef('rental', p.id, null, name) : null;
+    const left = debt ? settlementLeft(debt) : 0;
+    const closed = !!(debt && debt.paid);
+    /* Сумма и остаток — в шапке справа, все кнопки — одной строкой в теле:
+       «Скидка», «Убрать из оплат», «Оплатить», «Закрыть». Заголовок «К оплате»
+       ушёл — сколько платить, видно и так. */
     return `<div class="cm${open ? ' open' : ''}">
       <button class="cm-head" onclick="toggleRentalCard('${jsArg(name)}')">
         <span class="ef-kind">рентал</span>
         <span class="cm-name">${esc(name)}<span class="cm-role">${esc(sub)}${tag}</span></span>
-        <span class="cm-sum mono">${fmtMoney(net)}</span>
+        <span class="cm-sum mono">${fmtMoney(net)}${debt && !closed && paidSum > 0 ? `<span class="cm-sum-sub">осталось ${fmtMoney(left)}</span>` : ''}${closed ? '<span class="cm-sum-sub">закрыто</span>' : ''}</span>
         <span class="cm-chev">›</span>
       </button>
       <div class="cm-body">
         <div class="cm-tools">
           <button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(name)}')">${dLabel ? '✎ Скидка' : 'Скидка'}</button>
-          ${debt ? `<button class="btn ghost tiny" onclick="removeRentalDebt('${jsArg(p.id)}','${jsArg(name)}')">Убрать из оплат</button>` : ''}
+          ${debt ? `<button class="btn ghost tiny" onclick="removeRentalDebt('${jsArg(p.id)}','${jsArg(name)}')" title="Убрать рентал из оплат">Убрать</button>` : ''}
+          ${debt && !closed ? `<button class="btn ghost tiny" onclick="settleOpenPay(${ref},'cash')">Оплатить</button>
+            <button class="btn ghost tiny" onclick="settleClose(${ref})" title="Считать оплату завершённой">✓ Закрыть</button>` : ''}
+          ${debt && !closed ? `<button class="btn ghost tiny" onclick="settleEditAmount(${ref})" title="Изменить сумму">✎</button>` : ''}
         </div>
         ${fileRows}
-        ${debt
-          ? settlementRowHTML({label:'К оплате', item:debt, ref:settlementRef('rental', p.id, null, name)})
-          : '<div class="form-hint">Оплата появится, когда в смете будут позиции этого рентала.</div>'}
+        ${debt ? `<div class="pay-sub">${settlementHistoryHTML(debt, ref, closed)}</div>`
+               : '<div class="form-hint">Оплата появится, когда в смете будут позиции этого рентала.</div>'}
       </div>
     </div>`;
   }).join('');
   box.innerHTML = `<div class="pay-subhead"><span>Ренталы</span></div>`
     + (cards || '<div class="empty-hint">Ренталы по проекту не назначены.</div>')
-    + (free.length ? `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.4rem;">
-        <select id="addRentalSel" class="role-select" style="min-width:130px;">
+    + (free.length ? `<div class="rental-add">
+        <select id="addRentalSel" class="role-select">
           ${free.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
         </select>
-        <input id="addRentalAmount" type="number" placeholder="Сумма, ₽" class="ov-in" style="width:110px;">
-        <button class="btn ghost" onclick="assignRental('${p.id}')">+ Назначить рентал</button>
+        <input id="addRentalAmount" type="number" placeholder="₽" class="ov-in">
+        <button class="btn ghost tiny" onclick="assignRental('${p.id}')">Назначить</button>
       </div>` : '');
 }
 
@@ -10379,13 +10408,19 @@ function settleOpenPay(kind, pid, a, b, type){
   settleTarget = {kind, pid, a, b, type};
   const left = settlementLeft(item);
   document.getElementById('settleWho').textContent = settlementLabel(kind, pid, a, b);
-  document.getElementById('settleType').textContent = type==='cash' ? 'наличными' : 'безналом';
+  settleSetType(type || 'cash');
   document.getElementById('settleLeft').textContent = fmtMoney(left);
   document.getElementById('settleAmount').value = left > 0 ? left : '';
   document.getElementById('settleDate').value = TODAY_ISO;
   document.getElementById('settleErr').style.display = 'none';
   document.getElementById('settleCloseAfter').checked = false;
   document.getElementById('settleModal').classList.add('show');
+}
+function settleSetType(t){
+  if(settleTarget) settleTarget.type = t;
+  document.getElementById('settleTypeCash').classList.toggle('on', t === 'cash');
+  document.getElementById('settleTypeNoncash').classList.toggle('on', t !== 'cash');
+  document.getElementById('settleType').textContent = t === 'cash' ? 'наличными' : 'безналом';
 }
 function closeSettleModal(){
   document.getElementById('settleModal').classList.remove('show');
@@ -14959,9 +14994,27 @@ const SELF_CHECK_CASES = [
       const b = estSummaryBuckets(items);
       const sumOfGroups = b.reduce((s, g) => s + g.sum, 0);
       const sumOfItems = items.reduce((s, i) => s + lineTotal(i), 0);
-      const crew = (b.find(g => g.key === 'crew') || {}).sum;   // смены без такси и П/Р
+      // персонал теперь вместе с П/Р (26 400 смены + 15 000 фикс), такси считается отдельно
+      const crew = (b.find(g => g.key === 'crew') || {}).sum;
       return (sumOfGroups === sumOfItems ? 100000 : 0) + crew;
-    }, expect:126400},
+    }, expect:141400},
+  {group:'Сметы', name:'Услуги и электрика идут в «Оборудование», отдельных разделов больше нет',
+    run:()=>{
+      const items = [
+        {sec:'Свет', name:'Прибор', qty:1, days:1, price:10000},
+        {sec:'Электрика', name:'Кабель', qty:1, days:1, price:2000},
+        {sec:'Услуги', name:'Представитель на ПРР', qty:1, days:1, price:3000},
+      ];
+      const b = estSummaryBuckets(items);
+      return b.length * 100000 + (b[0].key === 'gear' ? b[0].sum : 0);
+    }, expect:115000},
+  {group:'Сметы', name:'Скидка рентала уже сидит в разделе «Оборудование»',
+    run:()=>{
+      const items = [{sec:'Свет', name:'Прибор', qty:1, days:1, price:100000, rental:'Р', client:true}];
+      const p = {id:'__disc', name:'проверка', date:TODAY_ISO, rentalDiscounts:{'Р':{pct:20, sum:null}}};
+      const gear = estSummaryBuckets(items, p).find(g => g.key === 'gear');
+      return gear ? gear.sum : 0;     // 100 000 минус скидка рентала 20%
+    }, expect:80000},
   {group:'Сметы', name:'Старое сохранение: начисление команде за П/Р уходит из сметы, позиция остаётся',
     run:()=>{
       const p = {id:'__mig', name:'__mig', dates:['2026-01-01'], sum:0, paidAmount:0, estimate:[
