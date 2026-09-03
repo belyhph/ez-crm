@@ -6703,13 +6703,15 @@ function moneyTotals(p){
   const crewDue = Math.max(0, crewGross - crewCut);
   const rentDue = Math.max(0, rentGross - rentCut);
   const over = projectOverrun(p);
+  const taxi = allUnits(p).reduce((sum, u) => sum + (u.taxi || 0), 0);   // такси раздаю ребятам — это расход
   return {
     client: p.sum || 0, clientPaid: p.paidAmount || 0,
     crewGross, crewCut, crewDue, crewPaid, crewLeft: Math.max(0, crewDue - crewPaid),
     rentGross, rentCut, rentDue, rentPaid, rentLeft: Math.max(0, rentDue - rentPaid),
     overrun: over, cuts: crewCut + rentCut, onMe: overrunOnMe(p),
     // из моего остатка вылет вычитается ровно в той части, что я не переложил на других
-    mine: (p.sum || 0) - over - crewDue - rentDue - tripSpend(p),
+    taxi,
+    mine: (p.sum || 0) - over - crewDue - rentDue - taxi - tripSpend(p),
     fact: projectProfit(p),
   };
 }
@@ -13378,8 +13380,10 @@ function renderOwedToMeTab(){
 function projectProfit(p){
   const crewPaid = projectCrew(p).reduce((s,c)=>s+settlementPaid(c),0);
   const rentalPaid = RENTAL_DEBTS.filter(r=>r.projectId===p.id).reduce((s,r)=>s+settlementPaid(r),0);
+  // такси клиент платит мне, а я раздаю ребятам — это расход, как и в отчёте проекта
+  const taxi = allUnits(p).reduce((s,u)=>s+(u.taxi||0), 0);
   // в командировке из моих денег уходят ещё налог, дорога, жильё и личные траты
-  return p.paidAmount - crewPaid - rentalPaid - tripSpend(p);
+  return p.paidAmount - crewPaid - rentalPaid - taxi - tripSpend(p);
 }
 function renderProfitTab(){
   const el = document.getElementById('fpane-profit');
@@ -15294,6 +15298,24 @@ const SELF_CHECK_CASES = [
       return moneyTotals(p).mine;
     },
     expect:70000},
+
+  // ---- Такси — мой расход везде одинаково ----
+  {group:'Деньги проекта', name:'Такси вычитается из «мне» в сводке, как и в отчёте',
+    run:()=>{
+      const p = {id:'__tx', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:0,
+        units:[{id:1, name:'Ю1', taxi:1500, crew:[{id:'x', amount:30000, payments:[]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[]};
+      return moneyTotals(p).mine;      // 100 000 − 30 000 − 1 500
+    },
+    expect:68500},
+  {group:'Деньги проекта', name:'Прибыль по факту тоже минус такси',
+    run:()=>{
+      const p = {id:'__tx2', name:'проверка', date:TODAY_ISO, sum:100000, paidAmount:100000,
+        units:[{id:1, name:'Ю1', taxi:1500, crew:[{id:'x', amount:30000, paid:true, payments:[{amount:30000}]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[]};
+      return projectProfit(p);         // 100 000 − 30 000 − 1 500
+    },
+    expect:68500},
 
   // ---- Я в команде ----
   {group:'Я в команде', name:'Моя строка не попадает в список тех, кому платим',
