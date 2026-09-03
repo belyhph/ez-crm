@@ -1910,16 +1910,14 @@
          и разводить их по трём вкладкам значило гонять человека туда-сюда.
          Панели внутри — те же самые, что были во вкладках, поэтому весь их
          функционал и все обращения к ним по id продолжают работать. -->
+    <!-- Весь расчёт — один экран: смета, ренталы и деньги клиента это одна история
+         и один файл. Команда стоит отдельным блоком: там своя работа со временем
+         и выплатами, и держать её всегда развёрнутой незачем. -->
     <div class="tabpane" data-pane="money" id="pane-money">
       <div id="moneySummary"></div>
-      <div class="money-block open" id="mb-est">
-        <button class="mb-head" onclick="toggleMoneyBlock('est')">
-          <span class="mb-name">Клиенту<span class="mb-sub" id="mb-sub-est"></span></span>
-          <span class="mb-amt mono" id="mb-amt-est"></span>
-          <span class="mb-chev">›</span>
-        </button>
-        <div class="mb-body"><div id="pane-estimate"></div><div id="pane-client"></div></div>
-      </div>
+      <div id="pane-estimate"></div>
+      <div id="pane-rentals"></div>
+      <div id="pane-client"></div>
       <div class="money-block" id="mb-crew">
         <button class="mb-head" onclick="toggleMoneyBlock('crew')">
           <span class="mb-name">Команда<span class="mb-sub" id="mb-sub-crew"></span></span>
@@ -1927,14 +1925,6 @@
           <span class="mb-chev">›</span>
         </button>
         <div class="mb-body"><div id="pane-crew"></div></div>
-      </div>
-      <div class="money-block" id="mb-pay">
-        <button class="mb-head" onclick="toggleMoneyBlock('pay')">
-          <span class="mb-name">Ренталы<span class="mb-sub" id="mb-sub-pay"></span></span>
-          <span class="mb-amt mono" id="mb-amt-pay"></span>
-          <span class="mb-chev">›</span>
-        </button>
-        <div class="mb-body"><div id="pane-pay"></div></div>
       </div>
     </div>
     <div class="tabpane" data-pane="notes" id="pane-notes"></div>
@@ -4187,7 +4177,7 @@ function ensureDays(p){
 }
 function dayIsEmpty(d){
   return !(d.estimate||[]).length && !(d.notes||[]).length && !(d.payments||[]).length
-      && !(d.units||[]).some(u=>u.crew.length);
+      && !(d.units||[]).some(u=>unitOthers(u).length);
 }
 /* Даты проекта поменялись — приводим структуру в порядок.
    Стал однодневным: содержимое оставшегося дня возвращаем в сам проект.
@@ -4228,6 +4218,41 @@ function findUnit(p, unitId){
 }
 
 function projectCrew(p){ return allUnits(p).flatMap(u=>u.crew); }
+/* ===== Я в команде =====
+   Гафер — такой же участник смены: его надо видеть в юните, в пропусках и
+   кредитсах. Но деньги у него другие: гонорар уходит клиенту в смету и остаётся
+   в моём доходе, выплаты самому себе не бывает. Поэтому моя запись помечена
+   флагом me: она есть во всех списках людей и нигде — в выплатах и долгах. */
+const ME_ID = 'me';
+function isMe(c){ return !!(c && (c.me || c.id === ME_ID)); }
+// люди, которым реально платим: все, кроме меня
+function payableCrew(list){ return (list || []).filter(c => !isMe(c)); }
+function projectPayCrew(p){ return payableCrew(projectCrew(p)); }
+function unitOthers(u){ return payableCrew((u || {}).crew); }
+// карточка «это я» в базе людей — чтобы пропуск и кредитсы жили там же, где у всех
+function ensureMeCard(){
+  let me = CREW.find(c => c.id === ME_ID);
+  if(!me){
+    me = {id:ME_ID, name: MY_NAME || 'Я', me:true, passInfo:'', creditsInfo:''};
+    CREW.unshift(me);
+  }
+  me.me = true;
+  if(MY_NAME && me.name !== MY_NAME && !me.nameEdited) me.name = MY_NAME;
+  return me;
+}
+function meMemberRecord(){
+  return {id:ME_ID, me:true, role:'Гафер', pass:false, credit:false, paid:false,
+    amount:0, payments:[], paymentType:null, paymentDate:null};
+}
+/* Старые сохранения знали только тумблер «я на смене» — переносим его в состав
+   юнита, иначе меня не было бы ни в списке людей, ни в пропусках. */
+function migrateMeIntoUnits(){
+  PROJECTS.forEach(p => allDays(p).forEach(d => (d.units || []).forEach((u, i) => {
+    const has = (u.crew || []).some(isMe);
+    if(unitMeOn(u, i) && !has) u.crew.push(meMemberRecord());
+    if(!unitMeOn(u, i) && has) u.crew = u.crew.filter(c => !isMe(c));
+  })));
+}
 
 // Сумма сметы всегда тянется из клиентских позиций сметы, если не включён ручной ввод
 /* Сумма строки сметы — в одном месте, чтобы условия рентала по дням
@@ -4284,7 +4309,7 @@ function projectIsSettled(p){ return !!p.paymentDate && (p.sum - p.paidAmount) <
    Без выставленного счёта требовать нечего, это ещё не дебиторка. */
 function isReceivable(p){ return p.sum>0 && p.invoiceSent && (p.sum - p.paidAmount) > 0; }
 function receivableAmount(p){ return isReceivable(p) ? (p.sum - p.paidAmount) : 0; }
-function isCrewDebt(p, c){ return !c.paid && projectIsSettled(p); }
+function isCrewDebt(p, c){ return !c.paid && !isMe(c) && settlementLeft(c) > 0 && projectIsSettled(p); }
 // Суммарная задолженность перед человеком по всем проектам
 function crewDebtTotal(personId){
   let total = 0;
@@ -5442,9 +5467,9 @@ function projectRowHTML(p){
 function daysUntil(iso){
   return Math.round((new Date(iso) - new Date(TODAY_ISO)) / (1000*60*60*24));
 }
-function projectHasCrew(p){ return projectCrew(p).length>0; }
+function projectHasCrew(p){ return projectPayCrew(p).length>0; }
 function projectFullyPaid(p){ return p.sum>0 && (p.sum-p.paidAmount)<=0; }
-function allCrewPaidFor(p){ const crew=projectCrew(p); return crew.length>0 && crew.every(c=>c.paid); }
+function allCrewPaidFor(p){ const crew=projectPayCrew(p); return crew.length>0 && crew.every(c=>c.paid); }
 function allRentalsPaidFor(p){ const r=RENTAL_DEBTS.filter(x=>x.projectId===p.id); return r.length>0 && r.every(x=>x.paid); }
 function isRentalDebt(r){ return settlementLeft(r) > 0; }
 
@@ -5477,7 +5502,7 @@ function generateAutoTasks(){
       // Порог «за 5 дней» здесь не применяем: день добавлен руками, значит по нему
       // сразу нужны свои смета и команда — иначе задача всплыла бы только перед съёмкой.
       allDays(p).forEach((d,i)=>{
-        const dayHasCrew = (d.units||[]).some(u=>u.crew.length);
+        const dayHasCrew = (d.units||[]).some(u=>unitOthers(u).length);
         if(!dayHasCrew && !soloCrew){
           tasks.push({key:`crewD:${d.iso}`, label:`Собрать команду · день ${i+1}`, projectId:p.id, tab:'crew',
                       date:d.iso, dayIso:d.iso});
@@ -5491,7 +5516,7 @@ function generateAutoTasks(){
       tasks.push({key:'crew', label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date});
     }
     // «Оплатить команду» — деньги от клиента получены целиком, но не все в команде закрыты
-    if(fullyPaid && projectCrew(p).length>0 && !allCrewPaidFor(p)){
+    if(fullyPaid && projectPayCrew(p).length>0 && !allCrewPaidFor(p)){
       tasks.push({key:'payCrew', label:'Оплатить команду', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Оплатить ренталы» — аналогично, по ренталам проекта
@@ -6016,7 +6041,7 @@ function renderDayStrip(p){
     <span class="day-strip-label">Съёмочные дни</span>
     ${p.days.map((d,i)=>{
       const f = dayFinance(p, d);
-      const filled = d.estimate.length || d.units.some(u=>u.crew.length);
+      const filled = d.estimate.length || d.units.some(u=>unitOthers(u).length);
       return `<button class="day-chip ${d.iso===currentDayIso?'on':''}${d.transfer?' transfer':''}" onclick="selectDay('${d.iso}')">
         <span class="day-chip-n">День ${i+1}</span>
         <span class="day-chip-date">${fmtDate(d.iso)}</span>
@@ -6555,7 +6580,7 @@ function renderCrewStrip(p){
   // показываем команду выбранного дня — иначе на многодневном проекте
   // в полосе висели бы все смены разом
   const crew = (activeDay(p).units||[]).flatMap(u=>u.crew);
-  if(!crew.length){
+  if(!payableCrew(crew).length && !crew.some(isMe)){
     /* «Соло проект» — работаю один: собирать некого, поэтому предупреждение и задачи
        по команде выключаются. Всё остальное считается как раньше: смета, ренталы и мой
        гонорар за «я на смене» (он и так живёт в смете, а не в выплатах). */
@@ -6590,19 +6615,22 @@ function renderCrewStrip(p){
 /* Смета, команда и оплаты живут в одном разделе «Расчёт». Старые имена вкладок
    остались в коде во множестве мест (чекпойнты, переходы из финансов, ссылки в
    уведомлениях) — поэтому они не ломаются, а ведут в нужный блок этого раздела. */
-const MONEY_BLOCKS = {estimate:'est', crew:'crew', pay:'pay'};
-let moneyOpen = {est:true, crew:false, pay:false};
+/* Смета, ренталы и деньги клиента живут на одном экране «Расчёт», команда —
+   сворачиваемым блоком под ними. Старые имена вкладок остались во множестве мест
+   (чекпойнты, переходы из финансов, кнопки в уведомлениях), поэтому они не ломаются,
+   а ведут в нужное место этого экрана. */
+const MONEY_ANCHORS = {estimate:'pane-estimate', pay:'pane-rentals', crew:'mb-crew'};
+let moneyOpen = {crew:false};
 function showTab(name){
-  const block = MONEY_BLOCKS[name];
-  const tab = block ? 'money' : name;
+  const anchor = MONEY_ANCHORS[name];
+  const tab = anchor ? 'money' : name;
   document.querySelectorAll('#screen-project .tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.querySelectorAll('#screen-project .tabpane').forEach(t=>t.classList.toggle('active', t.dataset.pane===tab));
-  if(block){
-    moneyOpen[block] = true;
-    applyMoneyBlocks();
-    const el = document.getElementById('mb-' + block);
-    if(el && name !== 'estimate') el.scrollIntoView({block:'start', behavior:'smooth'});
-  }
+  if(!anchor) return;
+  if(name === 'crew') moneyOpen.crew = true;
+  applyMoneyBlocks();
+  const el = document.getElementById(anchor);
+  if(el && name !== 'estimate') el.scrollIntoView({block:'start', behavior:'smooth'});
 }
 function toggleMoneyBlock(key){
   moneyOpen[key] = !moneyOpen[key];
@@ -6620,7 +6648,7 @@ function applyMoneyBlocks(){
 function moneyTotals(p){
   const crew = projectCrew(p);
   // c.amount уже содержит доп. расход — второй раз его прибавлять нельзя
-  const crewGross = crew.reduce((s, c) => s + (c.amount || 0), 0);
+  const crewGross = payableCrew(crew).reduce((s, c) => s + (c.amount || 0), 0);
   const crewCut = crew.reduce((s, c) => s + settlementCut(c), 0);
   const crewPaid = crew.reduce((s, c) => s + settlementPaid(c), 0);
   const rentals = RENTAL_DEBTS.filter(r => r.projectId === p.id);
@@ -6667,8 +6695,6 @@ function renderMoneySummary(p){
   </div>`;
   // суммы в шапках блоков — чтобы свёрнутый блок всё равно говорил цифру
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.innerHTML = v; };
-  set('mb-amt-est', fmtMoney(t.client));
-  set('mb-sub-est', isMultiDay(p) ? ` · смета за ${fmtDate(activeDay(p).iso)}` : ' · смета и документы');
   if(t.overrun > 0){
     const box2 = document.getElementById('moneySummary');
     if(box2) box2.insertAdjacentHTML('beforeend', `<div class="money-over">
@@ -6678,8 +6704,6 @@ function renderMoneySummary(p){
   }
   set('mb-amt-crew', fmtMoney(t.crewDue));
   set('mb-sub-crew', t.crewLeft > 0 ? ` · осталось выплатить ${fmtMoney(t.crewLeft)}` : (t.crewDue ? ' · всё выплачено' : ' · смены и часы'));
-  set('mb-amt-pay', fmtMoney(t.rentDue));
-  set('mb-sub-pay', t.rentLeft > 0 ? ` · осталось оплатить ${fmtMoney(t.rentLeft)}` : (t.rentDue ? ' · всё оплачено' : ' · оборудование и долги'));
   applyMoneyBlocks();
 }
 
@@ -6837,39 +6861,8 @@ function renderEstimate(p){
       </div>
     </div>`;
   const day = activeDay(p);
-  /* Файлы ренталов, из которых собран список. Рядом с каждым — сколько позиций
-     он дал и на какую сумму, чтобы удаление не было вслепую. */
-  function rentalFilesHTML(){
-    const files = (p.files || []).filter(f => f.sourceType === 'rental-estimate');
-    if(!files.length) return '';
-    return `<div class="est-files">${files.map(f => {
-      const lines = allEstimate(p).filter(l => l.src === f.name);
-      const sum = lines.reduce((acc, l) => acc + lineTotal(l), 0);
-      const idx = p.files.indexOf(f);
-      // если рентал дал скидку — показываем её здесь же: столько уйдёт в оплату
-      const debt = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === f.rental);
-      const dLabel = rentalDiscountLabel(debt);
-      const meta = [
-        f.rental ? esc(f.rental) : '',
-        ezFileHasData(f) ? (ezFileEverywhere(f) ? '' : 'только на этом устройстве') : 'файл в облаке',
-        lines.length ? `${lines.length} ${plural(lines.length, 'позиция', 'позиции', 'позиций')} · ${fmtMoney(sum)}`
-                     : 'позиций в смете нет',
-        (dLabel && debt && debt.amount >= 0) ? `${dLabel} → ${fmtMoney(debt.amount)}` : '',
-      ].filter(Boolean).join(' · ');
-      return `<div class="est-file">
-        <span class="ef-kind">${esc(f.kind || 'файл')}</span>
-        <div class="ef-info file-open" onclick="openProjectFileView('${p.id}',${idx})" title="Открыть предпросмотр">
-          <div class="ef-name">${esc(f.name)}</div>
-          <div class="ef-meta">${meta}</div>
-        </div>
-        ${f.rental ? `<button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(f.rental)}')" title="Скидка этого рентала">%</button>` : ''}
-        ${(ezFileHasData(f) || ezFileEverywhere(f)) ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
-        <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
-      </div>`;
-    }).join('')}</div>`;
-  }
   if(!day.estimate.length){
-    pane.innerHTML = importBlock + rentalFilesHTML()
+    pane.innerHTML = importBlock
       + '<div class="empty-hint">Считать пока нечего — загрузи файл рентала или посчитай команду.</div>';
     return;
   }
@@ -7010,7 +7003,7 @@ function renderEstimate(p){
   }
   // «Открыть смету» — весь документ по формуляру: позиции и люди, сразу целиком.
   const docIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>`;
-  pane.innerHTML = importBlock + rentalFilesHTML() + `
+  pane.innerHTML = importBlock + `
     <div class="est-open-row">
       <button class="btn" id="btnPrint">${docIcon}Открыть смету</button>
     </div>
@@ -7790,10 +7783,11 @@ function estPayable(p, items){
    спрашивают первыми. Порядок правил важен: строку забирает первое подошедшее,
    поэтому «Персонал» стоит после такси и П/Р, иначе он забрал бы их себе. */
 const EST_SUM_GROUPS = [
-  {key:'gear', name:'Оборудование', sub:'свет и грип — на них идёт скидка',
-   test:i => i.sec === 'Свет' || i.sec === 'Грип' || i.sec === 'Оборудование'},
-  {key:'elec', name:'Электрика', sub:'кабели, коммутация — скидка идёт и на неё',
-   test:i => i.sec === 'Электрика'},
+  /* Электрика на экране — часть оборудования: скидка на неё та же, и отдельной
+     строкой она только дробила свод. В самом файле сметы у неё своя глава —
+     там клиент привык видеть её отдельно, и это осталось как было. */
+  {key:'gear', name:'Оборудование', sub:'свет, грип и электрика — на них идёт скидка',
+   test:i => i.sec === 'Свет' || i.sec === 'Грип' || i.sec === 'Оборудование' || i.sec === 'Электрика'},
   {key:'logi', name:'Логистика', sub:'транспорт — без скидки',
    test:i => i.sec === 'Логистика'},
   {key:'load', name:'Погрузка/разгрузка', sub:'',
@@ -7812,6 +7806,13 @@ function estSummaryBuckets(items){
     const b = buckets[idx < 0 ? buckets.length - 1 : idx];
     b.items.push(i); b.sum += lineTotal(i);
   });
+  // сколько внутри оборудования занимает электрика — видно подписью, без отдельной строки
+  const gear = buckets.find(b => b.key === 'gear');
+  if(gear){
+    const elec = gear.items.filter(i => (i.sec || '') === 'Электрика')
+      .reduce((sum, i) => sum + lineTotal(i), 0);
+    if(elec > 0) gear.sub = `свет, грип и электрика · в т.ч. электрика ${fmtMoney(elec)}`;
+  }
   return buckets.filter(b => b.items.length);
 }
 /* Раскрытые группы помним по ключу: перерисовка вкладки — смена дня, пересчёт
@@ -8426,7 +8427,7 @@ let ovProjectId = null, ovDraft = null;
 function ovKey(kind, unitId, id){ return `${kind}|${unitId == null ? '' : unitId}|${id}`; }
 function overrunTargets(p){
   const list = [];
-  allDays(p).forEach(d => (d.units || []).forEach(u => (u.crew || []).forEach(c => {
+  allDays(p).forEach(d => (d.units || []).forEach(u => payableCrew(u.crew).forEach(c => {
     const person = CREW.find(x => x.id === c.id);
     list.push({key:ovKey('crew', u.id, c.id), kind:'crew', unitId:u.id, id:c.id, item:c,
       name:person ? person.name : c.id,
@@ -9123,7 +9124,8 @@ function renderCrewTab(p){
   // человек «занят» только в рамках этого дня: на другие съёмочные дни
   // команда набирается заново — чаще всего это те же самые люди
   const dayCrewIds = new Set(activeDay(p).units.flatMap(u => u.crew.map(c => c.id)));
-  const free = CREW.filter(c => !dayCrewIds.has(c.id));
+  // себя в юнит добавляет тумблер «Я на смене», а не список свободных
+  const free = CREW.filter(c => !dayCrewIds.has(c.id) && c.id !== ME_ID);
   pane.innerHTML = activeDay(p).units.map((u, uIdx)=>{
     return `<div class="unit">
       <div class="unit-head">
@@ -9155,6 +9157,30 @@ function renderCrewTab(p){
         const key = crewRowKey(u.id, c.id);
         const open = crewOpenRows.has(key);
         const cut = settlementCut(c);
+        if(isMe(c)){
+          /* Моя строка: то же место в списке, что у всех, но денег в выплатах нет.
+             Сумма показывается по гонорару из сметы — чтобы было видно, во что
+             оценена собственная смена. */
+          const fee = myFeeInUnit(p, u);
+          return `<div class="cm${open ? ' open' : ''}">
+            <button class="cm-head" onclick="toggleCrewRow(${u.id},'${c.id}')">
+              <span class="avatar sm">${initials}</span>
+              <span class="cm-name">${esc(person ? person.name : 'Я')}
+                <span class="cm-role">Гафер<span class="cm-tag">это я</span></span></span>
+              <span class="cm-sum mono">${fmtMoney(fee)}</span>
+              <span class="cm-chev">›</span>
+            </button>
+            <div class="cm-body">
+              <div class="cm-tools">
+                <button class="btn ghost tiny" onclick="openCrewDetail('${ME_ID}')">Карточка</button>
+                <button class="btn ghost tiny" onclick="toggleUnitMe(${u.id})">Убрать себя со смены</button>
+              </div>
+              <div class="form-hint">Гонорар уходит клиенту в смету и остаётся в моём доходе —
+                выплаты себе не бывает, поэтому в долгах эта строка не появляется.
+                Пропуск и кредитсы бери из карточки.</div>
+            </div>
+          </div>`;
+        }
         const status = c.paid ? '<span class="cm-tag ok">оплачено</span>'
           : isCrewDebt(p, c) ? '<span class="cm-tag warn">долг</span>' : '';
         const cutTag = cut > 0 ? `<span class="cm-tag">вылет −${fmtMoney(cut)}</span>` : '';
@@ -9502,9 +9528,11 @@ function runCalcPersonnel(loadOverrides, silent){
     const prog = unitProgressive(u);
     const loadAsOt = unitLoadAsOt(u);
 
-    // группируем по должности — имена в смету не попадают
+    // группируем по должности — имена в смету не попадают.
+    // моя запись сюда не идёт: гонорар гафера считается отдельно, ниже
     const byRole = {};
-    u.crew.forEach(c=>{ const r = c.role || 'Осветитель'; (byRole[r] = byRole[r] || []).push(c); });
+    unitOthers(u).forEach(c=>{ const r = c.role || 'Осветитель'; (byRole[r] = byRole[r] || []).push(c); });
+    (u.crew || []).filter(isMe).forEach(c => { c.amount = 0; c.cut = 0; c.payments = c.payments || []; });
 
     Object.keys(byRole).forEach(role=>{
       const members = byRole[role];
@@ -9559,7 +9587,7 @@ function runCalcPersonnel(loadOverrides, silent){
        но НЕ в выплаты: это мои деньги, они остаются в остатке проекта — то есть
        в моём доходе. Если в юните уже есть человек с ролью «Гафер», авто-строки
        не добавляются — чтобы не задвоить. */
-    if(unitMeOn(u, uIdx) && !u.crew.some(c => (c.role || '') === 'Гафер')){
+    if(unitMeOn(u, uIdx) && !unitOthers(u).some(c => (c.role || '') === 'Гафер')){
       const meBase = roleShiftRate(rates, 'Гафер');
       const meOt = prog ? overtimePayR(rates, 'Гафер', ot) : overtimePayFlatR(rates, 'Гафер', ot);
       const meP1 = (rateRow(rates, 'Гафер') || {}).p1 || 0;
@@ -9663,8 +9691,17 @@ function toggleUnitMe(unitId){
   const units = activeDay(p).units;
   const idx = units.findIndex(x=>x.id===unitId);
   if(idx < 0) return;
-  units[idx].me = !unitMeOn(units[idx], idx);
+  const u = units[idx];
+  u.me = !unitMeOn(u, idx);
+  // тумблер не просто флаг: он добавляет меня в состав юнита и убирает оттуда
+  if(u.me){
+    ensureMeCard();
+    if(!(u.crew || []).some(isMe)) u.crew.push(meMemberRecord());
+  } else {
+    u.crew = (u.crew || []).filter(c => !isMe(c));
+  }
   autoCalcPersonnel(p);
+  renderCrewStrip(p);
   scheduleSave();
 }
 function toggleCrewGap(unitId, cid){
@@ -9832,6 +9869,8 @@ function migrateAllSettlements(){
   migrateEstimateClientFlag();
   migrateRentalDiscounts();
   ensureRoleRates();
+  ensureMeCard();          // карточка «это я» — для пропусков и кредитсов
+  migrateMeIntoUnits();    // тумблер «я на смене» превращаем в участника юнита
 }
 
 /* ============= Финансовая сводка по проекту =============
@@ -10031,7 +10070,6 @@ function settlementLabel(kind, pid, a, b){
 function renderPayTab(p){
   renderMoneySummary(p);   // свод наверху экрана считается из тех же цифр
   ensureUniqueUnitIds(p);
-  const pane = document.getElementById('pane-pay');
   const remaining = p.sum - p.paidAmount;
   const rentals = RENTAL_DEBTS.filter(r=>r.projectId===p.id);
   const freeRentals = RENTALS.filter(r=>!rentals.some(x=>x.rental===r));
@@ -10108,23 +10146,92 @@ function renderPayTab(p){
     </div>
     ${clientBlock}`;
 
-  pane.innerHTML = `
-    ${rentals.length ? rentals.map(r=>settlementRowHTML({
-        label:r.rental, item:r, ref:settlementRef('rental', p.id, null, r.rental),
-        del:`removeRentalDebt('${jsArg(p.id)}','${jsArg(r.rental)}')`,
-        delTitle:'Убрать рентал из оплат'
-      })).join('') : '<div class="empty-hint">Ренталы по проекту не назначены.</div>'}
-    ${freeRentals.length ? `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.4rem;">
-      <select id="addRentalSel" style="border:1px solid var(--line);background-color:var(--bg-sunk);color:var(--ink);border-radius:8px;padding:.4rem 1.5rem .4rem .5rem;font-size:.82rem;font-family:inherit;outline:none;">
-        ${freeRentals.map(r=>`<option value="${r}">${r}</option>`).join('')}
-      </select>
-      <input id="addRentalAmount" type="number" placeholder="Сумма, ₽" style="width:130px;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);border-radius:8px;padding:.4rem .5rem;font-size:.82rem;font-family:inherit;outline:none;">
-      <button class="btn ghost" onclick="assignRental('${p.id}')">+ Назначить рентал</button>
-    </div>` : ''}
-
-  `;
-  renderCrewTab(p);   // выплаты людям рисуются вместе с их часами, в блоке «Команда»
+  renderRentalCards(p);   // ренталы — своими карточками внутри сметы
+  renderCrewTab(p);       // выплаты людям рисуются вместе с их часами, в блоке «Команда»
 }
+/* ============= Ренталы одной карточкой =============
+   Рентал — это его файл, его позиции в смете, его скидка и его деньги. Раньше
+   файл жил в смете, а долг — в другом разделе, и приходилось сверять глазами:
+   та ли это сумма. Теперь всё в одной строке с раскрытием, как у людей. */
+const rentalOpenRows = new Set();
+function toggleRentalCard(name){
+  if(rentalOpenRows.has(name)) rentalOpenRows.delete(name); else rentalOpenRows.add(name);
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(p) renderRentalCards(p);
+}
+function renderRentalCards(p){
+  const box = document.getElementById('pane-rentals');
+  if(!box) return;
+  const debts = RENTAL_DEBTS.filter(r => r.projectId === p.id);
+  const files = (p.files || []).filter(f => f.sourceType === 'rental-estimate');
+  const lines = allEstimate(p);
+  const names = [...new Set([
+    ...debts.map(r => r.rental),
+    ...files.map(f => f.rental),
+    ...lines.map(l => l.rental),
+  ].filter(Boolean))];
+  const free = RENTALS.filter(r => !names.includes(r));
+  const cards = names.map(name => {
+    const debt = debts.find(r => r.rental === name);
+    const myFiles = files.filter(f => f.rental === name);
+    const myLines = lines.filter(l => l.rental === name);
+    const gross = myLines.reduce((sum, l) => sum + lineTotal(l), 0);
+    const dLabel = rentalDiscountLabel(debt);
+    const open = rentalOpenRows.has(name);
+    const net = debt ? settlementNet(debt) : gross;
+    const paidSum = debt ? settlementPaid(debt) : 0;
+    const cut = debt ? settlementCut(debt) : 0;
+    const tag = (debt && debt.paid) ? '<span class="cm-tag ok">оплачен</span>'
+      : (debt && settlementLeft(debt) > 0 && projectIsSettled(p)) ? '<span class="cm-tag warn">долг</span>' : '';
+    const sub = [
+      myLines.length ? `${myLines.length} ${plural(myLines.length, 'позиция', 'позиции', 'позиций')} · ${fmtMoney(gross)}` : 'позиций в смете нет',
+      dLabel || '',
+      cut > 0 ? `вылет −${fmtMoney(cut)}` : '',
+      paidSum > 0 ? `внесено ${fmtMoney(paidSum)}` : '',
+    ].filter(Boolean).join(' · ');
+    const fileRows = myFiles.map(f => {
+      const idx = p.files.indexOf(f);
+      const where = ezFileHasData(f) ? (ezFileEverywhere(f) ? '' : 'только на этом устройстве') : 'файл в облаке';
+      return `<div class="est-file">
+        <span class="ef-kind">${esc(f.kind || 'файл')}</span>
+        <div class="ef-info file-open" onclick="openProjectFileView('${p.id}',${idx})" title="Открыть предпросмотр">
+          <div class="ef-name">${esc(f.name)}</div>
+          ${where ? `<div class="ef-meta">${esc(where)}</div>` : ''}
+        </div>
+        ${(ezFileHasData(f) || ezFileEverywhere(f)) ? `<button class="btn ghost tiny" onclick="downloadProjectFile('${p.id}',${idx})">Скачать</button>` : ''}
+        <button class="db-del" title="Убрать файл вместе с его позициями" onclick="removeRentalFileFromEstimate('${p.id}',${idx})">✕</button>
+      </div>`;
+    }).join('');
+    return `<div class="cm${open ? ' open' : ''}">
+      <button class="cm-head" onclick="toggleRentalCard('${jsArg(name)}')">
+        <span class="ef-kind">рентал</span>
+        <span class="cm-name">${esc(name)}<span class="cm-role">${esc(sub)}${tag}</span></span>
+        <span class="cm-sum mono">${fmtMoney(net)}</span>
+        <span class="cm-chev">›</span>
+      </button>
+      <div class="cm-body">
+        <div class="cm-tools">
+          <button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(name)}')">${dLabel ? '✎ Скидка' : 'Скидка'}</button>
+          ${debt ? `<button class="btn ghost tiny" onclick="removeRentalDebt('${jsArg(p.id)}','${jsArg(name)}')">Убрать из оплат</button>` : ''}
+        </div>
+        ${fileRows}
+        ${debt
+          ? settlementRowHTML({label:'К оплате', item:debt, ref:settlementRef('rental', p.id, null, name)})
+          : '<div class="form-hint">Оплата появится, когда в смете будут позиции этого рентала.</div>'}
+      </div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div class="pay-subhead"><span>Ренталы</span></div>`
+    + (cards || '<div class="empty-hint">Ренталы по проекту не назначены.</div>')
+    + (free.length ? `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.4rem;">
+        <select id="addRentalSel" class="role-select" style="min-width:130px;">
+          ${free.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+        </select>
+        <input id="addRentalAmount" type="number" placeholder="Сумма, ₽" class="ov-in" style="width:110px;">
+        <button class="btn ghost" onclick="assignRental('${p.id}')">+ Назначить рентал</button>
+      </div>` : '');
+}
+
 /* Что причитается человеку и что уже отдано — одним куском. Живёт в строке
    человека: часы, сумма и оплата рядом, чтобы не сверять два экрана.
    Платить можно частями — остаток виден тут же. */
@@ -10141,6 +10248,16 @@ function crewPayHTML(p, u, c){
     ${breakdown}
     ${settlementRowHTML({label, item:c, ref:settlementRef('crew', p.id, u.id, c.id)})}
   </div>`;
+}
+/* Сколько стоит моя смена в этом юните — по строкам гонорара из сметы.
+   При нескольких юнитах строки помечены названием юнита, по нему и различаем. */
+function myFeeInUnit(p, u){
+  const day = activeDay(p);
+  const multi = (day.units || []).length > 1;
+  const prefix = multi ? `${u.name} · ` : '';
+  return (day.estimate || [])
+    .filter(i => i.gaffer && (!multi || String(i.name || '').startsWith(prefix)))
+    .reduce((sum, i) => sum + lineTotal(i), 0);
 }
 /* Раскрытые строки помним по ключу: пересчёт денег перерисовывает блок,
    и без этого открытая карточка человека схлопывалась под руками. */
@@ -12504,6 +12621,7 @@ function saveCrewMember(){
   renderTeamScreen();
 }
 function removeCrewMember(id){
+  if(id === ME_ID){ askNotice('Это твоя карточка — она нужна для пропусков и кредитсов.', 'Карточка не удалена'); return; }
   const used = PROJECTS.some(p=>projectCrew(p).some(c=>c.id===id));
   if(used){ askNotice('Нельзя удалить — у этого человека есть история по проектам. Данные об оплатах должны сохраняться.', 'Человек не удалён'); return; }
   const idx = CREW.findIndex(x=>x.id===id);
@@ -12535,7 +12653,7 @@ function renderTeamScreen(){
     } else {
       html += `<div class="crewcard" onclick="openCrewDetail('${person.id}')">
         <div class="avatar">${initials}</div>
-        <div><div class="cname">${esc(person.name)}</div><div class="crole">${assignments.length} проект${assignments.length===1?'':(assignments.length<5&&assignments.length>0?'а':'ов')}</div></div>
+        <div><div class="cname">${esc(person.name)}${isMe(person)?' <span class="cm-tag">это я</span>':''}</div><div class="crole">${assignments.length} проект${assignments.length===1?'':(assignments.length<5&&assignments.length>0?'а':'ов')}</div></div>
         <div class="cright">${owed>0 ? `<span class="pill pill-warn">имеется задолженность · ${fmtMoney(owed)}</span>` : ''}</div>
       </div>`;
     }
@@ -13358,6 +13476,7 @@ function applyState(s){
   if(!s || typeof s !== 'object') return false;
   replaceArray(PROJECTS, s.projects);
   replaceArray(CREW, s.crew);
+  ensureMeCard();
   replaceArray(CLIENTS, s.clients);
   replaceArray(RENTALS, s.rentals);
   replaceArray(RENTAL_DEBTS, s.rentalDebts);
@@ -14146,6 +14265,8 @@ function renderMyContacts(){
 }
 function saveMyContacts(btn){
   MY_NAME = document.getElementById('dbMyName').value.trim();
+  const meCard = CREW.find(c => c.id === ME_ID);
+  if(meCard && !meCard.nameEdited) meCard.name = MY_NAME || 'Я';
   MY_CONTACTS = document.getElementById('dbMyContacts').value.split('\n').map(x => x.trim()).filter(Boolean);
   saveState();
   if(btn){
@@ -15120,6 +15241,32 @@ const SELF_CHECK_CASES = [
       return moneyTotals(p).mine;
     },
     expect:70000},
+
+  // ---- Я в команде ----
+  {group:'Я в команде', name:'Моя строка не попадает в список тех, кому платим',
+    run:()=>payableCrew([{id:'me', me:true, amount:0}, {id:'x', amount:1000}]).length,
+    expect:1},
+  {group:'Я в команде', name:'Свод не считает мой гонорар выплатой команде',
+    run:()=>{
+      const p = {id:'__me', name:'проверка', date:TODAY_ISO, sum:50000, paidAmount:0,
+        units:[{id:1, name:'Ю1', crew:[{id:'me', me:true, amount:0, payments:[]},
+                                       {id:'x', amount:20000, payments:[]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[]};
+      return moneyTotals(p).crewGross;
+    },
+    expect:20000},
+  {group:'Я в команде', name:'«Все выплаты закрыты» не ждёт оплаты самому себе',
+    run:()=>{
+      const p = {id:'__me2', name:'проверка', date:TODAY_ISO, sum:50000, paidAmount:50000,
+        units:[{id:1, name:'Ю1', crew:[{id:'me', me:true, amount:0, paid:false, payments:[]},
+                                       {id:'x', amount:20000, paid:true, payments:[{amount:20000}]}]}],
+        estimate:[], notes:[], payments:[], files:[], steps:[]};
+      return allCrewPaidFor(p) ? 1 : 0;
+    },
+    expect:1},
+  {group:'Я в команде', name:'Долг не висит на мне: своей выплаты у меня нет',
+    run:()=>isCrewDebt({sum:1000, paidAmount:1000, paymentDate:TODAY_ISO}, {id:'me', me:true, amount:0, payments:[]}) ? 0 : 1,
+    expect:1},
 
   // ---- Вылет проекта ----
   {group:'Вылет', name:'Удержание уменьшает выплату, но не стирает начисление',
