@@ -690,6 +690,15 @@
   .ms-sub{font-size:.64rem;color:var(--ink-muted);margin-top:.1rem;line-height:1.35;}
   .ms-tile.ok .ms-main{color:var(--ok);}
   .ms-tile.warn .ms-main{color:var(--warn);}
+  .ms-tile.can-open{cursor:pointer;}
+  .ms-name{display:flex;align-items:center;gap:.25rem;}
+  .ms-chev{margin-left:auto;font-size:.85rem;line-height:1;transition:transform .15s var(--ease);}
+  .ms-tile.open .ms-chev{transform:rotate(90deg);}
+  .ms-rows{display:none;margin-top:.3rem;padding-top:.3rem;border-top:1px solid var(--line);}
+  .ms-tile.open .ms-rows{display:block;}
+  .ms-row{display:flex;justify-content:space-between;gap:.4rem;font-size:.66rem;padding:.1rem 0;}
+  .ms-row span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ms-row.muted{color:var(--ink-muted);}
   .money-block{border:1px solid var(--line);border-radius:14px;margin:.85rem 0 .6rem;
     background:var(--bg-raised);overflow:hidden;}
   .mb-head{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:none;
@@ -2353,6 +2362,27 @@
 </div>
 
 <!-- «Разрыв» — часы недосыпа между сменами подряд, оплачиваются по первой ступени -->
+<!-- Фикс: смена задаётся длиной, а не временем начала и конца -->
+<div class="modal-overlay" id="fixModal">
+  <div class="modal-card">
+    <h3>Смена фиксом</h3>
+    <div class="form-hint">Длина смены по юниту «<span id="fixUnitName"></span>» — без времени начала и конца.
+      Деньги считаются теми же правилами: норма, ступени переработки, ночная, обед, разрыв.</div>
+    <div class="db-params" style="margin-top:.6rem;">
+      <div class="db-param"><label>Часов смены</label>
+        <input type="number" min="0" step="0.5" id="fixHoursInput" placeholder="12"></div>
+      <div class="db-param"><label>Часов П/Р</label>
+        <input type="number" min="0" step="0.5" id="fixLoadInput" placeholder="0"></div>
+    </div>
+    <div class="form-hint" id="fixPreview" style="margin-top:.5rem;"></div>
+    <div style="display:flex;gap:.5rem;margin-top:.8rem;flex-wrap:wrap;">
+      <button class="btn" onclick="saveFixHours()">Сохранить</button>
+      <button class="btn ghost" onclick="clearFixHours()">Вернуть время</button>
+      <button class="btn ghost" onclick="closeFixModal()">Отмена</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="gapModal">
   <div class="modal-card">
     <h3>Разрыв</h3>
@@ -6715,29 +6745,68 @@ function moneyTotals(p){
     fact: projectProfit(p),
   };
 }
+/* Какие плитки сводки раскрыты — помним между перерисовками: цифры пересчитываются
+   на каждый чих, а раскрытая витрина схлопываться от этого не должна. */
+const msOpen = new Set();
+function toggleMsTile(key){
+  if(msOpen.has(key)) msOpen.delete(key); else msOpen.add(key);
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(p) renderMoneySummary(p);
+}
 function renderMoneySummary(p){
   const box = document.getElementById('moneySummary');
   if(!box) return;
   const t = moneyTotals(p);
-  const tile = (name, main, sub, tone) => `
-    <div class="ms-tile${tone ? ' ' + tone : ''}">
-      <div class="ms-name">${esc(name)}</div>
+  /* Плитку можно раскрыть: короткий список «кому сколько» без единого поля ввода.
+     Это витрина для быстрой сверки — править суммы по-прежнему только в своих
+     разделах, чтобы случайный тап ничего не менял. */
+  const tile = (name, main, sub, tone, key, rows) => {
+    const open = msOpen.has(key || '');
+    const body = (rows && rows.length)
+      ? `<div class="ms-rows">${rows.map(r => `<div class="ms-row"><span>${esc(r[0])}</span><span class="mono">${esc(r[1])}</span></div>`).join('')}</div>`
+      : (key ? '<div class="ms-rows"><div class="ms-row muted"><span>пока пусто</span><span></span></div></div>' : '');
+    return `<div class="ms-tile${tone ? ' ' + tone : ''}${key ? ' can-open' : ''}${open ? ' open' : ''}"
+      ${key ? `onclick="toggleMsTile('${key}')"` : ''}>
+      <div class="ms-name">${esc(name)}${key ? '<span class="ms-chev">›</span>' : ''}</div>
       <div class="ms-main mono">${main}</div>
       <div class="ms-sub">${sub}</div>
+      ${body}
     </div>`;
+  };
+  // строки для раскрытых плиток: кому сколько и что уже закрыто
+  const crewRows = payableCrew(projectCrew(p)).filter(c => (c.amount || 0) > 0).map(c => {
+    const person = CREW.find(x => x.id === c.id);
+    const left = settlementLeft(c);
+    return [person ? person.name : c.id, c.paid ? 'закрыт' : (left < settlementNet(c) ? `осталось ${fmtMoney(left)}` : fmtMoney(settlementNet(c)))];
+  });
+  const rentRows = RENTAL_DEBTS.filter(r => r.projectId === p.id).map(r => {
+    const left = settlementLeft(r);
+    return [r.rental, r.paid ? 'закрыт' : (left < settlementNet(r) ? `осталось ${fmtMoney(left)}` : fmtMoney(settlementNet(r)))];
+  });
+  const mineRows = [
+    ['смета клиенту', fmtMoney(t.client)],
+    ...(t.overrun > 0 ? [['вылет', '−' + fmtMoney(t.overrun)]] : []),
+    ['команде', '−' + fmtMoney(t.crewDue)],
+    ['ренталам', '−' + fmtMoney(t.rentDue)],
+    ...(t.taxi > 0 ? [['такси', '−' + fmtMoney(t.taxi)]] : []),
+    ...(tripSpend(p) > 0 ? [['командировка', '−' + fmtMoney(tripSpend(p))]] : []),
+    ['итого мне', `${t.mine < 0 ? '−' : ''}${fmtMoney(Math.abs(t.mine))}`],
+  ];
   box.innerHTML = `<div class="money-sum">
     ${tile('От клиента', `<span class="ms-pair">${fmtMoney(t.clientPaid).replace(' ₽', '')} / ${fmtMoney(t.client)}</span>`,
       t.client - t.clientPaid > 0 ? `остаток ${fmtMoney(t.client - t.clientPaid)}` : (t.client ? 'закрыт' : 'сметы нет'))}
     ${tile('Команде', fmtMoney(t.crewDue), t.crewCut > 0
       ? `начислено ${fmtMoney(t.crewGross)} · вылет −${fmtMoney(t.crewCut)}`
-      : (t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого'))}
+      : (t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого'),
+      '', 'crew', crewRows)}
     ${tile('Ренталам', fmtMoney(t.rentDue), t.rentCut > 0
       ? `начислено ${fmtMoney(t.rentGross)} · вылет −${fmtMoney(t.rentCut)}`
-      : (t.rentDue ? (t.rentLeft > 0 ? `осталось ${fmtMoney(t.rentLeft)}` : 'все оплачены') : 'долгов нет'))}
+      : (t.rentDue ? (t.rentLeft > 0 ? `осталось ${fmtMoney(t.rentLeft)}` : 'все оплачены') : 'долгов нет'),
+      '', 'rent', rentRows)}
     ${tile('Мне', `${t.mine < 0 ? '−' : ''}${fmtMoney(Math.abs(t.mine))}`,
       (t.clientPaid || t.crewPaid || t.rentPaid)
         ? `на руках ${t.fact < 0 ? '−' : ''}${fmtMoney(Math.abs(t.fact))}`
-        : 'когда всё закроется', t.mine < 0 ? 'warn' : 'ok')}
+        : 'когда всё закроется', t.mine < 0 ? 'warn' : 'ok', 'mine', mineRows)}
   </div>`;
   // суммы в шапках блоков — чтобы свёрнутый блок всё равно говорил цифру
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.innerHTML = v; };
@@ -9150,12 +9219,12 @@ function renderCrewTab(p){
         <span class="unit-name">${esc(u.name)}</span>
         ${activeDay(p).units.length>1?`<button class="btn ghost tiny" onclick="removeUnit(${u.id})">Удалить юнит</button>`:''}
       </div>
-      <div class="times">
+      ${unitFixed(u) != null ? '' : `<div class="times">
         ${timeCell('Начало погрузки', u.id, 'loadStart', u.loadStart)}
         ${timeCell('Начало смены',    u.id, 'shiftStart', u.shiftStart)}
         ${timeCell('Конец смены',     u.id, 'shiftEnd',   u.shiftEnd)}
         ${timeCell('Конец погрузки',  u.id, 'loadEnd',    u.loadEnd)}
-      </div>
+      </div>`}
       <div class="unit-toggles">
         <button class="unit-toggle ${unitMeOn(u, uIdx)?'on':''}" id="unit-me-${u.id}" onclick="toggleUnitMe(${u.id})" title="Мой гонорар гафера уходит в смету, но не в выплаты — эти деньги остаются в моём доходе"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>Я на смене</button>
         <button class="unit-toggle ${unitProgressive(u)?'on':''}" id="unit-prog-${u.id}" onclick="toggleUnitFlag(${u.id},'progressive')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg>Прогрессивы</button>
@@ -9163,6 +9232,7 @@ function renderCrewTab(p){
         <button class="unit-toggle ${unitNight(u)?'on':''}" id="unit-night-${u.id}" onclick="toggleUnitFlag(${u.id},'night')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>Ночная смена</button>
         <button class="unit-toggle ${unitLunch(u)?'on':''}" id="unit-lunch-${u.id}" onclick="toggleUnitFlag(${u.id},'lunch')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v6M9.3 2v6M11.5 2v6"/><path d="M17 2c-1.6 0-2.8 1.7-2.8 4.5S15.4 11 17 11v11"/></svg>Текущий обед</button>
         <button class="unit-toggle ${unitGapHours(u)>0?'on':''}" id="unit-gap-${u.id}" onclick="openGapModal(${u.id})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 1.9"/><path d="M3.5 5.5l3-2M20.5 5.5l-3-2"/></svg>Разрыв${unitGapHours(u)>0?` · ${fmtHoursShort(unitGapHours(u))} ч`:''}</button>
+        <button class="unit-toggle ${unitFixed(u)!=null?'on':''}" id="unit-fix-${u.id}" onclick="openFixModal(${u.id})" title="Задать длину смены числом, без времени начала и конца"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Фикс${unitFixed(u)!=null?` · ${fmtHoursShort(unitFixed(u))} ч`:''}</button>
         <button class="unit-toggle ${(u.taxi>0)?'on':''}" id="unit-taxi-${u.id}" onclick="openTaxiModal(${u.id})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M4 16v-3.5l1.8-4A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1.5l1.8 4V16"/><path d="M4 16h16v2.5h-3V16M7 18.5V16"/><path d="M9.5 4h5"/></svg>Такси${u.taxi>0?` · ${fmtMoney(u.taxi)}`:''}</button>
       </div>
       <div class="hours-note" id="hours-note-${u.id}">${hoursNoteHTML(u)}</div>
@@ -9303,16 +9373,28 @@ function unitNight(u){ return !!u.night; }
 function unitLunch(u){ return !!u.lunch; }
 function unitGapHours(u){ return Math.max(0, u.gapHours || 0); }
 function unitLoadHours(u){
+  // на фиксе часы П/Р задаются числом: считать их от времени неоткуда
+  if(unitFixed(u) != null) return Math.max(0, Number(u.fixedLoadHours) || 0);
   const preH  = hoursBetween(u.loadStart, u.shiftStart) || 0;
   const postH = hoursBetween(u.shiftEnd, u.loadEnd) || 0;
   return preH + postH;
+}
+/* ===== Фикс: только длина смены =====
+   Иногда время начала и конца не нужно — известно лишь, что смена была на 12 часов.
+   Так же удобно заносить прошлые проекты задним числом. Фикс задаёт длину смены
+   (и, если надо, часы П/Р) напрямую, а дальше всё считается ровно теми же
+   правилами: норма, ступени переработки, ночная, обед, разрыв. */
+function unitFixed(u){ return u && u.fixedHours != null && u.fixedHours !== '' ? Math.max(0, Number(u.fixedHours) || 0) : null; }
+function unitShiftHours(u){
+  const fx = unitFixed(u);
+  return fx != null ? fx : hoursBetween(u.shiftStart, u.shiftEnd);
 }
 // Норма смены юнита: на ночной смене она на час меньше
 function unitNorm(u, rates){ return shiftNorm(rates) - (unitNight(u) ? 1 : 0); }
 // Часы переработки по факту: сверх нормы + час за текущий обед. Разрыв считается отдельно —
 // он всегда идёт по первой ступени и не должен разгонять прогрессию.
 function unitOvertimeHours(u, rates){
-  const shiftH = hoursBetween(u.shiftStart, u.shiftEnd);
+  const shiftH = unitShiftHours(u);
   if(shiftH==null) return null;
   let ot = Math.max(0, shiftH - unitNorm(u, rates));
   if(unitLunch(u)) ot += 1;
@@ -9334,7 +9416,7 @@ function toggleUnitFlag(unitId, key){
      и его надо назвать сразу: раньше об этом спрашивала кнопка расчёта,
      а теперь считает само. */
   if(key === 'loadAsOt' && !unitLoadAsOt(u) && unitLoadHours(u) > 0
-     && hoursBetween(u.shiftStart, u.shiftEnd) != null && (u.crew.length || unitMeOn(u, 0))){
+     && unitShiftHours(u) != null && (u.crew.length || unitMeOn(u, 0))){
     pendingLoadUnits = [u];
     openLoadPayModal();
     return;
@@ -9344,6 +9426,68 @@ function toggleUnitFlag(unitId, key){
 
 /* «Разрыв» — недосып между сменами, идущими подряд. Каждый такой час оплачивается
    как час переработки по первой ступени, прогрессия на него не распространяется. */
+/* Окно фикса: часы смены и П/Р числом. Показываем сразу, во что это превратится
+   по ставкам, — чтобы не пришлось сохранять ради проверки. */
+let fixUnitId = null;
+function openFixModal(unitId){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const u = findUnit(p, unitId);
+  if(!u) return;
+  fixUnitId = unitId;
+  document.getElementById('fixUnitName').textContent = u.name;
+  const cur = unitFixed(u);
+  document.getElementById('fixHoursInput').value = cur != null ? cur : (hoursBetween(u.shiftStart, u.shiftEnd) || '');
+  document.getElementById('fixLoadInput').value = cur != null ? (u.fixedLoadHours || '') : (unitLoadHours(u) || '');
+  renderFixPreview();
+  document.getElementById('fixHoursInput').oninput = renderFixPreview;
+  document.getElementById('fixLoadInput').oninput = renderFixPreview;
+  document.getElementById('fixModal').classList.add('show');
+}
+function closeFixModal(){
+  document.getElementById('fixModal').classList.remove('show');
+  fixUnitId = null;
+}
+function renderFixPreview(){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const u = p ? findUnit(p, fixUnitId) : null;
+  const box = document.getElementById('fixPreview');
+  if(!u || !box) return;
+  const rates = projectRates(p);
+  const h = Math.max(0, Number(document.getElementById('fixHoursInput').value) || 0);
+  const norm = unitNorm(u, rates);
+  const ot = Math.max(0, h - norm) + (unitLunch(u) ? 1 : 0);
+  const loadH = Math.max(0, Number(document.getElementById('fixLoadInput').value) || 0);
+  if(!h){ box.textContent = 'Впиши часы смены — покажу, что получится.'; return; }
+  const prog = unitProgressive(u);
+  const per = payableCrew(u.crew).map(c => {
+    const role = c.role || 'Осветитель';
+    const r = rateRow(rates, role) || {};
+    const otPay = prog ? overtimePayR(rates, role, ot) : overtimePayFlatR(rates, role, ot);
+    const load = Math.round(loadH * (r.p1 || 0));
+    return `${role} — ${fmtMoney(roleShiftRate(rates, role) + otPay + load)}`;
+  });
+  box.innerHTML = `Смена ${h} ч · норма ${norm} ч · ${ot > 0 ? `переработка ${ot.toFixed(1)} ч` : 'без переработки'}${loadH ? ` · П/Р ${loadH} ч` : ''}`
+    + (per.length ? `<br>${per.join(' · ')}` : '<br>В юните пока никого — добавь людей, и суммы появятся.');
+}
+function saveFixHours(){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const u = findUnit(p, fixUnitId);
+  const h = Math.max(0, Number(document.getElementById('fixHoursInput').value) || 0);
+  if(!h){ askNotice('Впиши часы смены — иначе считать нечего.', 'Нужны часы'); return; }
+  u.fixedHours = h;
+  u.fixedLoadHours = Math.max(0, Number(document.getElementById('fixLoadInput').value) || 0);
+  closeFixModal();
+  autoCalcPersonnel(p);
+  scheduleSave();
+}
+function clearFixHours(){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const u = findUnit(p, fixUnitId);
+  delete u.fixedHours; delete u.fixedLoadHours;
+  closeFixModal();
+  autoCalcPersonnel(p);
+  scheduleSave();
+}
 let gapUnitId = null;
 function fmtHoursShort(h){ return Number.isInteger(h) ? String(h) : h.toFixed(1); }
 function openGapModal(unitId){
@@ -9456,7 +9600,7 @@ function calcPersonnel(){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   pendingLoadUnits = activeDay(p).units.filter((u, i)=>
     (u.crew.length || unitMeOn(u, i)) && !unitLoadAsOt(u)
-    && hoursBetween(u.shiftStart,u.shiftEnd)!=null
+    && unitShiftHours(u)!=null
     && unitLoadHours(u) > 0);
   if(pendingLoadUnits.length){ openLoadPayModal(); return; }
   runCalcPersonnel(null);
@@ -9536,7 +9680,7 @@ function runCalcPersonnel(loadOverrides, silent){
 
   dayUnits.forEach((u, uIdx)=>{
     if(!u.crew.length && !unitMeOn(u, uIdx)) return;
-    const shiftH = hoursBetween(u.shiftStart,u.shiftEnd);
+    const shiftH = unitShiftHours(u);
     if(shiftH==null){ problems.push(`${u.name}: не проставлены начало и конец смены`); return; }
     const ot = unitOvertimeHours(u, rates);   // учитывает ночную смену и текущий обед
     // погрузка/разгрузка — часы ДО начала смены и ПОСЛЕ её конца, отдельная статья выплаты
@@ -9675,15 +9819,15 @@ function hoursNoteHTML(u){
   const proj = PROJECTS.find(x=>x.id===currentProjectId);
   const rates = projectRates(proj);
   const norm = unitNorm(u, rates);
-  const shiftH = hoursBetween(u.shiftStart,u.shiftEnd);
+  const shiftH = unitShiftHours(u);
   const loadH = unitLoadHours(u);
   const gapH = unitGapHours(u);
   const ot = unitOvertimeHours(u, rates);
   const progNote = (ot>0 && !unitProgressive(u)) ? ' по 1-й ступени' : '';
   const why = [unitNight(u)?'ночная':'', unitLunch(u)?'+1 ч за обед':''].filter(Boolean).join(', ');
   return (shiftH==null
-      ? 'Часы смены посчитаются, когда проставишь начало и конец смены.'
-      : `Смена: <b>${shiftH.toFixed(1)} ч</b> · норма ${norm} ч${why?` (${why})`:''} · ${ot>0?`<span class="ot">переработка ${ot.toFixed(1)} ч${progNote}</span>`:'без переработки'}`)
+      ? 'Часы смены посчитаются, когда проставишь начало и конец смены — или задай длину кнопкой «Фикс».'
+      : `Смена: <b>${shiftH.toFixed(1)} ч</b>${unitFixed(u) != null ? ' (фикс)' : ''} · норма ${norm} ч${why?` (${why})`:''} · ${ot>0?`<span class="ot">переработка ${ot.toFixed(1)} ч${progNote}</span>`:'без переработки'}`)
     + (loadH>0
         ? ` · <span class="load">П/Р ${loadH.toFixed(1)} ч</span>${unitLoadAsOt(u) ? ' → в переработку' : ' → фикс'}`
         : '')
@@ -10332,12 +10476,24 @@ function removeRentalDebt(pid, name){
     });
   });
 }
+/* Рентал, назначенный руками, — это и долг ему, и позиция клиенту: иначе оплата
+   стоит, а в сумме «От клиента» её нет, и смета оказывается меньше реальной.
+   Строка кладётся в смету активного дня и дальше живёт как обычная позиция. */
 function assignRental(pid){
+  const p = PROJECTS.find(x=>x.id===pid);
   const name = document.getElementById('addRentalSel').value;
   const amount = parseFloat(document.getElementById('addRentalAmount').value) || 0;
   RENTAL_DEBTS.push({rental:name, projectId:pid, amount, paid:false, paymentType:null, paymentDate:null, payments:[]});
-  renderPayTab(PROJECTS.find(x=>x.id===pid));
+  if(p && amount > 0){
+    activeDay(p).estimate.push({sec:'Оборудование', name:`${name} — оборудование`, qty:1, days:1,
+      price:amount, client:true, rental:name, byHand:true});
+    refreshProjectSum(p);
+    syncEstimateToFiles(p);
+    renderEstimate(p); renderInfo(p); renderFiles(p);
+  }
+  renderPayTab(p);
   refreshAll();
+  scheduleSave();
 }
 function toggleAddPayment(){
   const f = document.getElementById('addPaymentForm');
@@ -15298,6 +15454,25 @@ const SELF_CHECK_CASES = [
       return moneyTotals(p).mine;
     },
     expect:70000},
+
+  // ---- Смена фиксом ----
+  {group:'Смена', name:'Фикс задаёт длину смены вместо времени начала и конца',
+    run:()=>unitShiftHours({fixedHours:12, shiftStart:'', shiftEnd:''}),
+    expect:12},
+  {group:'Смена', name:'Переработка на фиксе считается от нормы, как обычно',
+    run:()=>{ const r = selfCheckFixtureRates();
+      return unitOvertimeHours({fixedHours:14, lunch:false, night:false}, r); },   // 14 − норма 10
+    expect:4},
+  {group:'Смена', name:'Ночная смена фиксом: норма на час меньше',
+    run:()=>{ const r = selfCheckFixtureRates();
+      return unitOvertimeHours({fixedHours:12, lunch:false, night:true}, r); },    // 12 − 9
+    expect:3},
+  {group:'Смена', name:'П/Р на фиксе берётся числом, а не из времени погрузки',
+    run:()=>unitLoadHours({fixedHours:12, fixedLoadHours:2.5, loadStart:'06:00', shiftStart:'08:00'}),
+    expect:2.5},
+  {group:'Смена', name:'Без фикса часы по-прежнему считаются по времени смены',
+    run:()=>unitShiftHours({shiftStart:'08:00', shiftEnd:'22:00'}),
+    expect:14},
 
   // ---- Такси — мой расход везде одинаково ----
   {group:'Деньги проекта', name:'Такси вычитается из «мне» в сводке, как и в отчёте',
