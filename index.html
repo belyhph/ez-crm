@@ -2190,6 +2190,12 @@
       <button class="btn ghost tiny" onclick="saveMyContacts(this)">Сохранить реквизиты</button>
     </div>
 
+    <div class="db-section-title">Версия приложения</div>
+    <div class="form-hint" id="dbBuildInfo">—</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;">
+      <button class="btn ghost tiny" onclick="forceAppUpdate(this)">Проверить обновление</button>
+    </div>
+
     <div class="db-section-title">Прайсы и списки ренталов</div>
     <div class="db-files" id="dbFilesList"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.5rem;">
@@ -4348,7 +4354,17 @@ function lineShifts(i){
 const TRANSFER_K = 0.5;
 function lineK(i){ return (i && i.k != null) ? Number(i.k) : 1; }
 function lineIsTransport(i){ return (i && i.sec === 'Логистика') || !!(i && i.taxiLine); }
-function lineTotal(i){ return Math.round((Number(i.qty) || 0) * lineShifts(i) * (Number(i.price) || 0) * lineK(i)); }
+function lineTotal(i){
+  const qty = Number(i && i.qty) || 0, price = Number(i && i.price) || 0, k = lineK(i);
+  const people = linePeople(i);
+  /* У строк персонала сначала округляем сумму на ОДНОГО человека и только потом
+     умножаем на количество: человеку платят целыми рублями, и выплата обязана
+     совпасть со строкой сметы до рубля. На целых часах это ничего не меняет,
+     а на дробных (смена до 21:25, П/Р 1 ч 25 мин) смета и «Оплаты» больше
+     не расходятся на пару рублей. */
+  if(people != null) return Math.round(qty * price * k) * people;
+  return Math.round(qty * lineShifts(i) * price * k);
+}
 /* У строк персонала колонки читаются иначе: цена — за час или за смену,
    количество — часы, третья колонка — люди. У оборудования всё как раньше:
    цена за смену, количество приборов, число смен. Эти три функции — единственное
@@ -7047,7 +7063,7 @@ function renderEstimate(p){
           return `<tr>
             <td><input class="est-edit-name" value="${esc(i.name)}" onchange="setEstLineField('${p.id}',${idx},'name',this.value)"></td>
             <td class="r"><input class="est-edit-num" type="number" min="0" step="1" value="${i.qty}" onchange="setEstLineField('${p.id}',${idx},'qty',this.value)"></td>
-            <td class="r"><input class="est-edit-num" type="number" min="0" step="1" value="${shownShifts(i)}" onchange="setEstLineField('${p.id}',${idx},'days',this.value)"></td>
+            <td class="r"><input class="est-edit-num" type="number" min="0" step="1" value="${lineThird(i)}" onchange="setEstLineField('${p.id}',${idx},'days',this.value)"></td>
             <td class="r"><input class="est-edit-num" type="number" min="0" step="100" value="${i.price}" onchange="setEstLineField('${p.id}',${idx},'price',this.value)"></td>
             <td class="r num">${fmtMoney(lineTotal(i))}</td>
             <td class="r"><button class="db-del" title="Убрать позицию" onclick="delEstLine('${p.id}',${idx})">✕</button></td>
@@ -8053,7 +8069,10 @@ function estimateTableHTML(items, t){
     const rows = items.filter(i => estFormGroup(i.sec || 'Оборудование') === gr);
     const sub = rows.reduce((s, i) => s + lineTotal(i), 0);
     // у персонала свои заголовки: клиенту видно ставку, часы и сколько человек
-    const crewCols = gr === 'ПЕРСОНАЛ' && rows.some(i => linePeople(i) != null)
+    /* Подписи «Ставка / Кол-во / Человек» ставим, только когда КАЖДАЯ строка
+       главы их понимает: старые сохранения и плоские строки (фикс П/Р, такси,
+       неустойка) под такой шапкой врали бы про количество людей. */
+    const crewCols = gr === 'ПЕРСОНАЛ' && rows.length && rows.every(i => linePeople(i) != null)
       ? `<tr class="ep-cols"><td></td><td class="r">Ставка</td><td class="r">Кол-во</td><td class="r">Человек</td><td></td></tr>`
       : '';
     return `<tr class="ep-sec"><td colspan="5">${gr}</td></tr>` + crewCols +
@@ -8454,7 +8473,8 @@ async function estimatePdfBytes(p, docLabel, scope){
     ezPdfRect(doc, M, y - 3, W, 15, [.925, .918, .894]);
     ezPdfText(doc, gr, X[0] + 6, y + 1, {size:8, bold:true});
     y -= 15;
-    if(gr === 'ПЕРСОНАЛ' && rows.some(i => linePeople(i) != null)) crewCols();
+    const crewHead = gr === 'ПЕРСОНАЛ' && rows.length && rows.every(i => linePeople(i) != null);
+    if(crewHead) crewCols();
     rows.forEach(i => {
       const lines = ezPdfWrap(i.name, 9, false, COL[0] - 12, 2);
       const h = 6 + lines.length * 11;
@@ -9685,7 +9705,6 @@ const OT_STEP_NAME = {1:'1-я ступень', 2:'2-я ступень', 3:'3-я 
    своим ступеням, П/Р всегда по первой. Сложи их по часам — и прогрессия
    разогналась бы, сумма выросла бы на ровном месте. */
 function otLineHours(ot, loadH, loadAsOt){ return (Number(ot) || 0) + (loadAsOt ? (Number(loadH) || 0) : 0); }
-function otLineSum(otPay, loadPay, loadAsOt){ return (Number(otPay) || 0) + (loadAsOt ? (Number(loadPay) || 0) : 0); }
 // Сколько причитается команде юнита за П/Р: часы × первая ступень, по каждому человеку
 function unitCrewLoadPay(u, rates){
   const h = unitLoadHours(u);
@@ -9819,12 +9838,21 @@ function runCalcPersonnel(loadOverrides, silent){
       }
       // Раскидываем по людям. Часы П/Р и их оплату держим отдельным полем —
       // во «Оплатах» они показываются самостоятельной строкой, а не растворяются в сумме.
+      /* Выплата собирается из тех же статей и с тем же округлением, что строки
+         сметы: смена, полосы переработки (с влитой П/Р, если тумблер включён),
+         разрыв, П/Р фиксом. Иначе на дробных часах «Оплаты» и смета расходились. */
+      const shiftOne = Math.round(base * dayK);
+      const otOne = otBands(rates, role, ot, prog, loadAsOt ? loadH : 0)
+        .reduce((sum, b) => sum + Math.round(b.hours * b.rate * dayK), 0);
+      const gapOne = Math.round(gapH * p1 * dayK);
+      const loadOne = Math.round(loadH * p1 * dayK);
       members.forEach(c=>{
         if(c.paid) return;
         c.loadHours = loadH;
-        c.loadPay = Math.round(loadPay * dayK);
+        c.loadPay = loadOne;
         // трансферный день — половина смены и всех её надбавок, ровно как в смете
-        c.amount = Math.round((base + otPay + (c.noGap ? 0 : gapPay) + loadPay) * dayK) + (c.extraPay||0);
+        c.amount = shiftOne + otOne + (c.noGap ? 0 : gapOne)
+          + (loadAsOt ? 0 : loadOne) + (c.extraPay || 0);
       });
     });
 
@@ -10117,6 +10145,44 @@ function migrateAllSettlements(){
   ensureRoleRates();
   ensureMeCard();          // карточка «это я» — для пропусков и кредитсов
   migrateMeIntoUnits();    // тумблер «я на смене» превращаем в участника юнита
+}
+
+/* ===== Какая версия открыта =====
+   Приложение живёт на телефоне как PWA, и старая вкладка может держаться днями.
+   Чтобы не гадать «обновилось или нет», показываем отметку сборки (её ставит
+   build-site.sh в имя офлайн-кэша) и даём кнопку принудительного обновления. */
+async function appBuildStamp(){
+  try{
+    const res = await fetch('sw.js?ts=' + (Date.now ? '' : '') + Math.random().toString(36).slice(2), {cache:'no-store'});
+    if(!res.ok) return null;
+    const txt = await res.text();
+    const m = txt.match(/ez-crm-([a-f0-9]+)/);
+    return m ? m[1] : null;
+  }catch(e){ return null; }
+}
+async function renderBuildInfo(){
+  const box = document.getElementById('dbBuildInfo');
+  if(!box) return;
+  const stamp = await appBuildStamp();
+  box.innerHTML = stamp
+    ? `Сборка <b>${esc(stamp)}</b>. Если у тебя открыта старая версия — нажми «Проверить обновление».`
+    : 'Отметку сборки видно только на сайте — в артефакте её нет.';
+}
+/* Принудительное обновление: сносим офлайн-кэш и перезагружаемся мимо него.
+   Данные проекта в кэше не лежат — они в хранилище устройства и не пострадают. */
+async function forceAppUpdate(btn){
+  if(btn){ btn.disabled = true; btn.textContent = 'Обновляю…'; }
+  try{
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.update().catch(() => {})));
+    }
+    if(window.caches){
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  }catch(e){}
+  location.reload(true);
 }
 
 /* ============= Финансовая сводка по проекту =============
@@ -14697,6 +14763,7 @@ async function cloudRestore(sha){
 
 /* Мои реквизиты для шапки документов */
 function renderMyContacts(){
+  renderBuildInfo();
   const n = document.getElementById('dbMyName');
   const c = document.getElementById('dbMyContacts');
   if(n) n.value = MY_NAME || '';
@@ -15718,6 +15785,23 @@ const SELF_CHECK_CASES = [
     run:()=>unitShiftHours({shiftStart:'08:00', shiftEnd:'22:00'}),
     expect:14},
 
+  {group:'Переработки', name:'Дробные часы: смета и выплата человеку сходятся до рубля',
+    run:()=>{
+      // 4 ч 50 мин переработки у троих: округляем на человека, потом умножаем
+      const line = {sec:'Персонал', name:'Осветитель — переработка', qty:29/6, days:3,
+                    people:3, unitLabel:'ч', price:2900, client:true};
+      const наОдного = Math.round(29/6 * 2900);
+      return lineTotal(line) - наОдного * 3;
+    },
+    expect:0},
+  {group:'Переработки', name:'Половинный день: строка персонала кратна сумме на одного',
+    run:()=>{
+      const line = {sec:'Персонал', name:'Осветитель — переработка', qty:29/6, days:3,
+                    people:3, unitLabel:'ч', price:2900, client:true, k:0.5};
+      return lineTotal(line) % 3;      // делится на число людей без остатка
+    },
+    expect:0},
+
   // ---- Переработка по ступеням в смете ----
   {group:'Переработки', name:'Ступени: 12 ч раскладываются на 8 / 2 / 2 часа',
     run:()=>{
@@ -15993,10 +16077,8 @@ const SELF_CHECK_CASES = [
   // ---- Погрузка/разгрузка внутри переработки ----
   {group:'П/Р и разрыв', name:'Тумблер включён — часы П/Р прибавляются к часам переработки',
     run:()=>otLineHours(4, 3, true), expect:7},
-  {group:'П/Р и разрыв', name:'Тумблер включён — деньги складываются готовыми суммами, без разгона ступеней',
-    run:()=>otLineSum(8*2900, 3*2900, true), expect:8*2900 + 3*2900},
-  {group:'П/Р и разрыв', name:'Тумблер выключен — переработка остаётся своей, П/Р клиенту не идёт',
-    run:()=>otLineHours(4, 3, false) * 1000 + otLineSum(11600, 8700, false), expect:4*1000 + 11600},
+  {group:'П/Р и разрыв', name:'Тумблер выключен — часы П/Р к переработке не прибавляются',
+    run:()=>otLineHours(4, 3, false), expect:4},
 
   // ---- Скидка клиенту ----
   {group:'Смета', name:'Скидка клиенту режет только оборудование, персонал не трогает',
