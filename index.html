@@ -6132,6 +6132,7 @@ function openProject(id, tab){
   } else {
     currentDayIso = null;
   }
+  migrateProjectCrew(p);   // сметы прежних версий показываем в новой разбивке
   document.getElementById('pTitle').textContent = p.name;
   document.getElementById('pSub').textContent = [p.client, fmtDate(p.date), p.location].filter(v=>v&&v!=='—').join(' · ');
   renderChecklist(p);
@@ -7049,13 +7050,22 @@ function renderEstimate(p){
      обычной строкой, и приложение не знает, чья она. Тап по строке — выбор рентала,
      после него позиция попадает в его оплату. Такси не трогаем: его платят мне,
      а я раздаю ребятам, — у него своя дорога. */
+  /* Смета посчитана прежней версией: цена — готовая сумма, часов и ставки в
+     строке нет. Тихо пересчитать нельзя (сумма поедет), поэтому предлагаем. */
+  function oldCrewNoteHTML(key){
+    if(key !== 'crew' || !dayCrewIsOld(activeDay(p))) return '';
+    return `<div class="form-hint" style="padding:.4rem .5rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+      <span>Посчитано прежней версией — одной суммой, без ставки и часов.</span>
+      <button class="btn ghost tiny" onclick="recalcCrewLinesAsk()">Показать разбивку</button>
+    </div>`;
+  }
   function groupDetailHTML(items, editing, key){
     const day = activeDay(p);
     if(editing){
       const warn = key === 'crew'
         ? '<div class="form-hint" style="padding:.4rem .5rem;">Строки персонала перезапишутся при следующем расчёте команды — правь их там, где считаются смены.</div>'
         : '';
-      return warn + `<div class="twrap"><table>
+      return oldCrewNoteHTML(key) + warn + `<div class="twrap"><table>
         <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th class="r">${key === 'crew' ? 'Человек' : 'Смен'}</th><th class="r">Цена</th><th class="r">Сумма</th><th></th></tr></thead>
         <tbody>${items.map(i => {
           const idx = day.estimate.indexOf(i);
@@ -7071,7 +7081,7 @@ function renderEstimate(p){
         }).join('')}</tbody>
       </table></div>`;
     }
-    return `<div class="twrap"><table>
+    return oldCrewNoteHTML(key) + `<div class="twrap"><table>
       <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
       <tbody>${items.map(i=>{
         const sh = shownShifts(i);
@@ -9763,11 +9773,14 @@ function autoCalcPersonnel(p){
   if(!units.some((u, i) => (u.crew || []).length || unitMeOn(u, i))) return;
   runCalcPersonnel(null, true);
 }
-function runCalcPersonnel(loadOverrides, silent){
-  const p = PROJECTS.find(x=>x.id===currentProjectId);
+/* Строит строки сметы по команде дня. Чистая функция от дня: не смотрит на
+   открытый проект и ничего не рисует, поэтому её может звать и миграция старых
+   смет. dry:true — только посчитать: выплаты людям не трогаем, пока не сверим
+   суммы. */
+function buildCrewLines(p, day, loadOverrides, dry){
   const rates = projectRates(p);   // проект считается по своему снимку ставок
-  const dayK = activeDay(p).transfer ? TRANSFER_K : 1;
-  const dayUnits = activeDay(p).units;
+  const dayK = day.transfer ? TRANSFER_K : 1;
+  const dayUnits = day.units || [];
   const multi = dayUnits.length>1;
   const newLines = [];
   const problems = [];
@@ -9788,7 +9801,7 @@ function runCalcPersonnel(loadOverrides, silent){
     // моя запись сюда не идёт: гонорар гафера считается отдельно, ниже
     const byRole = {};
     unitOthers(u).forEach(c=>{ const r = c.role || 'Осветитель'; (byRole[r] = byRole[r] || []).push(c); });
-    (u.crew || []).filter(isMe).forEach(c => { c.amount = 0; c.cut = 0; c.payments = c.payments || []; });
+    if(!dry) (u.crew || []).filter(isMe).forEach(c => { c.amount = 0; c.cut = 0; c.payments = c.payments || []; });
 
     Object.keys(byRole).forEach(role=>{
       const members = byRole[role];
@@ -9846,7 +9859,7 @@ function runCalcPersonnel(loadOverrides, silent){
         .reduce((sum, b) => sum + Math.round(b.hours * b.rate * dayK), 0);
       const gapOne = Math.round(gapH * p1 * dayK);
       const loadOne = Math.round(loadH * p1 * dayK);
-      members.forEach(c=>{
+      if(!dry) members.forEach(c=>{
         if(c.paid) return;
         c.loadHours = loadH;
         c.loadPay = loadOne;
@@ -9899,10 +9912,15 @@ function runCalcPersonnel(loadOverrides, silent){
         qty:1, days:1, price:Math.round(u.taxi), client:true, taxiLine:true});
     }
   });
+  return {newLines, problems};
+}
+function runCalcPersonnel(loadOverrides, silent){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const day = activeDay(p);
+  const {newLines, problems} = buildCrewLines(p, day, loadOverrides, false);
 
   // заменяем только раздел «Персонал», всё остальное в смете остаётся как есть
   // («Освоение» — тоже «Персонал», но это отдельная авто-строка, её не трогаем)
-  const day = activeDay(p);
   // тихий пересчёт без результата (нет времени смены) не должен стирать посчитанное
   if(!(silent && !newLines.length && problems.length)){
     day.estimate = day.estimate.filter(i=>i.sec!=='Персонал' || i.scoutLine || i.tripFee).concat(newLines);
@@ -9929,6 +9947,63 @@ function runCalcPersonnel(loadOverrides, silent){
   refreshAll();
   const box = document.getElementById('calcResult');
   if(box && !silent) box.innerHTML = message;
+}
+/* ===== Старые сметы: разбивка по ставке и часам =====
+   Раньше персонал писался «готовой суммой»: цена — деньги за человека за весь
+   день, третья колонка — сколько людей. Теперь строка читается как
+   «ставка × часы × человек», и переработка разложена по ступеням прогрессии.
+   Проекты, посчитанные прежней версией, лежат в старом виде и разбивки не
+   показывают, пока не тронешь время смены. Поэтому при открытии проекта тихо
+   пересчитываем их — но только если сумма не расходится НИ НА РУБЛЬ. Если
+   расходится (смету правили руками или часы дробные), не трогаем ничего:
+   в разделе «Персонал» появится подсказка с кнопкой явного пересчёта. */
+function crewAutoLines(day){
+  return (day.estimate || []).filter(i => i.sec === 'Персонал' && !i.scoutLine && !i.tripFee);
+}
+function dayCrewIsOld(day){
+  const lines = crewAutoLines(day);
+  if(!lines.length) return false;
+  // у новых строк людей есть people; такси и фикс П/Р его не имеют никогда
+  if(lines.some(i => linePeople(i) != null)) return false;
+  if(!lines.some(i => !i.taxiLine && !i.loadFixedLine)) return false;
+  return (day.units || []).some(u => (u.crew || []).length && unitShiftHours(u) != null);
+}
+function migrateCrewLines(p, day){
+  if(!dayCrewIsOld(day)) return false;
+  const before = crewAutoLines(day).reduce((s,i)=>s+lineTotal(i),0);
+  const dry = buildCrewLines(p, day, null, true);
+  if(dry.problems.length || !dry.newLines.length) return false;
+  if(dry.newLines.reduce((s,i)=>s+lineTotal(i),0) !== before) return false;
+  const real = buildCrewLines(p, day, null, false);   // теперь по-настоящему: и выплаты тоже
+  day.estimate = day.estimate.filter(i => i.sec !== 'Персонал' || i.scoutLine || i.tripFee)
+    .concat(real.newLines);
+  return true;
+}
+function migrateProjectCrew(p){
+  let changed = false;
+  allDays(p).forEach(d => { if(migrateCrewLines(p, d)) changed = true; });
+  if(changed){ refreshProjectSum(p); syncEstimateToFiles(p); saveState(); }
+  return changed;
+}
+/* Тихая миграция не прошла — значит сумма поедет. Такое решаю не я: показываем,
+   на сколько именно, и пересчитываем только с согласия. */
+function recalcCrewLinesAsk(){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const day = activeDay(p);
+  const before = crewAutoLines(day).reduce((s,i)=>s+lineTotal(i),0);
+  const dry = buildCrewLines(p, day, null, true);
+  if(dry.problems.length){ askNotice(dry.problems.join('; '), 'Нечем считать'); return; }
+  if(!dry.newLines.length){ askNotice('Назначь людей и проставь время смены.', 'Нечем считать'); return; }
+  const after = dry.newLines.reduce((s,i)=>s+lineTotal(i),0);
+  const diff = after - before;
+  askConfirm({
+    title:'Пересчитать персонал',
+    text: diff
+      ? `Строки встанут как «ставка × часы × человек», переработка — по ступеням. `
+        + `Сумма раздела: ${fmtMoney(before)} → ${fmtMoney(after)} (${diff > 0 ? '+' : '−'}${fmtMoney(Math.abs(diff))}).`
+      : 'Строки встанут как «ставка × часы × человек», переработка — по ступеням. Сумма не изменится.',
+    okText:'Пересчитать'
+  }, () => runCalcPersonnel());
 }
 function hoursNoteHTML(u){
   const proj = PROJECTS.find(x=>x.id===currentProjectId);
@@ -14915,6 +14990,21 @@ function selfCheckTrip(over){
     tax: o.tax || {on:false, mode:'pct', value:TRIP_TAX_DEFAULT}});
   return p;
 }
+/* Заготовка: юнит с двумя осветителями и смета, свёрнутая в «готовую сумму»,
+   ровно как её писала прежняя версия. */
+function selfCheckOldCrew(over){
+  const u = selfCheckUnit(Object.assign({me:false, shiftEnd:'22:00',
+    crew:[{id:'a', role:'Осветитель', payments:[], paid:false},
+          {id:'b', role:'Осветитель', payments:[], paid:false}]}, (over || {}).unit));
+  const p = selfCheckProject({id:'__selfcheck_old__', units:[u]});
+  const S = buildCrewLines(p, p, null, true).newLines.reduce((s,i)=>s+lineTotal(i),0);
+  const base = roleShiftRate(p.rates, 'Осветитель');
+  const perPerson = (over || {}).perPerson != null ? over.perPerson : Math.round(S / 2);
+  p.estimate = [
+    {sec:'Персонал', name:'Осветитель — смена', qty:1, days:2, price:base, client:true},
+    {sec:'Персонал', name:'Осветитель — переработка', qty:1, days:2, price:perPerson - base, client:true}];
+  return {p, S};
+}
 function selfCheckTransfer(){
   const dates = ['2026-10-01','2026-10-02','2026-10-03','2026-10-04','2026-10-05','2026-10-06','2026-10-07'];
   const p = selfCheckProject({id:'__selfcheck_tr__', date:dates[0], dates:dates.slice()});
@@ -15838,6 +15928,46 @@ const SELF_CHECK_CASES = [
       const now = {sec:'Персонал', name:'Осветитель — смена', qty:1, days:2, people:2, unitLabel:'смена', price:13200, client:true};
       // обе строки дают одну сумму, но третья колонка читается по-разному
       return lineTotal(old) === lineTotal(now) && lineThird(old) === '1' && lineThird(now) === '2' ? 1 : 0;
+    },
+    expect:1},
+
+  // ---- Сметы прежних версий: разбивка по ставке и часам ----
+  {group:'Сметы', name:'Смета прежней версии сама встаёт разбивкой, сумма не меняется',
+    run:()=>{
+      const f = selfCheckOldCrew();
+      const was = crewAutoLines(f.p).reduce((s,i)=>s+lineTotal(i),0);
+      const ok = migrateCrewLines(f.p, f.p);
+      const now = crewAutoLines(f.p).reduce((s,i)=>s+lineTotal(i),0);
+      return ok && was === f.S && now === f.S && crewAutoLines(f.p).every(i=>linePeople(i)!=null) ? 1 : 0;
+    },
+    expect:1},
+
+  {group:'Сметы', name:'Правленую руками смету миграция не трогает — сумма клиента та же',
+    run:()=>{
+      const f = selfCheckOldCrew({perPerson: 9000});   // руками занижено
+      const was = crewAutoLines(f.p).reduce((s,i)=>s+lineTotal(i),0);
+      const ok = migrateCrewLines(f.p, f.p);
+      const now = crewAutoLines(f.p).reduce((s,i)=>s+lineTotal(i),0);
+      return !ok && now === was && dayCrewIsOld(f.p) ? 1 : 0;
+    },
+    expect:1},
+
+  {group:'Сметы', name:'После миграции переработка разложена по ступеням прогрессии',
+    run:()=>{
+      const f = selfCheckOldCrew({unit:{fixedHours:22}});   // 12 ч переработки = 8 / 2 / 2
+      migrateCrewLines(f.p, f.p);
+      const ot = crewAutoLines(f.p).filter(i=>/переработка/.test(i.name));
+      return ot.length === 3 && ot.every(i=>i.unitLabel==='ч')
+        && ot.reduce((s,i)=>s+lineTotal(i),0) + crewAutoLines(f.p)
+             .filter(i=>!/переработка/.test(i.name)).reduce((s,i)=>s+lineTotal(i),0) === f.S ? 1 : 0;
+    },
+    expect:1},
+
+  {group:'Сметы', name:'Новый формат второй раз не мигрирует',
+    run:()=>{
+      const f = selfCheckOldCrew();
+      migrateCrewLines(f.p, f.p);
+      return !dayCrewIsOld(f.p) && migrateCrewLines(f.p, f.p) === false ? 1 : 0;
     },
     expect:1},
 
