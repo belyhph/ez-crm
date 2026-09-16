@@ -2755,9 +2755,13 @@
       <div id="pbPreviewList" class="pb-preview"></div>
       <div id="pbEstOpts" style="display:none;">
         <div class="db-section-title">Из какого рентала файл</div>
-        <div class="form-hint">По ренталу заведётся оплата на сумму его позиций — она появится
-          в «Оплатах» проекта. К мастер-файлу рентала это не привязывается: файл живёт только здесь.</div>
+        <div class="form-hint">По нему заведётся оплата на сумму позиций файла.</div>
         <select class="role-select" id="pbEstRental" style="margin-top:.4rem;max-width:300px;width:100%;" onchange="pbSetEstRental(this.value)"></select>
+        <div class="db-section-title">Ещё ренталы по этому проекту</div>
+        <div class="form-hint">Если часть оборудования у других — укажи, сколько должен каждому.
+          Сумма встанет в смету строкой; поправить потом — кнопкой «Сумма» в карточке рентала.</div>
+        <div id="pbExtraRentals"></div>
+        <button class="btn ghost tiny" style="margin-top:.4rem;" onclick="pbAddExtraRental()">+ Ещё рентал</button>
         <div class="db-section-title">Как записать</div>
         <label class="settle-check"><input type="radio" name="pbEstMode" value="add" checked onchange="pbImp.estMode='add'">
           <span>Добавить к уже загруженному оборудованию</span></label>
@@ -4331,6 +4335,9 @@ function migrateMeIntoUnits(){
    payDays проставляется при сборке из прайса; у строк, заведённых руками,
    его нет — и тогда всё считается ровно как раньше, день за смену. */
 function lineShifts(i){
+  // у строк персонала третий множитель — люди; снимок payDays (правило рентала
+  // «3 дня = 2 смены») к ним отношения не имеет и перебить их не должен
+  if(i && i.people != null) return Number(i.people) || 0;
   return (i && i.payDays != null && i.payDays !== '') ? Number(i.payDays) : (Number(i && i.days) || 0);
 }
 /* Трансферный день — переезд до точки съёмки: день оплачивается вполовину,
@@ -4342,6 +4349,28 @@ const TRANSFER_K = 0.5;
 function lineK(i){ return (i && i.k != null) ? Number(i.k) : 1; }
 function lineIsTransport(i){ return (i && i.sec === 'Логистика') || !!(i && i.taxiLine); }
 function lineTotal(i){ return Math.round((Number(i.qty) || 0) * lineShifts(i) * (Number(i.price) || 0) * lineK(i)); }
+/* У строк персонала колонки читаются иначе: цена — за час или за смену,
+   количество — часы, третья колонка — люди. У оборудования всё как раньше:
+   цена за смену, количество приборов, число смен. Эти три функции — единственное
+   место, где это различие описано, чтобы все четыре представления (экран,
+   html, pdf, текст) показывали одно и то же. */
+function linePeople(i){ return (i && i.people != null) ? Number(i.people) || 0 : null; }
+function lineQtyLabel(i){
+  const unit = i && i.unitLabel;
+  /* Половинный день режет ЧАСЫ (и половину смены), а не людей: «0,5 человека»
+     читать невозможно, а «0,5 смены» — ровно то, что произошло. */
+  const q = (Number(i && i.qty) || 0) * (linePeople(i) != null ? lineK(i) : 1);
+  const n = Number.isInteger(q) ? String(q) : q.toFixed(1).replace('.', ',');
+  // «1 смена», но «0,5 смены» — иначе строка читается как опечатка
+  const word = (unit === 'смена' && !Number.isInteger(q)) ? 'смены' : unit;
+  return unit ? `${n} ${word}` : n;
+}
+// третья колонка: у персонала — люди (целыми), у остального — смены с коэффициентом дня
+function lineThird(i){
+  const people = linePeople(i);
+  // всегда строка: значение уходит прямо в разметку и в pdf, разнотипица тут лишняя
+  return people == null ? String(shownShifts(i)) : String(people);
+}
 // Смен в документе показываем уже с коэффициентом: цена × кол-во × смен = стоимость
 function shownShifts(i){ const v = lineShifts(i) * lineK(i); return Number.isInteger(v) ? v : v.toFixed(1).replace('.', ','); }
 function syncTransferK(p){
@@ -6191,7 +6220,8 @@ function copyDayToAll(){
         });
         return u;
       });
-      dst.estimate = clone(src.estimate).map(i=>{ delete i.k; return i; });
+      // разовая сумма ренталу — не свойство дня: дублировать её нельзя, иначе долг станет кратным
+      dst.estimate = clone(src.estimate.filter(i => !i.handSum)).map(i=>{ delete i.k; return i; });
     });
     ensureUniqueUnitIds(p);
     syncTripFeeLine(p);            // гонорар командировки живёт в одном экземпляре
@@ -7010,7 +7040,7 @@ function renderEstimate(p){
         ? '<div class="form-hint" style="padding:.4rem .5rem;">Строки персонала перезапишутся при следующем расчёте команды — правь их там, где считаются смены.</div>'
         : '';
       return warn + `<div class="twrap"><table>
-        <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th class="r">Смен</th><th class="r">Цена</th><th class="r">Сумма</th><th></th></tr></thead>
+        <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th class="r">${key === 'crew' ? 'Человек' : 'Смен'}</th><th class="r">Цена</th><th class="r">Сумма</th><th></th></tr></thead>
         <tbody>${items.map(i => {
           const idx = day.estimate.indexOf(i);
           if(idx < 0) return '';
@@ -7026,7 +7056,7 @@ function renderEstimate(p){
       </table></div>`;
     }
     return `<div class="twrap"><table>
-      <thead><tr><th>Наименование</th><th class="r">Кол-во × смен</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
+      <thead><tr><th>Наименование</th><th class="r">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
       <tbody>${items.map(i=>{
         const sh = shownShifts(i);
         const idx = day.estimate.indexOf(i);
@@ -7041,7 +7071,11 @@ function renderEstimate(p){
            сложилась: сколько часов было погрузкой и сколько это стоит команде. */
         const inner = i.loadHours > 0
           ? `<span class="est-line-note">в т.ч. погрузка/разгрузка ${Number(i.loadHours).toFixed(1)} ч · ${fmtMoney(i.loadPay || 0)}</span>` : '';
-        return `<tr><td>${name}${inner}</td><td class="r num">${i.qty}${sh != 1 ? ' × ' + sh : ''}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
+        const third = lineThird(i);
+        const qtyCell = linePeople(i) != null
+          ? `${esc(lineQtyLabel(i))} × ${esc(third)} чел`
+          : `${i.qty}${sh != 1 ? ' × ' + sh : ''}`;
+        return `<tr><td>${name}${inner}</td><td class="r num">${qtyCell}</td><td class="r num">${fmtMoney(i.price)}</td><td class="r num">${fmtMoney(lineTotal(i))}</td></tr>`;
       }).join('')}</tbody>
     </table></div>`;
   }
@@ -7940,7 +7974,11 @@ function setEstLineField(pid, idx, field, value){
   } else if(field === 'days'){
     // правим оплачиваемые смены: если у строки был снимок payDays — его же и меняем
     const v = Math.max(0, num || 0);
-    if(ref.line.payDays != null && ref.line.payDays !== '') ref.line.payDays = v; else ref.line.days = v;
+    // у строки персонала третья колонка — люди: держим people и days вместе,
+    // иначе показанное число и множитель в сумме разъедутся
+    if(ref.line.people != null){ ref.line.people = v; ref.line.days = v; }
+    else if(ref.line.payDays != null && ref.line.payDays !== '') ref.line.payDays = v;
+    else ref.line.days = v;
   }
   ref.line.byHand = true;        // тронуто руками — видно в смете
   resyncRentals(ref.p);
@@ -8014,8 +8052,12 @@ function estimateTableHTML(items, t){
   const body = groups.map(gr => {
     const rows = items.filter(i => estFormGroup(i.sec || 'Оборудование') === gr);
     const sub = rows.reduce((s, i) => s + lineTotal(i), 0);
-    return `<tr class="ep-sec"><td colspan="5">${gr}</td></tr>` +
-      rows.map(i => `<tr><td>${esc(i.name)}</td><td class="r">${fmtMoney(i.price)}</td><td class="r">${i.qty}</td><td class="r">${shownShifts(i)}</td><td class="r">${fmtMoney(lineTotal(i))}</td></tr>`).join('') +
+    // у персонала свои заголовки: клиенту видно ставку, часы и сколько человек
+    const crewCols = gr === 'ПЕРСОНАЛ' && rows.some(i => linePeople(i) != null)
+      ? `<tr class="ep-cols"><td></td><td class="r">Ставка</td><td class="r">Кол-во</td><td class="r">Человек</td><td></td></tr>`
+      : '';
+    return `<tr class="ep-sec"><td colspan="5">${gr}</td></tr>` + crewCols +
+      rows.map(i => `<tr><td>${esc(i.name)}</td><td class="r">${fmtMoney(i.price)}</td><td class="r">${esc(lineQtyLabel(i))}</td><td class="r">${esc(lineThird(i))}</td><td class="r">${fmtMoney(lineTotal(i))}</td></tr>`).join('') +
       `<tr class="ep-sub"><td colspan="4" class="r">Подытог</td><td class="r">${fmtMoney(sub)}</td></tr>`;
   }).join('');
   const sumRow = (label, val, cls) => `<tr class="${cls || ''}"><td colspan="4" class="r">${label}</td><td class="r">${fmtMoney(val)}</td></tr>`;
@@ -8058,6 +8100,7 @@ function estimateStandaloneHTML(p, docLabel, scope){
       tfoot tr.ep-payable td{font-weight:700;font-size:14px;}
       tr.ep-sec td{background:#eceae4;font-weight:700;font-size:11px;letter-spacing:.05em;}
       tr.ep-sub td{color:#555;font-size:11px;border-bottom:2px solid #ccc;}
+      tr.ep-cols td{color:#777;font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding-top:4px;padding-bottom:2px;}
       .ep-name{font-weight:700;font-size:16px;}
       .ep-contacts{font-size:11px;color:#555;margin-top:4px;line-height:1.55;}
       .ep-logo-img{width:64px;height:auto;flex:none;}
@@ -8097,7 +8140,9 @@ function estimateTextVersion(p, scope){
     const rows = items.filter(i => estFormGroup(i.sec || 'Оборудование') === g);
     if(!rows.length) return;
     lines.push(g);
-    rows.forEach(i => lines.push(`  ${i.name} — ${i.qty} × ${lineShifts(i)} смен × ${money(i.price)} = ${money(lineTotal(i))}`));
+    rows.forEach(i => lines.push(linePeople(i) != null
+      ? `  ${i.name} — ${money(i.price)} × ${lineQtyLabel(i)} × ${lineThird(i)} чел = ${money(lineTotal(i))}`
+      : `  ${i.name} — ${i.qty} × ${lineShifts(i)} смен × ${money(i.price)} = ${money(lineTotal(i))}`));
     lines.push(`  Итого ${g.toLowerCase()}: ${money(t.groups[g])}`, '');
   });
   if(t.discount) lines.push(`Скидка на оборудование ${t.discount}%: ${money(t.gear)} → ${money(t.gearDisc)}`);
@@ -8387,6 +8432,13 @@ async function estimatePdfBytes(p, docLabel, scope){
       ezPdfText(doc, h, right(i + 1), y + 1, {size:7.5, color:EZ_PDF_GREY, align:'r'}));
     y -= 17;
   };
+  // подзаголовок колонок для главы «Персонал» — там они читаются иначе
+  const crewCols = () => {
+    ezPdfText(doc, 'СТАВКА', right(1), y - 1, {size:6.5, color:EZ_PDF_GREY, align:'r'});
+    ezPdfText(doc, 'КОЛ-ВО', right(2), y - 1, {size:6.5, color:EZ_PDF_GREY, align:'r'});
+    ezPdfText(doc, 'ЧЕЛОВЕК', right(3), y - 1, {size:6.5, color:EZ_PDF_GREY, align:'r'});
+    y -= 10;
+  };
   const room = need => {
     if(y - need > M + 34) return;
     ezPdfPage(doc);
@@ -8402,14 +8454,15 @@ async function estimatePdfBytes(p, docLabel, scope){
     ezPdfRect(doc, M, y - 3, W, 15, [.925, .918, .894]);
     ezPdfText(doc, gr, X[0] + 6, y + 1, {size:8, bold:true});
     y -= 15;
+    if(gr === 'ПЕРСОНАЛ' && rows.some(i => linePeople(i) != null)) crewCols();
     rows.forEach(i => {
       const lines = ezPdfWrap(i.name, 9, false, COL[0] - 12, 2);
       const h = 6 + lines.length * 11;
       room(h + 4);
       lines.forEach((ln, k) => ezPdfText(doc, ln, X[0] + 6, y - 2 - k * 11, {size:9}));
       ezPdfText(doc, money(i.price), right(1), y - 2, {size:9, align:'r'});
-      ezPdfText(doc, String(i.qty), right(2), y - 2, {size:9, align:'r'});
-      ezPdfText(doc, String(shownShifts(i)), right(3), y - 2, {size:9, align:'r'});
+      ezPdfText(doc, lineQtyLabel(i), right(2), y - 2, {size:9, align:'r'});
+      ezPdfText(doc, String(lineThird(i)), right(3), y - 2, {size:9, align:'r'});
       ezPdfText(doc, money(lineTotal(i)), right(4), y - 2, {size:9, align:'r'});
       y -= h;
       ezPdfLine(doc, M, y + 2, M + W, y + 2, .4, [.87, .87, .87]);
@@ -9605,6 +9658,28 @@ function calcPersonnel(){
   if(pendingLoadUnits.length){ openLoadPayModal(); return; }
   runCalcPersonnel(null);
 }
+/* Как переработка раскладывается по ступеням: сколько часов попало в каждую
+   полосу и по какой ставке. Клиенту в смете видно строкой на ступень — за что
+   именно он платит, — а сумма остаётся ровно той же, что считает overtimePayR:
+   те же полосы, те же ставки, просто показанные раздельно.
+   П/Р (когда включён тумблер) идёт по первой ступени, поэтому её часы
+   прибавляются к первой полосе — ставка у них одна и та же. */
+function otBands(rates, role, otHours, prog, loadHours){
+  const r = rateRow(rates, role) || {};
+  const ot = Math.max(0, Number(otHours) || 0);
+  const load = Math.max(0, Number(loadHours) || 0);
+  if(!prog){
+    const h = ot + load;
+    return h > 0 ? [{step:1, hours:h, rate:r.p1 || 0}] : [];
+  }
+  const b1 = Math.min(ot, rates.band1);
+  const b2 = Math.min(Math.max(ot - rates.band1, 0), rates.band2);
+  const b3 = Math.max(ot - rates.band1 - rates.band2, 0);
+  return [{step:1, hours:b1 + load, rate:r.p1 || 0},
+          {step:2, hours:b2, rate:r.p2 || 0},
+          {step:3, hours:b3, rate:r.p3 || 0}].filter(b => b.hours > 0 && b.rate > 0);
+}
+const OT_STEP_NAME = {1:'1-я ступень', 2:'2-я ступень', 3:'3-я ступень'};
 /* Что клиент видит как «переработку»: часы и деньги, когда П/Р сложена с ней.
    Часы складываются, а деньги остаются посчитанными раздельно — переработка по
    своим ступеням, П/Р всегда по первой. Сложи их по часам — и прогрессия
@@ -9707,8 +9782,13 @@ function runCalcPersonnel(loadOverrides, silent){
       const loadPay = Math.round(loadH * p1);
       // разрыв — тоже всегда по первой ступени, отдельной строкой
       const gapPay = Math.round(gapH * p1);
+      /* Колонки строки читаются как «ставка × количество × человек»: цена —
+         за единицу (смену или час), количество — сколько этих единиц, третья
+         колонка — сколько людей. Для суммы это те же множители, что и раньше
+         (qty × lineShifts × price), просто разложенные понятно для клиента. */
       newLines.push({sec:'Персонал', name:`${prefix}${role} — смена${unitNight(u)?' (ночная)':''}`,
-        qty:members.length, days:1, price:base, client:true});
+        qty:1, days:members.length, people:members.length, unitLabel:'смена',
+        price:base, client:true});
       /* Клиент видит одну статью — переработку. Часы П/Р, когда включён тумблер
          «П/Р переработка», просто прибавляются к её часам: сколько из них было
          погрузкой, клиента не касается. Деньги при этом складываются готовыми
@@ -9717,21 +9797,25 @@ function runCalcPersonnel(loadOverrides, silent){
          На фиксе (тумблер выключен) клиент видит отдельную строку фикса ниже,
          а начисление команде остаётся выплатой (c.loadPay) и в смету не пишется. */
       const otH = otLineHours(ot, loadH, loadAsOt);
-      const otSum = otLineSum(otPay, loadPay, loadAsOt);
-      if(otSum>0){
-        const why = [unitNight(u)?'ночная норма '+unitNorm(u,rates)+' ч':'', unitLunch(u)?'текущий обед':'']
-          .filter(Boolean).join(', ');
+      const why = [unitNight(u)?'ночная норма '+unitNorm(u,rates)+' ч':'', unitLunch(u)?'текущий обед':'']
+        .filter(Boolean).join(', ');
+      otBands(rates, role, ot, prog, loadAsOt ? loadH : 0).forEach((b, bi) => {
         newLines.push({sec:'Персонал',
-          name:`${prefix}${role} — переработка ${otH.toFixed(1)} ч${prog?'':' (1-я ступень)'}${why?' · '+why:''}`,
-          qty:members.length, days:1, price:otSum, client:true,
-          otHours:otH, loadHours:loadAsOt ? loadH : 0, loadPay:loadAsOt ? loadPay : 0});
-      }
+          name:`${prefix}${role} — переработка${prog ? ', ' + OT_STEP_NAME[b.step] : ''}${bi === 0 && why ? ' · ' + why : ''}`,
+          qty:b.hours, days:members.length, people:members.length, unitLabel:'ч',
+          price:b.rate, client:true,
+          // на первой строке помним, что часть часов — погрузка: это видно только мне
+          otHours:bi === 0 ? otH : 0,
+          loadHours:(bi === 0 && loadAsOt) ? loadH : 0,
+          loadPay:(bi === 0 && loadAsOt) ? loadPay : 0});
+      });
       // разрыв может быть не у всех: у кого чип «без разрыва» — не начисляем
       const gapMembers = members.filter(c => !c.noGap);
       if(gapPay>0 && gapMembers.length){
         newLines.push({sec:'Персонал',
-          name:`${prefix}${role} — разрыв ${fmtHoursShort(gapH)} ч — переработка, 1-я ступень`,
-          qty:gapMembers.length, days:1, price:gapPay, client:true});
+          name:`${prefix}${role} — разрыв (переработка, 1-я ступень)`,
+          qty:gapH, days:gapMembers.length, people:gapMembers.length, unitLabel:'ч',
+          price:p1, client:true});
       }
       // Раскидываем по людям. Часы П/Р и их оплату держим отдельным полем —
       // во «Оплатах» они показываются самостоятельной строкой, а не растворяются в сумме.
@@ -9756,16 +9840,19 @@ function runCalcPersonnel(loadOverrides, silent){
       const meLoad = Math.round(loadH * meP1);
       const meGap = Math.round(gapH * meP1);
       newLines.push({sec:'Персонал', name:`${prefix}Гафер — смена${unitNight(u)?' (ночная)':''}`,
-        qty:1, days:1, price:meBase, client:true, gaffer:true});
+        qty:1, days:1, people:1, unitLabel:'смена', price:meBase, client:true, gaffer:true});
       const meOtH = otLineHours(ot, loadH, loadAsOt);
-      const meOtSum = otLineSum(meOt, meLoad, loadAsOt);
-      if(meOtSum>0) newLines.push({sec:'Персонал',
-        name:`${prefix}Гафер — переработка ${meOtH.toFixed(1)} ч${prog?'':' (1-я ступень)'}`,
-        qty:1, days:1, price:meOtSum, client:true, gaffer:true,
-        otHours:meOtH, loadHours:loadAsOt ? loadH : 0, loadPay:loadAsOt ? meLoad : 0});
+      otBands(rates, 'Гафер', ot, prog, loadAsOt ? loadH : 0).forEach((b, bi) => {
+        newLines.push({sec:'Персонал',
+          name:`${prefix}Гафер — переработка${prog ? ', ' + OT_STEP_NAME[b.step] : ''}`,
+          qty:b.hours, days:1, people:1, unitLabel:'ч', price:b.rate, client:true, gaffer:true,
+          otHours:bi === 0 ? meOtH : 0,
+          loadHours:(bi === 0 && loadAsOt) ? loadH : 0,
+          loadPay:(bi === 0 && loadAsOt) ? meLoad : 0});
+      });
       if(meGap>0) newLines.push({sec:'Персонал',
-        name:`${prefix}Гафер — разрыв ${fmtHoursShort(gapH)} ч — переработка, 1-я ступень`,
-        qty:1, days:1, price:meGap, client:true, gaffer:true});
+        name:`${prefix}Гафер — разрыв (переработка, 1-я ступень)`,
+        qty:gapH, days:1, people:1, unitLabel:'ч', price:meP1, client:true, gaffer:true});
     }
 
     // Фикс с клиента за П/Р — одной строкой на юнит, поверх начислений команде
@@ -10385,10 +10472,11 @@ function renderRentalCards(p){
       <div class="cm-body">
         <div class="cm-tools">
           <button class="btn ghost tiny" onclick="editRentalDiscount('${p.id}','${jsArg(name)}')">${dLabel ? '✎ Скидка' : 'Скидка'}</button>
+          ${closed ? '' : `<button class="btn ghost tiny" onclick="editRentalHandSum('${jsArg(p.id)}','${jsArg(name)}')" title="Сумма, заданная руками — сверх позиций из файла">${rentalHandLine(p, name) ? '✎ Сумма' : 'Сумма'}</button>`}
           ${debt ? `<button class="btn ghost tiny" onclick="removeRentalDebt('${jsArg(p.id)}','${jsArg(name)}')" title="Убрать рентал из оплат">Убрать</button>` : ''}
           ${debt && !closed ? `<button class="btn ghost tiny" onclick="settleOpenPay(${ref},'cash')">Оплатить</button>
             <button class="btn ghost tiny" onclick="settleClose(${ref})" title="Считать оплату завершённой">✓ Закрыть</button>` : ''}
-          ${debt && !closed ? `<button class="btn ghost tiny" onclick="settleEditAmount(${ref})" title="Изменить сумму">✎</button>` : ''}
+
         </div>
         ${fileRows}
         ${debt ? `<div class="pay-sub">${settlementHistoryHTML(debt, ref, closed)}</div>`
@@ -10483,11 +10571,12 @@ function assignRental(pid){
   const p = PROJECTS.find(x=>x.id===pid);
   const name = document.getElementById('addRentalSel').value;
   const amount = parseFloat(document.getElementById('addRentalAmount').value) || 0;
-  RENTAL_DEBTS.push({rental:name, projectId:pid, amount, paid:false, paymentType:null, paymentDate:null, payments:[]});
+  // запись долга нужна и при нулевой сумме: рентал назначен, сумма появится позже
+  if(!RENTAL_DEBTS.some(r => r.projectId === pid && r.rental === name)){
+    RENTAL_DEBTS.push({rental:name, projectId:pid, amount, paid:false, paymentType:null, paymentDate:null, payments:[]});
+  }
   if(p && amount > 0){
-    activeDay(p).estimate.push({sec:'Оборудование', name:`${name} — оборудование`, qty:1, days:1,
-      price:amount, client:true, rental:name, byHand:true});
-    refreshProjectSum(p);
+    setRentalHandSum(p, name, amount);
     syncEstimateToFiles(p);
     renderEstimate(p); renderInfo(p); renderFiles(p);
   }
@@ -11493,13 +11582,14 @@ function openPriceImport(target){
   document.getElementById('pbChatHint').style.display = forEstimate ? 'block' : 'none';
   document.getElementById('pbEstOpts').style.display = forEstimate ? 'block' : 'none';
   if(forEstimate){
-    pbImp.estRental = ''; pbImp.estMode = 'add';
+    pbImp.estRental = ''; pbImp.estMode = 'add'; pbImp.extra = [];
     document.getElementById('pbEstRental').innerHTML =
       `<option value="">— выбери рентал —</option>` +
       RENTALS.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('') +
       `<option value="__new">+ Новый рентал…</option>`;
     const addRadio = document.querySelector('input[name="pbEstMode"][value="add"]');
     if(addRadio) addRadio.checked = true;
+    renderPbExtraRentals();
   }
   pbShowStep(1);
   document.getElementById('pbImportModal').classList.add('show');
@@ -12072,6 +12162,7 @@ function rentalDiscountLabel(d){
    «Скидка 50%» стоит под строкой «Оборудование итого», а транспорт добавляется
    уже после неё. */
 function rentalDiscountBase(i){
+  if(i && i.noDisc) return false;   // сумма, введённая руками, уже после всех договорённостей
   const g = estFormGroup(i.sec || 'Оборудование');
   return g === 'СВЕТ' || g === 'ГРИП' || g === 'ЭЛЕКТРИКА';
 }
@@ -12303,7 +12394,10 @@ function pbApplyToEstimate(rows){
   const shifts = Number(pbImp.shifts) || 1;
   const day = activeDay(p);
   // перезалив: файл пришёл заново — строки этого рентала пишутся с чистого листа
-  if(pbImp.estMode === 'replace') day.estimate = day.estimate.filter(l => l.rental !== rental);
+  // перезалив: чистим позиции ЭТОГО рентала во всех днях, но введённую руками сумму оставляем
+  if(pbImp.estMode === 'replace') allDays(p).forEach(d => {
+    if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => l.rental !== rental || l.handSum);
+  });
   rows.forEach(r => {
     day.estimate.push({
       sec: r.sec || 'Оборудование',
@@ -12324,6 +12418,20 @@ function pbApplyToEstimate(rows){
       dataUrl: pbImp.fileData.dataUrl});
   }
   const debt = syncRentalDebtFromEstimate(p, rental, (pbImp.scan || {}).discount || null);
+  /* Остальные ренталы из окна загрузки: каждому своя строка и своя оплата.
+     Тот, чей файл, сюда не попадает — его позиции уже посчитаны выше. */
+  const extras = [], skipped = [];
+  pbExtraList().forEach(row => {
+    const name = String(row.rental || '').trim();
+    const sum = Math.max(0, Math.round(Number(row.amount) || 0));
+    if(!name) return;                                     // пустая строка — просто не заполнили
+    if(name === rental){ skipped.push(`${name} — это рентал файла`); return; }
+    if(sum <= 0){ skipped.push(`${name} — не указана сумма`); return; }
+    if(extras.some(e => e.name === name)){ skipped.push(`${name} — уже есть в списке`); return; }
+    const res = setRentalHandSum(p, name, sum);
+    extras.push({name, amount:res.amount != null ? res.amount : sum, kept:!!res.kept});
+  });
+  resyncRentals(p);        // все строки записаны — пересобираем долги разом
   saveRentalRule(rental);   // шапка и столбцы этого файла закрепляются за ренталом
   refreshProjectSum(p);
   syncEstimateToFiles(p);
@@ -12336,16 +12444,74 @@ function pbApplyToEstimate(rows){
         + (debt.off > 0 ? ` (${fmtMoney(debt.gross)} минус ${rentalDiscountLabel(rentalDiscountOf(p, rental))})` : '')
         + ' — уже в «Оплатах».'
       : '';
-  askNotice(`Добавлено позиций: ${rows.length}${pbImp.fileData ? ', файл приложен к проекту' : ''}. ${debtMsg}`, 'Оборудование в смете');
+  const extraMsg = (extras.length
+    ? `<br>Ещё ренталы: ${extras.map(e => `${esc(e.name)} — ${fmtMoney(e.amount)}${e.kept ? ' (оплата закрыта, не менял)' : ''}`).join(', ')}.`
+    : '')
+    + (skipped.length ? `<br>Не записал: ${skipped.map(esc).join(', ')}.` : '');
+  askNotice(`Добавлено позиций: ${rows.length}${pbImp.fileData ? ', файл приложен к проекту' : ''}. ${debtMsg}${extraMsg}`, 'Оборудование в смете');
+}
+/* ===== Ещё ренталы прямо в окне загрузки =====
+   Файл приходит от одного рентала, а оборудование в проекте бывает от трёх.
+   Здесь же можно назвать остальных и их суммы, чтобы не заводить их потом
+   по одному. Каждая такая сумма — обычная строка сметы (handSum), поэтому
+   дальше она правится и считается ровно как всё остальное. */
+function pbExtraList(){ return (pbImp.extra = pbImp.extra || []); }
+function pbAddExtraRental(){
+  pbExtraList().push({rental:'', amount:''});
+  renderPbExtraRentals();
+}
+function pbSetExtra(i, field, v){
+  const row = pbExtraList()[i];
+  if(!row) return;
+  if(field === 'rental' && v === '__new'){
+    askInput({title:'Новый рентал', text:'Название рентала — появится в общем списке.'}, name => {
+      const clean = String(name || '').trim();
+      // тот же рентал в другом регистре — это он же, иначе разъедется на два долга
+      const exist = RENTALS.find(r => r.toLowerCase() === clean.toLowerCase());
+      if(clean && !exist) RENTALS.push(clean);
+      row.rental = exist || clean || '';
+      renderPbExtraRentals();
+      scheduleSave();
+    });
+    return;
+  }
+  row[field] = field === 'amount' ? v : String(v || '');
+  if(field === 'rental') renderPbExtraRentals();   // подсветка занятых имён
+}
+function pbDropExtra(i){
+  pbExtraList().splice(i, 1);
+  renderPbExtraRentals();
+}
+function renderPbExtraRentals(){
+  const box = document.getElementById('pbExtraRentals');
+  if(!box) return;
+  const rows = pbExtraList();
+  const busy = new Set([pbImp.estRental].filter(Boolean));
+  box.innerHTML = rows.map((row, i) => {
+    const dup = row.rental && (busy.has(row.rental)
+      || rows.some((o, j) => j < i && o.rental === row.rental));
+    return `<div class="rental-add" style="margin-top:.35rem;">
+      <select class="role-select" onchange="pbSetExtra(${i},'rental',this.value)">
+        <option value="">— рентал —</option>
+        ${RENTALS.map(r => `<option value="${esc(r)}" ${row.rental === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+        <option value="__new">+ Новый рентал…</option>
+      </select>
+      <input class="ov-in" type="number" min="0" step="500" placeholder="₽" value="${row.amount === '' ? '' : esc(String(row.amount))}"
+        oninput="pbSetExtra(${i},'amount',this.value)">
+      <button class="db-del" title="Убрать" onclick="pbDropExtra(${i})">✕</button>
+      ${dup ? '<span class="cm-tag warn">повтор</span>' : ''}
+    </div>`;
+  }).join('');
 }
 /* Новый рентал можно завести прямо из окна загрузки — чтобы не бегать в «Ренталы» */
 function pbSetEstRental(v){
-  if(v !== '__new'){ pbImp.estRental = v; return; }
+  if(v !== '__new'){ pbImp.estRental = v; renderPbExtraRentals(); return; }
   askInput({title:'Новый рентал', text:'Название рентала — появится в списке ренталов.'}, name => {
     const sel = document.getElementById('pbEstRental');
-    const clean = String(name || '').trim();
+    let clean = String(name || '').trim();
     if(!clean){ sel.value = pbImp.estRental || ''; return; }
-    if(!RENTALS.some(r => r.toLowerCase() === clean.toLowerCase())) RENTALS.push(clean);
+    const exist = RENTALS.find(r => r.toLowerCase() === clean.toLowerCase());
+    if(!exist) RENTALS.push(clean); else clean = exist;
     sel.innerHTML = `<option value="">— выбери рентал —</option>` +
       RENTALS.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('') +
       `<option value="__new">+ Новый рентал…</option>`;
@@ -12353,6 +12519,52 @@ function pbSetEstRental(v){
     pbImp.estRental = clean;
     scheduleSave();
   });
+}
+/* ===== Сумма ренталу, которой нет в файле =====
+   Оборудование часто собирается у нескольких ренталов, а файл приходит один.
+   Для остальных сумма задаётся числом — и живёт отдельной строкой сметы, а не
+   только записью долга: иначе оплата стояла бы, а в «От клиента» её не было.
+   Строка одна на рентал (handSum) — повторный ввод её переписывает, иначе при
+   каждой загрузке копились бы дубли. Долг после этого пересобирается обычным
+   путём, из позиций, так что скидка и трансферный день работают как везде. */
+function rentalHandLines(p, rental){
+  return allEstimate(p).filter(l => l.rental === rental && l.handSum);
+}
+function rentalHandLine(p, rental){ return rentalHandLines(p, rental)[0] || null; }
+// сколько всего задано руками — с учётом дублей, если день когда-то дублировали
+function rentalHandSum(p, rental){
+  return rentalHandLines(p, rental).reduce((sum, l) => sum + (Number(l.price) || 0), 0);
+}
+function setRentalHandSum(p, rental, amount){
+  const e = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === rental);
+  if(e && e.paid) return {kept:true, amount:e.amount, gross:e.gross || e.amount, off:0};
+  const lines = rentalHandLines(p, rental);
+  const sum = Math.max(0, Math.round(Number(amount) || 0));
+  /* noK и noDisc — потому что это ИТОГ, а не ставка за смену: половинный день
+     и скидка рентала к нему не применяются, иначе введённая цифра молча
+     превращалась бы в другую и починить её было бы нечем. */
+  if(sum > 0){
+    const keep = lines[0];
+    if(keep){
+      keep.price = sum; keep.qty = 1; keep.days = 1; keep.noK = true; keep.noDisc = true;
+      delete keep.k;
+      // дубли (например, после «продублировать день») схлопываем в одну строку
+      if(lines.length > 1) allDays(p).forEach(d => {
+        if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => l === keep || !(l.rental === rental && l.handSum));
+      });
+    } else {
+      activeDay(p).estimate.push({sec:'Оборудование', name:'Оборудование', qty:1, days:1,
+        price:sum, client:true, rental, byHand:true, handSum:true, noK:true, noDisc:true});
+    }
+  } else if(lines.length){
+    allDays(p).forEach(d => { if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => !(l.rental === rental && l.handSum)); });
+  }
+  refreshProjectSum(p);
+  const res = syncRentalDebtFromEstimate(p, rental);
+  // сумма уменьшилась — переложенный на рентал вылет не может быть больше долга
+  const debt = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === rental);
+  if(debt && settlementCut(debt) > (debt.amount || 0)) debt.cut = debt.amount || 0;
+  return res;
 }
 /* Оплата ренталу по проекту = сумма его позиций в смете. Пересчитывается
    при каждой загрузке файла; закрытую оплату не трогаем — про это скажем прямо. */
@@ -12375,7 +12587,14 @@ function syncRentalDebtFromEstimate(p, rental, discount){
       paymentType:null, paymentDate:null, payments:[]});
     return {created:true, amount:gross - off, gross, off};
   }
-  if(gross <= 0){ RENTAL_DEBTS.splice(RENTAL_DEBTS.indexOf(e), 1); return {removed:true, amount:0, gross:0, off:0}; }
+  if(gross <= 0){
+    /* Позиций не осталось. Пустую запись убираем, но если по ней уже проходили
+       деньги — оставляем с нулевой суммой: история платежей не должна исчезать
+       молча, из неё видно, что и когда ушло. */
+    if(settlementPaid(e) > 0){ e.gross = 0; e.amount = 0; return {zeroed:true, amount:0, gross:0, off:0}; }
+    RENTAL_DEBTS.splice(RENTAL_DEBTS.indexOf(e), 1);
+    return {removed:true, amount:0, gross:0, off:0};
+  }
   e.gross = gross;
   e.amount = gross - off;
   return {updated:true, amount:e.amount, gross, off};
@@ -12387,6 +12606,31 @@ function resyncRentals(p){
   RENTAL_DEBTS.filter(r => r.projectId === p.id).forEach(r => names.add(r.rental));
   names.forEach(r => syncRentalDebtFromEstimate(p, r));
   refreshProjectSum(p);
+}
+/* Сумма ренталу числом — для тех, чьего файла нет. Правится в любой момент
+   и живёт рядом с позициями из файла, а не вместо них: у рентала может быть
+   и то и другое. Ноль убирает ручную строку. */
+function editRentalHandSum(pid, rental){
+  const p = PROJECTS.find(x => x.id === pid);
+  if(!p) return;
+  const e = RENTAL_DEBTS.find(r => r.projectId === pid && r.rental === rental);
+  if(e && e.paid){ askNotice('Оплата этому ренталу закрыта — сумму уже не меняем.', 'Закрыто'); return; }
+  const line = rentalHandLine(p, rental);
+  const fromFile = allEstimate(p).filter(l => l.rental === rental && !l.handSum)
+    .reduce((sum, l) => sum + lineTotal(l), 0);
+  askInput({title:`Сумма ренталу «${rental}»`,
+    text: fromFile > 0
+      ? `Из файла у него уже ${fmtMoney(fromFile)} — это сумма сверх них. Ноль уберёт ручную строку.`
+      : 'Столько уйдёт ренталу по проекту. Эта же сумма встанет в смету строкой. Ноль уберёт её.',
+    type:'number', value: line ? rentalHandSum(p, rental) : '', okText:'Сохранить'}, raw => {
+    const v = parseFloat(String(raw).replace(',', '.').replace(/\s/g, ''));
+    if(isNaN(v) || v < 0){ askNotice('Нужно число не меньше нуля.', 'Не сохранил'); return; }
+    setRentalHandSum(p, rental, v);
+    syncEstimateToFiles(p);
+    renderEstimate(p); renderInfo(p); renderFiles(p); renderPayTab(p);
+    refreshAll();
+    scheduleSave();
+  });
 }
 /* Скидку можно поправить руками: «50» или «50%» — процент, «44778» — сумма,
    пусто — скидки нет. Пересчитываем и оплату, и всё, что от неё зависит. */
@@ -15473,6 +15717,193 @@ const SELF_CHECK_CASES = [
   {group:'Смена', name:'Без фикса часы по-прежнему считаются по времени смены',
     run:()=>unitShiftHours({shiftStart:'08:00', shiftEnd:'22:00'}),
     expect:14},
+
+  // ---- Переработка по ступеням в смете ----
+  {group:'Переработки', name:'Ступени: 12 ч раскладываются на 8 / 2 / 2 часа',
+    run:()=>{
+      const r = selfCheckFixtureRates();
+      const b = otBands(r, 'Осветитель', 12, true, 0);
+      return b.length * 1000 + b[0].hours * 100 + b[1].hours * 10 + b[2].hours;
+    },
+    expect:3822},
+  {group:'Переработки', name:'Сумма по ступеням равна прежнему расчёту переработки',
+    run:()=>{
+      const r = selfCheckFixtureRates();
+      const byBands = otBands(r, 'Осветитель', 12, true, 0)
+        .reduce((sum, b) => sum + b.hours * b.rate, 0);
+      return byBands - overtimePayR(r, 'Осветитель', 12);
+    },
+    expect:0},
+  {group:'Переработки', name:'Часы П/Р садятся в первую ступень — ставка у них та же',
+    run:()=>{
+      const r = selfCheckFixtureRates();
+      const b = otBands(r, 'Осветитель', 6, true, 3);
+      return b.length * 100 + b[0].hours;      // одна полоса, 6 + 3 часа
+    },
+    expect:109},
+  {group:'Переработки', name:'Без прогрессивов — одна строка по первой ступени',
+    run:()=>{
+      const r = selfCheckFixtureRates();
+      const b = otBands(r, 'Осветитель', 12, false, 0);
+      return b.length * 1000 + b[0].hours * 10 + (b[0].rate === r.roles.find(x=>x.name==='Осветитель').p1 ? 1 : 0);
+    },
+    expect:1121},
+  {group:'Сметы', name:'Старая строка без поля people читается по-прежнему, по сменам',
+    run:()=>{
+      const old = {sec:'Персонал', name:'Осветитель — смена', qty:2, days:1, price:13200, client:true};
+      const now = {sec:'Персонал', name:'Осветитель — смена', qty:1, days:2, people:2, unitLabel:'смена', price:13200, client:true};
+      // обе строки дают одну сумму, но третья колонка читается по-разному
+      return lineTotal(old) === lineTotal(now) && lineThird(old) === '1' && lineThird(now) === '2' ? 1 : 0;
+    },
+    expect:1},
+
+  // ---- Несколько ренталов на один файл ----
+  {group:'Ренталы', name:'Сумма ренталу руками: одна строка в смете, долг ей равен',
+    run:()=>{
+      const p = {id:'__hs', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[], units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р', 30000);
+        setRentalHandSum(p, '__Р', 25000);          // правка — не вторая строка
+        const lines = allEstimate(p).filter(l => l.rental === '__Р').length;
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs' && r.rental === '__Р');
+        return lines * 100000 + (debt ? debt.amount : 0);   // 1 строка, долг 25 000
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:125000},
+  {group:'Ренталы', name:'Ноль убирает и строку сметы, и долг',
+    run:()=>{
+      const p = {id:'__hs2', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[], units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р2', 30000);
+        setRentalHandSum(p, '__Р2', 0);
+        const lines = allEstimate(p).filter(l => l.rental === '__Р2').length;
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs2' && r.rental === '__Р2');
+        return (lines === 0 ? 1 : 0) + (debt ? 0 : 10);
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs2');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:11},
+  {group:'Ренталы', name:'Ручная сумма живёт рядом с позициями из файла, а не вместо них',
+    run:()=>{
+      const p = {id:'__hs3', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[{sec:'Свет', name:'Прибор', qty:1, days:1, price:40000, client:true, rental:'__Р3', src:'ф.xlsx'}],
+        units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р3', 10000);
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs3' && r.rental === '__Р3');
+        return debt ? debt.amount : 0;     // 40 000 из файла + 10 000 руками
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs3');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:50000},
+
+  {group:'Ренталы', name:'История платежей переживает обнуление позиций',
+    run:()=>{
+      const p = {id:'__hs4', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[], units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р4', 30000);
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs4' && r.rental === '__Р4');
+        debt.payments.push({amount:10000, type:'cash', date:TODAY_ISO});
+        setRentalHandSum(p, '__Р4', 0);        // позиций больше нет
+        const after = RENTAL_DEBTS.find(r => r.projectId === '__hs4' && r.rental === '__Р4');
+        return after ? after.payments.length * 100 + after.amount : 0;   // запись жива, сумма 0
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs4');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:100},
+
+  {group:'Ренталы', name:'Трансферный день не режет введённую руками сумму',
+    run:()=>{
+      const p = {id:'__hs5', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[], units:[], notes:[], payments:[], files:[], steps:[], transfer:true};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р5', 50000);
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs5' && r.rental === '__Р5');
+        return debt ? debt.amount : 0;     // половинный день к готовой сумме не применяется
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs5');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:50000},
+  {group:'Ренталы', name:'Скидка рентала не съедает готовую сумму',
+    run:()=>{
+      const p = {id:'__hs6', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        rentalDiscounts:{'__Р6':{pct:20, sum:null}},
+        estimate:[], units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р6', 50000);
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs6' && r.rental === '__Р6');
+        return debt ? debt.amount : 0;     // цифра уже итоговая, скидка к ней не идёт
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs6');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:50000},
+  {group:'Ренталы', name:'Закрытую оплату ручная сумма не переписывает',
+    run:()=>{
+      const p = {id:'__hs7', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[], units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р7', 50000);
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs7' && r.rental === '__Р7');
+        debt.paid = true;
+        setRentalHandSum(p, '__Р7', 90000);
+        return debt.amount;
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs7');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:50000},
+  {group:'Ренталы', name:'Дубли разовой строки схлопываются в одну',
+    run:()=>{
+      const p = {id:'__hs8', name:'проверка', date:TODAY_ISO, sum:0, paidAmount:0,
+        estimate:[{sec:'Оборудование', name:'Оборудование', qty:1, days:1, price:80000,
+                   client:true, rental:'__Р8', byHand:true, handSum:true, noK:true, noDisc:true},
+                  {sec:'Оборудование', name:'Оборудование', qty:1, days:1, price:80000,
+                   client:true, rental:'__Р8', byHand:true, handSum:true, noK:true, noDisc:true}],
+        units:[], notes:[], payments:[], files:[], steps:[]};
+      PROJECTS.push(p);
+      try{
+        setRentalHandSum(p, '__Р8', 80000);      // правка схлопывает дубли
+        const lines = allEstimate(p).filter(l => l.rental === '__Р8').length;
+        const debt = RENTAL_DEBTS.find(r => r.projectId === '__hs8' && r.rental === '__Р8');
+        return lines * 100000 + (debt ? debt.amount : 0);
+      } finally {
+        PROJECTS.splice(PROJECTS.indexOf(p), 1);
+        const i = RENTAL_DEBTS.findIndex(r => r.projectId === '__hs8');
+        if(i > -1) RENTAL_DEBTS.splice(i, 1);
+      }
+    },
+    expect:180000},
 
   // ---- Такси — мой расход везде одинаково ----
   {group:'Деньги проекта', name:'Такси вычитается из «мне» в сводке, как и в отчёте',
