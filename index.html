@@ -1064,6 +1064,11 @@
      выбор доли. Проценты считаются от БАЗОВОЙ ставки (смена без переработок и П/Р,
      у рентала — сумма его позиций), поэтому база подписана прямо под именем. */
   .cp-sec{margin-top:.9rem;}
+  /* Дата оплаты неустойки — первым блоком после «есть неустойка» */
+  .cp-paydate{margin-top:.8rem;padding:.7rem .8rem;border:1px solid var(--line);border-radius:10px;background:var(--bg-sunk);}
+  .cp-paydate label{display:block;font-size:.82rem;font-weight:600;color:var(--ink);margin-bottom:.4rem;}
+  .cp-paydate input[type=date]{width:100%;max-width:230px;}
+  .cp-paydate .form-hint{margin-top:.45rem;}
   .cp-sec-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
     flex-wrap:wrap;margin-bottom:.35rem;}
   .cp-sec-title{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;
@@ -4422,14 +4427,16 @@ function refreshProjectSum(p){
 function projectIsSettled(p){ return !!p.paymentDate && (p.sum - p.paidAmount) <= 0; }
 /* Мне должны — только когда счёт выставлен, а деньги ещё не пришли.
    Без выставленного счёта требовать нечего, это ещё не дебиторка. */
-function isReceivable(p){ return p.sum>0 && p.invoiceSent && (p.sum - p.paidAmount) > 0; }
+/* Отмена с неустойкой — это выставленный заказчику счёт: он к оплате сразу,
+   даже в старых сохранениях, где галочки «Счёт» при отмене ещё не ставилось. */
+function isReceivable(p){ return p.sum>0 && (p.invoiceSent || cancelledWithPenalty(p)) && (p.sum - p.paidAmount) > 0; }
 function receivableAmount(p){ return isReceivable(p) ? (p.sum - p.paidAmount) : 0; }
 function isCrewDebt(p, c){ return !c.paid && !isMe(c) && settlementLeft(c) > 0 && projectIsSettled(p); }
 // Суммарная задолженность перед человеком по всем проектам
 function crewDebtTotal(personId){
   let total = 0;
-  // отменённый проект с неустойкой платить надо независимо от расчёта с клиентом
-  activeProjects().filter(projectIsSettled).concat(penaltyProjects()).forEach(p=>{
+  // неустойка — как обычный проект: долгом становится, когда заказчик её заплатил
+  activeProjects().filter(projectIsSettled).concat(penaltyProjects().filter(projectIsSettled)).forEach(p=>{
     projectCrew(p).forEach(c=>{ if(c.id===personId) total += settlementLeft(c); });
   });
   return total;
@@ -4439,9 +4446,18 @@ function projectPhase(p){
   if(p.steps[3][1]) return 1;      // факт. смета готова, ждём оплату
   return 0;                        // в работе
 }
-function phaseColor(p){ return p.cancelled ? 'var(--ink-muted)' : PHASE_COLORS[projectPhase(p)]; }
-function phaseLabel(p){ return p.cancelled ? 'Отменён' : ['В работе','Ждём оплату','Закрыт'][projectPhase(p)]; }
+/* Отменённый с неоплаченной неустойкой — не «отменён», а «ждём оплату»: деньги
+   заказчика ещё впереди. Когда неустойка пришла, проект снова просто отменён. */
+function phaseColor(p){
+  if(penaltyAwaiting(p)) return PHASE_COLORS[1];
+  return p.cancelled ? 'var(--ink-muted)' : PHASE_COLORS[projectPhase(p)];
+}
+function phaseLabel(p){
+  if(penaltyAwaiting(p)) return 'Ждём оплату';
+  return p.cancelled ? 'Отменён' : ['В работе','Ждём оплату','Закрыт'][projectPhase(p)];
+}
 function statusPill(p){
+  if(penaltyAwaiting(p)) return '<span class="pill pill-warn">ждём оплату</span>';
   if(p.cancelled) return '<span class="pill pill-muted">отменён</span>';
   // «Освоение» — опциональный шаг, не блокирует статус «закрыт»
   const next = p.steps.find((s,i)=> i!==0 && !s[1]);
@@ -4472,6 +4488,33 @@ function cancelledWithPenalty(p){ return !!(p.cancelled && p.cancelInfo && p.can
 // в долгах — только те, по кому ещё не рассчитались
 function penaltyProjects(){ return PROJECTS.filter(p => cancelledWithPenalty(p) && projectDebtAmount(p) > 0); }
 function projectHasPenalty(p){ return !!(p.cancelInfo && p.cancelInfo.penalty); }
+/* Неустойка — такие же деньги заказчика, как оплата по смете. Пока они не пришли,
+   проект ждёт оплату, а начисления команде и ренталам — долг операционный, не
+   фактический: платить им пока не из чего. Пришли целиком — всё как у обычного
+   закрытого проекта: долг фактический, задача «Выплатить неустойку». */
+function penaltyAwaiting(p){ return cancelledWithPenalty(p) && p.sum > 0 && (p.sum - p.paidAmount) > 0; }
+function penaltyAwaitingProjects(){ return PROJECTS.filter(penaltyAwaiting); }
+// Все, от кого ждём деньги: живые проекты и отменённые с неоплаченной неустойкой
+function payWatchProjects(){ return activeProjects().concat(penaltyAwaitingProjects()); }
+/* Отмена с неустойкой ставит «Счёт» и ожидаемую дату оплаты; прежние значения
+   прячутся в preCancelBill и возвращаются при восстановлении проекта. */
+function penMarkBilled(p, payDate){
+  if(!p.preCancelBill) p.preCancelBill = {invoiceSent: !!p.invoiceSent, step4: p.steps[4][1] || 0,
+    step5: p.steps[5][1] || 0, expectedPaymentDate: p.expectedPaymentDate || null};
+  p.invoiceSent = true;
+  p.steps[4][1] = 1;
+  p.steps[5][1] = (p.sum > 0 && p.paidAmount >= p.sum) ? 1 : 0;
+  if(payDate) p.expectedPaymentDate = payDate;
+}
+function penUnmarkBilled(p){
+  const b = p.preCancelBill;
+  if(!b) return;
+  p.invoiceSent = b.invoiceSent;
+  p.steps[4][1] = b.step4;
+  p.steps[5][1] = b.step5;
+  p.expectedPaymentDate = b.expectedPaymentDate;
+  delete p.preCancelBill;
+}
 function penaltyPctLabel(o){
   if(!o || !o.penalty) return '';
   return o.penalty.pct == null ? 'неустойка' : `неустойка ${o.penalty.pct}%`;
@@ -4562,7 +4605,7 @@ function openCancelProj(pid, afterDone){
   const rentals = RENTAL_DEBTS.filter(r=>r.projectId===p.id).map(r=>({
     name:r.rental, note:'', base: Math.round(r.amount||0), mode:'100', custom:0,
     locked: !!r.paid, paidSum: settlementPaid(r)}));
-  cancelPen = {pid, afterDone, pay:null, crew, rentals, gaffer};
+  cancelPen = {pid, afterDone, pay:null, payDate:'', crew, rentals, gaffer};
   renderCancelProj();
   document.getElementById('cancelProjModal').classList.add('show');
   if(typeof syncLayerLock === 'function') syncLayerLock();
@@ -4576,6 +4619,21 @@ function cpSetPay(v){
   if(!cancelPen) return;
   cancelPen.pay = v;
   renderCancelProj();
+}
+/* Дата оплаты неустойки — сразу после «есть неустойка»: без неё проект повис бы
+   в ожидании без единого напоминания. При вводе поле не перерисовываем (иначе
+   под пальцем теряется фокус) — обновляется только подвал с кнопкой. */
+function cpPayDateHTML(st){
+  return `<div class="cp-paydate">
+    <label for="cpPayDate">Когда заказчик заплатит неустойку?</label>
+    <input type="date" id="cpPayDate" value="${st.payDate||''}" onchange="cpSetPayDate(this.value)" oninput="cpSetPayDate(this.value)">
+    <div class="form-hint">До этого дня проект будет в «Ожидаем оплату», в сам день придёт напоминание «Проверить оплату». Выплаты команде и ренталам станут долгом, когда деньги придут.</div>
+  </div>`;
+}
+function cpSetPayDate(v){
+  if(!cancelPen) return;
+  cancelPen.payDate = v || '';
+  renderCancelProjFoot();
 }
 function penSectionHTML(kind, title, rows, empty){
   const head = `<div class="cp-sec-head"><span class="cp-sec-title">${title}</span>` +
@@ -4664,15 +4722,19 @@ function renderCancelProj(){
   if(!st) return;
   const p = PROJECTS.find(x=>x.id===st.pid);
   if(!p){ closeCancelProj(); return; }
-  document.getElementById('cpHint').innerHTML =
-    `«${esc(p.name)}» · ${projectDates(p).map(fmtDate).join(', ')} — проект уйдёт из календаря,
+  // с неустойкой проект из денег не уходит — вводный текст говорит об этом прямо
+  document.getElementById('cpHint').innerHTML = st.pay === true
+    ? `«${esc(p.name)}» · ${projectDates(p).map(fmtDate).join(', ')} — неустойка останется в деньгах:
+     пока заказчик её не заплатит, проект будет в «Ожидаем оплату». Восстановить можно в любой
+     момент кнопкой «Отменённые» на экране «Проекты».<br><b style="color:var(--ink);">Будет ли выплачена неустойка?</b>`
+    : `«${esc(p.name)}» · ${projectDates(p).map(fmtDate).join(', ')} — проект уйдёт из календаря,
      задач и дохода, но останется в памяти: восстановить можно в любой момент кнопкой
      «Отменённые» на экране «Проекты».<br><b style="color:var(--ink);">Будет ли выплачена неустойка?</b>`;
   document.getElementById('cpNoPen').classList.toggle('on', st.pay===false);
   document.getElementById('cpYesPen').classList.toggle('on', st.pay===true);
   const body = document.getElementById('cpBody');
   if(st.pay === true){
-    body.innerHTML =
+    body.innerHTML = cpPayDateHTML(st) +
       ((st.gaffer||[]).length ? penSectionHTML('gaffer', 'Мне — моя часть', st.gaffer, '') : '') +
       penSectionHTML('crew', 'Команде', st.crew, 'Команда по проекту не назначена.') +
       penSectionHTML('rental', 'Ренталам', st.rentals, 'Ренталы по проекту не назначены.') +
@@ -4693,6 +4755,9 @@ function renderCancelProjFoot(){
   if(!st) return;
   const t = penTotals();
   const chosen = st.pay === true || st.pay === false;
+  // неустойку без даты оплаты не выставляем — иначе про эти деньги никто не напомнит
+  const needDate = st.pay === true && t.total > 0 && !st.payDate;
+  const ready = chosen && !needDate;
   document.getElementById('cpFoot').innerHTML = `
     ${st.pay === true ? `
       <div class="cp-total"><span>Итого неустойка</span><span class="mono">${fmtMoney(t.total)}</span></div>
@@ -4700,12 +4765,13 @@ function renderCancelProjFoot(){
         ? `${[t.crew>0?`команде ${fmtMoney(t.crew)}`:'', t.rentals>0?`ренталам ${fmtMoney(t.rentals)}`:'',
              t.gaffer>0?`мне ${fmtMoney(t.gaffer)}`:''].filter(Boolean).join(' · ')}.
            Это станет сметой проекта — прежние расчёты аннулируются.
-           ${t.payout>0 ? `Выплатить команде и ренталам: <b style="color:var(--ink);">${fmtMoney(t.payout)}</b> — уйдёт в «Оплаты» и «Финансы → Долги».`
+           ${t.payout>0 ? `Команде и ренталам: <b style="color:var(--ink);">${fmtMoney(t.payout)}</b> — начисления встанут в «Оплаты», а долгом станут, когда заказчик заплатит неустойку.`
                         : 'Выплачивать никому не нужно — вся сумма моя.'}`
         : 'Пока ничего не выставлено — так это будет обычная отмена без неустойки.'}</div>` : ''}
     ${!chosen ? '<div class="form-hint">Ответь на вопрос выше — тогда отменю.</div>' : ''}
+    ${needDate ? '<div class="form-hint" style="color:var(--warn);">Укажи выше, когда заказчик заплатит неустойку — без даты не будет напоминаний.</div>' : ''}
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;">
-      <button class="btn" onclick="applyProjectCancel()" ${chosen?'':'disabled style="opacity:.45;cursor:default;"'}>
+      <button class="btn" onclick="applyProjectCancel()" ${ready?'':'disabled style="opacity:.45;cursor:default;"'}>
         ${st.pay===true && t.total>0 ? 'Отменить и выставить неустойку' : 'Отменить проект'}</button>
       <button class="btn ghost" onclick="closeCancelProj()">Не отменять</button>
     </div>`;
@@ -4765,6 +4831,7 @@ function applyProjectCancel(){
   const p = PROJECTS.find(x=>x.id===st.pid);
   if(!p){ closeCancelProj(); return; }
   const t = penTotals();
+  if(st.pay === true && t.total > 0 && !st.payDate) return;   // без даты оплаты неустойку не выставляем
   const put = (item, row) => {
     if(!item || row.locked) return;
     penStash(item);
@@ -4787,6 +4854,8 @@ function applyProjectCancel(){
                   crewTotal: st.pay ? t.crew : 0, rentalTotal: st.pay ? t.rentals : 0,
                   gafferTotal: st.pay ? t.gaffer : 0, payout: st.pay ? t.payout : 0,
                   total: st.pay ? t.total : 0};
+  // неустойка — выставленный счёт: «Счёт» отмечен, дата оплаты стоит, проект ждёт денег
+  if(p.cancelInfo.penalty) penMarkBilled(p, st.payDate);
   const after = st.afterDone;
   closeCancelProj();
   renderInfo(p); renderChecklist(p);
@@ -4794,7 +4863,7 @@ function applyProjectCancel(){
   refreshAll();
   if(after) after();
   askNotice(p.cancelInfo.penalty
-    ? `Сумма проекта теперь ${fmtMoney(p.sum)} — это неустойка, прежняя смета аннулирована.\n\nКоманде ${fmtMoney(t.crew)}, ренталам ${fmtMoney(t.rentals)}${t.gaffer>0?`, мне ${fmtMoney(t.gaffer)}`:''}. Выплаты уже стоят в «Оплатах» и в «Финансы → Долги», проект — в «Отменённых».`
+    ? `Сумма проекта теперь ${fmtMoney(p.sum)} — это неустойка, прежняя смета аннулирована.\n\nКоманде ${fmtMoney(t.crew)}, ренталам ${fmtMoney(t.rentals)}${t.gaffer>0?`, мне ${fmtMoney(t.gaffer)}`:''}. \n\nПроект — в «Ожидаем оплату», оплата ~ ${fmtDate(p.expectedPaymentDate)}.${t.payout>0?' Выплаты команде и ренталам станут долгом, когда заказчик заплатит.':''}`
     : `Проект «${p.name}» отменён без неустойки — смета обнулена, начислений и долгов по нему не осталось.`,
     'Проект отменён');
 }
@@ -4815,6 +4884,7 @@ function restoreCancelledProject(p, afterDone){
   projectCrew(p).forEach(back);
   RENTAL_DEBTS.filter(r=>r.projectId===p.id).forEach(back);
   penRestoreEstimate(p);   // смета и сумма проекта — такими же, какими были до отмены
+  penUnmarkBilled(p);      // счёт и дата оплаты — тоже как до отмены
   p.cancelled = false;
   delete p.cancelInfo;
   renderInfo(p); renderChecklist(p);
@@ -4844,7 +4914,7 @@ function openCancelledProjectsModal(){
         <button class="btn ghost tiny" onclick="toggleProjectCancelled('${p.id}', openCancelledProjectsModal)">↺ Восстановить</button>
       </div>
       ${pen>0 ? `<div class="pay-sub"><div class="pay-sub-row" style="grid-template-columns:1fr auto;">
-          <span>неустойка ${fmtMoney(pen)}${left>0 ? ` · осталось выплатить ${fmtMoney(left)}`
+          <span>неустойка ${fmtMoney(pen)}${penaltyAwaiting(p) ? ' · ждём оплату от заказчика' : ''}${left>0 ? ` · ${penaltyAwaiting(p)?'потом':'осталось'} выплатить ${fmtMoney(left)}`
             : (p.cancelInfo.payout>0 ? ' · выплаты закрыты' : ' · целиком моя')}</span>
           <button class="btn ghost tiny" onclick="openCancelledProjectPay('${p.id}')">Оплаты →</button>
         </div></div>` : ''}
@@ -5035,7 +5105,7 @@ function sameDay(iso, d, m, y){
 }
 // День, когда по хотя бы одному проекту ждём поступление денег — отдельный маркер «₽»
 function dayHasPayday(d, m, y){
-  return activeProjects().some(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,m,y));
+  return payWatchProjects().some(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,m,y));
 }
 // День освоения — отдельный маркер, может совпадать у нескольких проектов в один день
 function dayHasScout(d, m, y){
@@ -5064,7 +5134,7 @@ function openDayPick(d, m, y){
   hideCalTooltip();
   dayPickIso = npIsoFor(d, m, y);
   const shootProjects  = calendarProjects().filter(p=>projectDates(p).some(iso=>sameDay(iso,d,m,y)));
-  const paydayProjects = activeProjects().filter(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,m,y));
+  const paydayProjects = payWatchProjects().filter(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,m,y));
   const scoutProjects  = activeProjects().filter(p=>sameDay(p.scoutDate,d,m,y));
   // клиента показываем, только если он не повторяет название проекта
   const clientOf = p => (p.client && !p.name.toLowerCase().includes(p.client.toLowerCase())) ? p.client : '';
@@ -5104,7 +5174,7 @@ function renderCalendarMonth(){
   for(let d=1; d<=daysInMonth; d++){
     const isToday = (d===TODAY.getDate() && calMonth===TODAY.getMonth() && calYear===TODAY.getFullYear());
     const shootProjects = calendarProjects().filter(p=>projectDates(p).some(iso=>sameDay(iso,d,calMonth,calYear)));
-    const paydayProjects = activeProjects().filter(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,calMonth,calYear));
+    const paydayProjects = payWatchProjects().filter(p=>p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && sameDay(p.expectedPaymentDate,d,calMonth,calYear));
     const scoutProjects = activeProjects().filter(p=>sameDay(p.scoutDate,d,calMonth,calYear));
     const allProjects = [...new Set([...shootProjects, ...paydayProjects, ...scoutProjects])];
     const matching = shootProjects.filter(p=>matchesQuery(p,q));
@@ -5238,7 +5308,7 @@ function renderCalendarWork(){
     if(p.scoutDate && !p.cancelled) items.push({iso:p.scoutDate,
       html:agendaRowHTML({iso:p.scoutDate, p, kind:'Освоение', dot:'var(--ink-muted)', amount:''},
         {onclick:`openProject('${p.id}','estimate')`})});
-    if(p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && !p.cancelled) items.push({iso:p.expectedPaymentDate,
+    if(p.expectedPaymentDate && (p.sum-p.paidAmount)>0 && (!p.cancelled || penaltyAwaiting(p))) items.push({iso:p.expectedPaymentDate,
       html:agendaRowHTML({iso:p.expectedPaymentDate, p, kind:'Ждём оплату', dot:'var(--warn)',
         amount:fmtMoney(p.sum-p.paidAmount)}, {onclick:`openProject('${p.id}','pay')`})});
   });
@@ -5658,9 +5728,15 @@ function generateAutoTasks(){
         onComplete:`completeCredits('${p.id}')`});
     }
   });
-  /* Отменённый проект задач больше не создаёт — кроме одной: пока неустойка
-     не выплачена, она висит задачей, иначе про эти деньги легко забыть. */
-  penaltyProjects().forEach(p=>{
+  /* Отменённый проект задач больше не создаёт — кроме неустойки. Пока заказчик её
+     не заплатил, за деньги отвечают пины «Проверить оплату» по ожидаемой дате (нет даты —
+     задача её указать). Пришла целиком — появляется «Выплатить неустойку», ровно как
+     «Оплатить команду» у обычного проекта после полной оплаты. */
+  penaltyAwaitingProjects().filter(p=>!p.expectedPaymentDate).forEach(p=>{
+    tasks.push({key:'penDate', label:'Указать дату оплаты неустойки', projectId:p.id,
+                tab:'info', date:(p.cancelInfo && p.cancelInfo.at) || p.date});
+  });
+  penaltyProjects().filter(projectIsSettled).forEach(p=>{
     tasks.push({key:'penalty', label:`Выплатить неустойку · ${fmtMoney(projectDebtAmount(p))}`, projectId:p.id,
                 tab:'pay', date:(p.cancelInfo && p.cancelInfo.at) || p.date});
   });
@@ -5674,7 +5750,7 @@ function completeCredits(pid){
 // Пин наверх — про деньги, легко забыть. «Проверить» в день оплаты, «Напомнить» если просрочено.
 function generatePaymentCheckTasks(){
   const tasks = [];
-  activeProjects().forEach(p=>{
+  payWatchProjects().forEach(p=>{
     if(!p.expectedPaymentDate) return;
     if(!(p.sum>0 && (p.sum-p.paidAmount)>0)) return;
     if(p.expectedPaymentDate===TODAY_ISO) tasks.push({key:'payChk', label:'Проверить оплату', projectId:p.id, tab:'pay', date:p.date, pinned:true});
@@ -6905,7 +6981,10 @@ function renderInfo(p){
     : `${p.sum?fmtMoney(p.sum):'смета не собрана'}${p.sumManual?' <span class="pill pill-muted">вручную</span>':''}
        <button class="btn ghost tiny" onclick="toggleManualSum()">${p.sumManual?'↺ авто':'✎ вручную'}</button>`;
   el.innerHTML = `
-    ${p.cancelled ? `<div class="cancelled-banner">Проект отменён — не учитывается в календаре, задачах и финансах.
+    ${p.cancelled ? `<div class="cancelled-banner">${penaltyAwaiting(p)
+        ? `Проект отменён с неустойкой ${fmtMoney(p.sum)} — ждём оплату от заказчика${p.expectedPaymentDate ? `, ориентировочно ${fmtDate(p.expectedPaymentDate)}` : ''}.`
+        : cancelledWithPenalty(p) ? 'Проект отменён · неустойка получена.'
+        : 'Проект отменён — не учитывается в календаре, задачах и финансах.'}
       <button class="btn ghost tiny" onclick="toggleProjectCancelled('${p.id}')">↺ Восстановить</button></div>` : ''}
     <div style="display:flex;justify-content:flex-end;gap:.4rem;margin-bottom:.6rem;flex-wrap:wrap;">
       <button class="btn ghost" onclick="openReport('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>Отчёт</button>
@@ -10513,7 +10592,9 @@ function renderPayTab(p){
     ? (penLeft>0 ? `начисления остались прежними — не выплачено <b style="color:var(--warn);">${fmtMoney(penLeft)}</b>` : 'начислений по нему нет')
     : penTotal>0
       ? `неустойка ${fmtMoney(penTotal)}${penMine>0?` (в том числе моё ${fmtMoney(penMine)})`:''}`
-        + (penLeft>0 ? ` — осталось выплатить <b style="color:var(--warn);">${fmtMoney(penLeft)}</b>`
+        + (penaltyAwaiting(p)
+            ? ` — ждём оплату от заказчика${p.expectedPaymentDate ? ` (~ ${fmtDate(p.expectedPaymentDate)})` : ''}${penLeft>0 ? `, после неё выплатить ${fmtMoney(penLeft)}` : ''}`
+            : penLeft>0 ? ` — осталось выплатить <b style="color:var(--warn);">${fmtMoney(penLeft)}</b>`
                      : penPayout>0 ? ' — выплаты закрыты' : '')
       : 'без неустойки, смета обнулена';
   const cancelBanner = p.cancelled ? `<div class="cancelled-banner">
@@ -11104,11 +11185,12 @@ function renderProjectsActiveTab(){
 // Счёт выставлен, деньги ещё не пришли — «Счёт» отмечен в чек-листе
 function renderProjectsAwaitingTab(){
   const el = document.getElementById('ppane-awaiting');
-  const rows = activeProjects().filter(isReceivable).slice().sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const rows = payWatchProjects().filter(isReceivable).slice().sort((a,b)=> new Date(a.date)-new Date(b.date));
   el.innerHTML = rows.length ? rows.map(p=>`<div class="prow" onclick="openProject('${p.id}','pay')">
       <div class="stripe" style="background:var(--warn)"></div>
       <div class="pinfo"><div class="pname">${esc(p.name)}</div>
         <div class="pmeta"><span class="mono">${fmtDate(p.date)}</span>
+        ${p.cancelled?'<span class="pill pill-muted">неустойка</span>':''}
         ${p.expectedPaymentDate?`<span class="pill pill-muted">оплата ~ ${fmtDate(p.expectedPaymentDate)}</span>`:'<span class="pill pill-muted">дата не указана</span>'}</div></div>
       <div class="psum mono">${fmtMoney(receivableAmount(p))}</div>
       <div class="pchev">›</div>
@@ -13537,7 +13619,7 @@ function showFinanceTab(name){
   document.querySelectorAll('#screen-finance .tabpane').forEach(t=>t.classList.toggle('active', t.dataset.fpane===name));
 }
 function totalOwedToMe(){
-  return activeProjects().reduce((s,p)=>s+receivableAmount(p),0)
+  return payWatchProjects().reduce((s,p)=>s+receivableAmount(p),0)
        + PERSONAL_DEBTS.filter(d=>d.direction==='owed'&&!d.paid).reduce((s,d)=>s+d.amount,0);
 }
 // Долг по одному проекту: неоплаченные люди + неоплаченные ренталы
@@ -13548,12 +13630,13 @@ function projectDebtAmount(p){
 // Фактический: клиент закрыл проект — платить уже надо
 function totalFactualDebt(){
   return activeProjects().filter(projectIsSettled).reduce((s,p)=>s+projectDebtAmount(p),0)
-       + penaltyProjects().reduce((s,p)=>s+projectDebtAmount(p),0)
+       + penaltyProjects().filter(projectIsSettled).reduce((s,p)=>s+projectDebtAmount(p),0)
        + PERSONAL_DEBTS.filter(d=>d.direction==='owe'&&!d.paid).reduce((s,d)=>s+d.amount,0);
 }
 // Операционный: команда отработала и оборудование взято, но деньги ещё не пришли
 function totalOperationalDebt(){
-  return activeProjects().filter(p=>!projectIsSettled(p)).reduce((s,p)=>s+projectDebtAmount(p),0);
+  // неоплаченная заказчиком неустойка — такой же операционный долг, как неоплаченный проект
+  return activeProjects().concat(penaltyProjects()).filter(p=>!projectIsSettled(p)).reduce((s,p)=>s+projectDebtAmount(p),0);
 }
 function totalIOwe(){ return totalFactualDebt() + totalOperationalDebt(); }
 /* ============= Финансы → Доход =============
@@ -13792,8 +13875,8 @@ function projectDebtGroupHTML(p, pending){
   ].join('');
   const total = unpaidCrew.reduce((s,c)=>s+settlementLeft(c),0) + unpaidRentals.reduce((s,r)=>s+settlementLeft(r),0);
   const penalty = projectHasPenalty(p);
-  const pillClass = penalty ? 'pill-warn' : pending ? 'pill-pending' : 'pill-warn';
-  const pillLabel = penalty ? 'неустойка' : pending ? 'ждём оплату' : 'задолженность';
+  const pillClass = pending ? 'pill-pending' : 'pill-warn';
+  const pillLabel = penalty ? (pending ? 'неустойка · ждём оплату' : 'неустойка') : pending ? 'ждём оплату' : 'задолженность';
   const html = `<div class="panel" style="margin-bottom:.9rem;padding:.9rem 1rem;">
       <div class="panel-head" style="margin-bottom:.6rem;cursor:pointer;" onclick="openProject('${p.id}','pay')">
         <h3 class="panel-title" style="font-size:.95rem;">${esc(p.name)}${penalty?' <span style="font-weight:400;color:var(--ink-muted);font-size:.8rem;">· отменён</span>':''}</h3>
@@ -13880,7 +13963,7 @@ function personalDebtRowsHTML(direction){
 function renderFactualDebtTab(){
   const el = document.getElementById('fpane-factual');
   const groups = activeProjects().filter(projectIsSettled).map(p=>projectDebtGroupHTML(p,false))
-    .concat(penaltyProjects().map(p=>projectDebtGroupHTML(p,false))).filter(g=>g.html);
+    .concat(penaltyProjects().filter(projectIsSettled).map(p=>projectDebtGroupHTML(p,false))).filter(g=>g.html);
   const personalHtml = personalDebtRowsHTML('owe');
   const total = totalFactualDebt();
   const head = (groups.length||personalHtml)
@@ -13893,7 +13976,7 @@ function renderFactualDebtTab(){
 // Операционный долг — команда отработала, оборудование взято, но деньги ещё не пришли
 function renderOperationalDebtTab(){
   const el = document.getElementById('fpane-opdebt');
-  const groups = activeProjects().filter(p=>!projectIsSettled(p)).map(p=>projectDebtGroupHTML(p,true)).filter(g=>g.html);
+  const groups = activeProjects().concat(penaltyProjects()).filter(p=>!projectIsSettled(p)).map(p=>projectDebtGroupHTML(p,true)).filter(g=>g.html);
   const total = totalOperationalDebt();
   const head = groups.length
     ? `<div class="empty-hint" style="padding-top:0;">Команда отработала и оборудование взято, деньги ещё не пришли: <b style="color:var(--ink);">${fmtMoney(total)}</b></div>`
@@ -13903,14 +13986,14 @@ function renderOperationalDebtTab(){
 // Мне должны — только выставленные и неоплаченные счета + то, что я вложил лично
 function renderOwedToMeTab(){
   const el = document.getElementById('fpane-owedme');
-  const rows = activeProjects().filter(isReceivable).sort((a,b)=> new Date(a.date)-new Date(b.date));
+  const rows = payWatchProjects().filter(isReceivable).sort((a,b)=> new Date(a.date)-new Date(b.date));
   const personalHtml = personalDebtRowsHTML('owed');
   const head = `<div class="empty-hint" style="padding-top:0;">Всего мне должны: <b style="color:var(--ink);">${fmtMoney(totalOwedToMe())}</b>
     <br><span style="font-size:.75rem;">Учитываются только выставленные счета. Проекты без счёта сюда не попадают.</span></div>`;
   const projectRows = rows.map(p=>`
     <div class="prow" onclick="openProject('${p.id}','pay')">
       <div class="stripe" style="background:${phaseColor(p)}"></div>
-      <div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pmeta"><span class="mono">${fmtDate(p.date)}</span><span class="pill pill-muted">счёт выставлен</span></div></div>
+      <div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pmeta"><span class="mono">${fmtDate(p.date)}</span><span class="pill pill-muted">${p.cancelled?'неустойка':'счёт выставлен'}</span></div></div>
       <div class="psum mono">${fmtMoney(receivableAmount(p))}</div>
       <div class="pchev">›</div>
     </div>`).join('') || '<div class="empty-hint">Нет выставленных счетов, ожидающих оплаты.</div>';
@@ -13941,8 +14024,9 @@ function renderProfitTab(){
 
 function buildLedgerRows(){
   const rows = [];
-  activeProjects().concat(penaltyProjects()).forEach(p=>{
-    if(!p.cancelled && isReceivable(p)){
+  // неустойка, которую заказчик ещё не заплатил, — такие же входящие деньги
+  [...new Set(activeProjects().concat(penaltyProjects(), penaltyAwaitingProjects()))].forEach(p=>{
+    if((!p.cancelled || penaltyAwaiting(p)) && isReceivable(p)){
       rows.push({who:p.client, project:p.name, projectId:p.id, amount:receivableAmount(p), paid:false, direction:'in', date:null});
     }
     projectCrew(p).forEach(c=>{
@@ -14975,6 +15059,21 @@ function selfCheckProject(over){
     dates:['2026-01-01'], sum:0, sumManual:false, paidAmount:0, units:[], estimate:[],
     notes:[], payments:[], rates:selfCheckFixtureRates()}, over);
 }
+/* Отменённый проект с неустойкой 6 000 ₽ одному осветителю: заказчик ещё не платил.
+   Чтобы проверить состояние «деньги пришли», передай paidAmount и paymentDate. */
+function selfCheckPenProject(over){
+  return selfCheckProject(Object.assign({id:'__sc_penwait', cancelled:true, sum:6000, paidAmount:0,
+    paymentDate:null, invoiceSent:true, expectedPaymentDate:null,
+    steps:[['Освоение',0],['Смета',0],['Команда',0],['Факт. смета',0],['Счёт',1],['Оплата',0],['Чек',0]],
+    cancelInfo:{at:'2026-01-01', penalty:true, crewTotal:6000, rentalTotal:0, gafferTotal:0, payout:6000, total:6000},
+    units:[{id:1, name:'Юнит 1', crew:[{id:'__sc_a', role:'Осветитель', amount:6000,
+      paid:false, payments:[], penalty:{pct:50, base:12000}}]}]}, over));
+}
+// Проект подкладывается в общий список только на время проверки — и убирается, даже если она упала
+function scWithProject(p, fn){
+  PROJECTS.push(p);
+  try{ return fn(p); } finally { const i = PROJECTS.indexOf(p); if(i > -1) PROJECTS.splice(i, 1); }
+}
 
 /* Командировка и половинные дни: тестовые заготовки. Проект собирается «с нуля»,
    без обращения к сохранённым данным — самопроверка не должна зависеть от того,
@@ -15306,6 +15405,50 @@ const SELF_CHECK_CASES = [
       PROJECTS.splice(PROJECTS.indexOf(p), 1);
       return v;
     }, expect:0},
+  {group:'Неустойка', name:'Заказчик не заплатил неустойку — долг команде не фактический',
+    run:()=>{ const before = totalFactualDebt();
+      return scWithProject(selfCheckPenProject(), ()=>totalFactualDebt() - before); }, expect:0},
+  {group:'Неустойка', name:'…а операционный: деньги ещё не пришли',
+    run:()=>{ const before = totalOperationalDebt();
+      return scWithProject(selfCheckPenProject(), ()=>totalOperationalDebt() - before); }, expect:6000},
+  {group:'Неустойка', name:'Заказчик заплатил неустойку — долг команде стал фактическим',
+    run:()=>{ const before = totalFactualDebt();
+      return scWithProject(selfCheckPenProject({paidAmount:6000, paymentDate:'2026-01-05'}),
+        ()=>totalFactualDebt() - before); }, expect:6000},
+  {group:'Неустойка', name:'Неоплаченная неустойка — в «Мне должны»',
+    run:()=>{ const before = totalOwedToMe();
+      return scWithProject(selfCheckPenProject(), ()=>totalOwedToMe() - before); }, expect:6000},
+  {group:'Неустойка', name:'Статус: неустойка не пришла — «Ждём оплату», пришла — «Отменён»',
+    run:()=>{
+      const a = selfCheckPenProject();
+      const b = selfCheckPenProject({paidAmount:6000, paymentDate:'2026-01-05'});
+      return (phaseLabel(a) === 'Ждём оплату' && phaseLabel(b) === 'Отменён') ? 1 : 0;
+    }, expect:1},
+  {group:'Неустойка', name:'Старая отмена без галочки «Счёт» — неустойка всё равно к оплате',
+    run:()=>isReceivable(selfCheckPenProject({invoiceSent:false})) ? 1 : 0, expect:1},
+  {group:'Неустойка', name:'В день оплаты неустойки — пин «Проверить оплату»',
+    run:()=>scWithProject(selfCheckPenProject({expectedPaymentDate:TODAY_ISO}), p=>
+      generatePaymentCheckTasks().filter(t=>t.projectId===p.id && t.label==='Проверить оплату').length),
+    expect:1},
+  {group:'Неустойка', name:'«Выплатить неустойку» — только когда заказчик заплатил',
+    run:()=>{
+      const n = over => scWithProject(selfCheckPenProject(over), p=>
+        generateAutoTasks().filter(t=>t.projectId===p.id && t.key==='penalty').length);
+      return n({expectedPaymentDate:TODAY_ISO})*10 + n({paidAmount:6000, paymentDate:'2026-01-05'});
+    }, expect:1},
+  {group:'Неустойка', name:'Нет даты оплаты неустойки — задача её указать',
+    run:()=>scWithProject(selfCheckPenProject(), p=>
+      generateAutoTasks().filter(t=>t.projectId===p.id && t.key==='penDate').length), expect:1},
+  {group:'Неустойка', name:'Отмена ставит «Счёт» и дату, восстановление возвращает как было',
+    run:()=>{
+      const p = selfCheckPenProject({invoiceSent:false, expectedPaymentDate:null,
+        steps:[['Освоение',0],['Смета',1],['Команда',0],['Факт. смета',0],['Счёт',0],['Оплата',0],['Чек',0]]});
+      penMarkBilled(p, '2026-02-10');
+      const marked = p.invoiceSent && p.steps[4][1] === 1 && p.expectedPaymentDate === '2026-02-10';
+      penUnmarkBilled(p);
+      const back = !p.invoiceSent && p.steps[4][1] === 0 && p.expectedPaymentDate === null && !p.preCancelBill;
+      return (marked && back) ? 1 : 0;
+    }, expect:1},
 
   // ---- Многодневный проект и доход ----
   {group:'Многодневные', name:'Сумма проекта = сумма смет всех дней',
