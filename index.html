@@ -3697,6 +3697,10 @@ let customTaskSeq = 1;
 let HERMES_LOG = [];
 // Корзина: проекты, убранные командой Hermes (мягкое удаление) — вместе с их оплатами ренталам и задачами
 let TRASH = [];
+/* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
+   (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
+   приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
+const HX_SKILL_VERSION = 'acc60e4c8560';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -14222,6 +14226,7 @@ function collectState(){
     // журнал Hermes кладём, только когда он есть: у тех, кто им не пользуется, данные не меняются
     ...(HERMES_LOG.length ? {hermesLog: HERMES_LOG} : {}),
     trash: TRASH,
+    ...(APP_MODE === 'live' && HX_SKILL_VERSION ? {hermesSkill: HX_SKILL_VERSION} : {}),
     theme: document.documentElement.getAttribute('data-theme') || null,
   };
 }
