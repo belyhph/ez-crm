@@ -1540,6 +1540,11 @@
   .hx-say{margin-top:.25rem;font-size:.76rem;color:var(--ink-muted);font-style:italic;overflow-wrap:anywhere;}
   .hx-meta{margin-top:.25rem;font-size:.7rem;color:var(--ink-muted);}
   .hx-actions{margin-top:.4rem;}
+  .hx-trash{border:1px solid var(--line);border-radius:10px;padding:.55rem .7rem;margin-bottom:.4rem;background:var(--bg-sunk);}
+  .hx-trash-title{font-family:var(--font-mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);}
+  .hx-trash-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.84rem;margin-top:.35rem;overflow-wrap:anywhere;}
+  .hx-trash-row > span{flex:1;min-width:0;}
+  .hx-trash-row .btn{flex:none;white-space:nowrap;}
   /* Прокручивается только карточка — один скролл-контейнер вместо двух вложенных.
      dvh учитывает адресную строку на телефоне, vh оставлен запасным вариантом. */
   .modal-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;
@@ -3690,6 +3695,8 @@ const CUSTOM_TASKS = [];
 let customTaskSeq = 1;
 // Журнал команд Hermes: что внесено, по какой фразе, как было и как стало (см. модуль Hermes)
 let HERMES_LOG = [];
+// Корзина: проекты, убранные командой Hermes (мягкое удаление) — вместе с их оплатами ренталам и задачами
+let TRASH = [];
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -4876,6 +4883,20 @@ function applyProjectCancel(){
   if(!p){ closeCancelProj(); return; }
   const t = penTotals();
   if(st.pay === true && t.total > 0 && !st.payDate) return;   // без даты оплаты неустойку не выставляем
+  cancelProjectData(p, st, t);
+  const after = st.afterDone;
+  closeCancelProj();
+  renderInfo(p); renderChecklist(p);
+  if(currentProjectId === p.id) renderPayTab(p);
+  refreshAll();
+  if(after) after();
+  askNotice(p.cancelInfo.penalty
+    ? `Сумма проекта теперь ${fmtMoney(p.sum)} — это неустойка, прежняя смета аннулирована.\n\nКоманде ${fmtMoney(t.crew)}, ренталам ${fmtMoney(t.rentals)}${t.gaffer>0?`, мне ${fmtMoney(t.gaffer)}`:''}. \n\nПроект — в «Ожидаем оплату», оплата ~ ${fmtDate(p.expectedPaymentDate)}.${t.payout>0?' Выплаты команде и ренталам станут долгом, когда заказчик заплатит.':''}`
+    : `Проект «${p.name}» отменён без неустойки — смета обнулена, начислений и долгов по нему не осталось.`,
+    'Проект отменён');
+}
+/* Сама отмена — только данные, без окон: её зовут и окно отмены, и команды Hermes */
+function cancelProjectData(p, st, t){
   const put = (item, row) => {
     if(!item || row.locked) return;
     penStash(item);
@@ -4900,20 +4921,19 @@ function applyProjectCancel(){
                   total: st.pay ? t.total : 0};
   // неустойка — выставленный счёт: «Счёт» отмечен, дата оплаты стоит, проект ждёт денег
   if(p.cancelInfo.penalty) penMarkBilled(p, st.payDate);
-  const after = st.afterDone;
-  closeCancelProj();
-  renderInfo(p); renderChecklist(p);
-  if(currentProjectId === p.id) renderPayTab(p);
-  refreshAll();
-  if(after) after();
-  askNotice(p.cancelInfo.penalty
-    ? `Сумма проекта теперь ${fmtMoney(p.sum)} — это неустойка, прежняя смета аннулирована.\n\nКоманде ${fmtMoney(t.crew)}, ренталам ${fmtMoney(t.rentals)}${t.gaffer>0?`, мне ${fmtMoney(t.gaffer)}`:''}. \n\nПроект — в «Ожидаем оплату», оплата ~ ${fmtDate(p.expectedPaymentDate)}.${t.payout>0?' Выплаты команде и ренталам станут долгом, когда заказчик заплатит.':''}`
-    : `Проект «${p.name}» отменён без неустойки — смета обнулена, начислений и долгов по нему не осталось.`,
-    'Проект отменён');
 }
 /* Возврат из отмены: суммы поднимаются из preCancel. Там, где неустойку уже
    начали выплачивать, начисление не трогаем — история платежей важнее. */
 function restoreCancelledProject(p, afterDone){
+  const kept = restoreCancelledData(p);
+  renderInfo(p); renderChecklist(p);
+  if(currentProjectId === p.id) renderPayTab(p);
+  refreshAll();
+  if(afterDone) afterDone();
+  if(kept) askNotice(`По ${kept} позици${kept===1?'и':'ям'} неустойка уже выплачивалась — их суммы оставил как есть, проверь «Оплаты».`, 'Проект восстановлен');
+}
+// Возврат из отмены — только данные: его зовут и кнопка «Восстановить», и команды Hermes
+function restoreCancelledData(p){
   let kept = 0;
   const back = o => {
     if(!o.preCancel) return;
@@ -4931,11 +4951,7 @@ function restoreCancelledProject(p, afterDone){
   penUnmarkBilled(p);      // счёт и дата оплаты — тоже как до отмены
   p.cancelled = false;
   delete p.cancelInfo;
-  renderInfo(p); renderChecklist(p);
-  if(currentProjectId === p.id) renderPayTab(p);
-  refreshAll();
-  if(afterDone) afterDone();
-  if(kept) askNotice(`По ${kept} позици${kept===1?'и':'ям'} неустойка уже выплачивалась — их суммы оставил как есть, проверь «Оплаты».`, 'Проект восстановлен');
+  return kept;
 }
 function openCancelledProjectsModal(){
   const list = cancelledProjects();
@@ -14205,6 +14221,7 @@ function collectState(){
            personal: personalSeq, client: clientSeq},
     // журнал Hermes кладём, только когда он есть: у тех, кто им не пользуется, данные не меняются
     ...(HERMES_LOG.length ? {hermesLog: HERMES_LOG} : {}),
+    trash: TRASH,
     theme: document.documentElement.getAttribute('data-theme') || null,
   };
 }
@@ -14267,6 +14284,7 @@ function applyState(s){
   migrateAllSettlements();   // и списка платежей по команде/ренталам
   // журнал Hermes: в данных от старой версии приложения его нет — тогда местный не трогаем
   if(Array.isArray(s.hermesLog)) HERMES_LOG = s.hermesLog;
+  if(Array.isArray(s.trash)) TRASH = s.trash;
   if(s.theme) applyTheme(s.theme);
   return true;
 }
@@ -15012,9 +15030,8 @@ async function cloudRestore(sha){
    Работает только в «Работе» и только при подключённом облаке. */
 const HX_LOG_MAX = 120;
 const HX_INBOX_DEFAULT = 'ez-crm-inbox';
-// операции второго этапа: команду не глотаем молча, а отвечаем, что внести надо руками
-const HX_LATER = ['project.dates', 'project.cancel', 'project.restore', 'project.trash',
-  'estimate.add', 'rental.add', 'crew.pay', 'rental.pay', 'personal.debt'];
+// операции, которых приложение ещё не умеет: команду не глотаем молча, а отвечаем «внеси руками»
+const HX_LATER = [];
 const HX_OP_LABEL = {
   'project.create':'Новый проект', 'project.update':'Правка проекта', 'project.step':'Чекпойнт',
   'shift.set':'Время смены', 'shift.flags':'Условия смены', 'crew.add':'Человек на смену',
@@ -15222,6 +15239,121 @@ function hxRecalc(keys){
     if(units.some((u, n) => (u.crew || []).length || unitMeOn(u, n))) calcDayPersonnel(p, day, null, true);
     else refreshProjectSum(p);
   });
+}
+
+function hxFindRental(q){
+  const r = RENTALS.find(x => hxNorm(x) === hxNorm(q));
+  if(!hxNorm(q)) throw hxErr('Не указан рентал');
+  if(!r) throw hxErr(`Рентала «${hxLine(q, 40)}» нет в списке — сначала заведи его (rental.add). Есть: ${RENTALS.join(', ') || 'пока никого'}`);
+  return r;
+}
+/* Выплата человеку или ренталу — та же модель, что у кнопки «Оплатить»:
+   платёж в список, всё погашено — расчёт закрывается сам. Больше остатка
+   командой не принимаем: у кнопки сумму видно глазами, а тут опечатка
+   в ноль ушла бы деньгами. Доплата — через правку начисления в приложении. */
+function hxPayItem(item, a, ctx, ref, who){
+  const amount = Math.round(hxNum(a.amount, 'amount', 0) * 100) / 100;
+  if(!(amount > 0)) throw hxErr('Сумма должна быть больше нуля');
+  if(a.type !== 'cash' && a.type !== 'noncash') throw hxErr('«type» — cash (наличные) или noncash (безнал)');
+  const date = (a.date != null && a.date !== '') ? hxIso(a.date, 'date') : TODAY_ISO;
+  if(item.paid) throw hxErr(`Расчёт с ${who} уже закрыт — новую выплату не вношу`);
+  const left = settlementLeft(item);
+  if(!(left > 0)) throw hxErr(`${who}: к выплате ничего не осталось${(item.amount || 0) ? '' : ' — начисления пока нет (время смены или сумма)'}`);
+  if(amount > left + 0.5) throw hxErr(`Больше остатка к выплате (${fmtMoney(left)}) — если это доплата, сначала поправь начисление в приложении`);
+  const before = {paid:!!item.paid, paymentType:item.paymentType || null, paymentDate:item.paymentDate || null};
+  if(!item.payments) item.payments = [];
+  item.payments.push({amount, type:a.type, date, hx:ctx.cmd.id});
+  item.paymentType = a.type; item.paymentDate = date;
+  if(settlementLeft(item) <= 0){ item.paid = true; item.paymentDate = date; }   // всё погашено — закрываем само собой
+  ctx.patches.push(Object.assign({k:'spay', hx:ctx.cmd.id, before, closed:!!item.paid}, ref));
+  return {amount, date, left:settlementLeft(item), closed:!!item.paid};
+}
+function hxPayTarget(pt){
+  if(pt.kind === 'rental') return RENTAL_DEBTS.find(r => r.projectId === pt.pid && r.rental === pt.rental) || null;
+  const p = PROJECTS.find(x => x.id === pt.pid);
+  const d = p && hxDayByKey(p, pt.day);
+  const u = d && (d.units || []).find(x => x.id === pt.uid);
+  return u ? ((u.crew || []).find(c => c.id === pt.cid) || null) : null;
+}
+/* Даты проекта. Столько же дней, сколько было, — это перенос: каждый день едет
+   на новую дату вместе со сметой, командой, заметками и оплатами. Дни добавились —
+   новые пустые. Убрать командой можно только пустой день: заведённое не теряем. */
+function hxMoveDates(p, dates){
+  const old = projectDates(p).slice().sort();
+  if(old.length > 1 && old.length === dates.length){
+    ensureDays(p);
+    p.days.slice().sort((x, y) => x.iso.localeCompare(y.iso)).forEach((d, i) => { d.iso = dates[i]; });
+    p.dates = dates.slice(); p.date = dates[0];
+    syncDaysAfterDateChange(p);
+    return 'move';
+  }
+  if(isMultiDay(p)){
+    ensureDays(p);
+    const losing = p.days.filter(d => !dates.includes(d.iso) && !dayIsEmpty(d));
+    if(losing.length) throw hxErr(`На ${losing.map(d => fmtDate(d.iso)).join(', ')} уже заведены смета, команда или оплаты — такой день командой не убираю. Перенеси даты в приложении`);
+  } else if(dates.length > 1 && dates.includes(old[0]) && !(p.days && p.days.length)){
+    // однодневный стал многодневным: заведённое остаётся на своём дне
+    p.days = [{iso:old[0], estimate:p.estimate || [], units:p.units || [], notes:p.notes || [], payments:p.payments || []}];
+  }
+  p.dates = dates.slice(); p.date = dates[0];
+  syncDaysAfterDateChange(p);
+  return 'set';
+}
+// Деньги по проекту уже ходили — такие решения (отмена, корзина) принимаются в приложении
+function hxMoneyGuard(p, what){
+  const moved = allPayments(p).length || projectCrew(p).some(c => settlementPaid(c) > 0)
+    || RENTAL_DEBTS.some(r => r.projectId === p.id && settlementPaid(r) > 0);
+  if(moved) throw hxErr(`По «${p.name}» уже ходили деньги — ${what}`);
+}
+/* Отмена по команде — только без неустойки: неустойку выбирают по людям и ренталам
+   в окне отмены приложения. Код тот же, что у окна (cancelProjectData). */
+function hxCancelNoPenalty(p, reason, hx){
+  hxMoneyGuard(p, 'отмену реши в приложении: там же неустойка и что делать с оплатами');
+  ensureUniqueUnitIds(p);
+  const crew = [];
+  allDays(p).forEach(d => (d.units || []).forEach(u => (u.crew || []).forEach(c => crew.push({unitId:u.id, cid:c.id, locked:!!c.paid}))));
+  const rentals = RENTAL_DEBTS.filter(r => r.projectId === p.id).map(r => ({name:r.rental, locked:!!r.paid}));
+  cancelProjectData(p, {pay:false, crew, rentals, gaffer:[]}, {crew:0, rentals:0, gaffer:0, total:0, payout:0});
+  if(reason) p.cancelInfo.reason = reason;
+  if(hx) p.cancelInfo.hx = hx;
+}
+/* Корзина: проект уходит из всех списков вместе со своими оплатами ренталам
+   и задачами — ровно то, что стирает «Удалить проект», только с возвратом. */
+function hxTrash(p, hx){
+  TRASH.push({pid:p.id, name:p.name, at:new Date().toISOString(), hx:hx || '', project:p,
+    debts:RENTAL_DEBTS.filter(r => r.projectId === p.id), tasks:CUSTOM_TASKS.filter(t => t.projectId === p.id)});
+  PROJECTS.splice(PROJECTS.indexOf(p), 1);
+  RENTAL_DEBTS_removeByProject(p.id);
+  CUSTOM_TASKS_removeByProject(p.id);
+}
+function hxUntrash(t){
+  if(PROJECTS.some(p => p.id === t.pid)) throw hxErr('Проект с таким id уже есть — из корзины не возвращаю');
+  PROJECTS.push(t.project);
+  (t.debts || []).forEach(d => { if(!RENTAL_DEBTS.some(x => x.projectId === d.projectId && x.rental === d.rental)) RENTAL_DEBTS.push(d); });
+  (t.tasks || []).forEach(k => { if(!CUSTOM_TASKS.some(x => x.id === k.id)) CUSTOM_TASKS.push(k); });
+  TRASH.splice(TRASH.indexOf(t), 1);
+}
+function hxFindTrash(q){
+  const byId = TRASH.find(t => t.pid === q);
+  if(byId) return byId;
+  const n = hxNorm(q);
+  let hits = TRASH.filter(t => hxNorm(t.name) === n);
+  if(!hits.length) hits = TRASH.filter(t => hxNorm(t.name).includes(n));
+  // в корзине и среди живых — одно имя: не гадаем, пусть укажут id
+  if(hits.length === 1 && !PROJECTS.some(p => hxNorm(p.name) === hxNorm(hits[0].name))) return hits[0];
+  if(hits.length > 1) throw hxErr(`В корзине под «${hxLine(q, 60)}» несколько проектов: ${hits.map(t => `${t.name} · id ${t.pid}`).join('; ')}. Укажи id`);
+  return null;
+}
+// «Вернуть» из корзины в журнале — это отмена той записи Hermes, что его туда убрала
+function hxTrashRestore(pid){
+  const e = HERMES_LOG.slice().reverse().find(x => x.op === 'project.trash' && x.status === 'applied' && !x.undone
+    && (x.patches || []).some(pt => pt.k === 'trash' && pt.pid === pid));
+  if(e){ hxUndoLocal(e.id); return; }
+  const t = TRASH.find(x => x.pid === pid);
+  if(!t) return;
+  try{ hxUntrash(t); }catch(err){ askNotice(err.message, 'Не вернул'); return; }
+  saveState();
+  hxAfterApply([{pid}]);
 }
 
 /* ---- операции ---- */
@@ -15530,6 +15662,149 @@ const HX_OPS = {
     if(e.pid){ const p = PROJECTS.find(x => x.id === e.pid); if(p) hxTouch(ctx, p); else { ctx.pid = e.pid; ctx.pname = e.pname; } }
     ctx.summary = `Отменено: ${e.summary}`;
   },
+  /* ---- этап 2: смета рентала, выплаты, ренталы, личные долги, даты, отмена, корзина ---- */
+  'estimate.add'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const rental = hxFindRental(a.rental);
+    const shifts = (a.shifts == null || a.shifts === '') ? 1 : hxNum(a.shifts, 'shifts', 0.5, 90);
+    const lines = Array.isArray(a.lines) ? a.lines : [];
+    if(!lines.length) throw hxErr('Нет позиций (lines)');
+    if(lines.length > 300) throw hxErr('Слишком много позиций за раз — не больше 300');
+    const debt = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === rental);
+    if(debt && debt.paid) throw hxErr(`Оплата ренталу «${rental}» по «${p.name}» уже закрыта — позиции не добавляю, иначе смета и оплата разъедутся`);
+    const secs = EST_SECTIONS.filter(s => s !== 'Персонал');
+    const add = lines.map((ln, i) => {
+      const n = i + 1;
+      if(!ln || typeof ln !== 'object') throw hxErr(`Позиция ${n}: не читается`);
+      const sec = secs.find(s => hxNorm(s) === hxNorm(ln.sec));
+      if(!sec) throw hxErr(`Позиция ${n}: раздел «${hxLine(ln.sec, 30)}» — можно ${secs.join(', ')}. Персонал приложение считает само`);
+      const name = hxLine(ln.name, 160);
+      if(!name) throw hxErr(`Позиция ${n}: нет названия`);
+      const qty = hxNum(ln.qty, `позиция ${n}: qty`, 0);
+      if(!(qty > 0)) throw hxErr(`Позиция ${n}: количество должно быть больше нуля`);
+      const price = Math.round(hxNum(ln.price, `позиция ${n}: price`, 0));
+      const days = (ln.shifts == null || ln.shifts === '') ? shifts : hxNum(ln.shifts, `позиция ${n}: shifts`, 0.5, 90);
+      // так же, как строки из файла рентала: по rental они собираются в его оплату
+      return {sec, name, qty, days, price, client:true, rental, src:'Hermes', hx:ctx.cmd.id};
+    });
+    if(!day.estimate) day.estimate = [];
+    day.estimate.push(...add);
+    resyncRentals(p);          // оплата ренталу — из его позиций и со скидкой, как после загрузки файла
+    syncEstimateToFiles(p);
+    ctx.patches.push({k:'est', pid:p.id, hx:ctx.cmd.id});
+    hxTouch(ctx, p);
+    const sum = add.reduce((s, l) => s + lineTotal(l), 0);
+    const e = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === rental);
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: ${add.length} ${plural(add.length, 'позиция', 'позиции', 'позиций')} от «${rental}» на ${fmtMoney(sum)}`
+      + (e ? ` · к оплате ренталу ${fmtMoney(e.amount)}` : '');
+  },
+  'rental.add'(a, ctx){
+    const name = hxLine(a.name, 80);
+    if(!name) throw hxErr('Нужно название рентала (name)');
+    // тот же рентал в другом регистре — это он же, иначе разъедется на два долга
+    const exist = RENTALS.find(r => r.toLowerCase() === name.toLowerCase());
+    if(exist){ ctx.summary = `Рентал «${exist}» уже есть`; return; }
+    RENTALS.push(name);
+    ctx.patches.push({k:'rental', name});
+    ctx.summary = `Новый рентал: ${name}`;
+  },
+  'crew.pay'(a, ctx){
+    const p = hxFindProject(a.project);
+    const person = hxFindPerson(a.person);
+    if(isMe(person)) throw hxErr('Себе выплат не бывает — мой гонорар остаётся в доходе');
+    let day;
+    if(a.day != null && a.day !== '') day = hxFindDay(p, a.day, true);
+    else {
+      const days = allDays(p).filter(d => (d.units || []).some(u => (u.crew || []).some(c => c.id === person.id)));
+      if(!days.length) throw hxErr(`${person.name} не стоит в «${p.name}»`);
+      if(days.length > 1) throw hxErr(`${person.name} работает в «${p.name}» ${days.length} ${plural(days.length, 'день', 'дня', 'дней')} (${days.map(d => fmtDate(d.iso)).join(', ')}) — укажи day`);
+      day = days[0];
+    }
+    const {u, c} = hxFindMember(p, day, person, a.unit, ctx);
+    const r = hxPayItem(c, a, ctx, {kind:'crew', pid:p.id, day:hxDayKey(p, day), uid:u.id, cid:person.id}, person.name);
+    hxTouch(ctx, p);
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: выплата ${person.name} ${fmtMoney(r.amount)} · ${payTypeLabel(a.type)} · ${fmtDate(r.date)}`
+      + (r.closed ? ' · расчёт закрыт' : ` · осталось ${fmtMoney(r.left)}`);
+  },
+  'rental.pay'(a, ctx){
+    const p = hxFindProject(a.project);
+    const debts = RENTAL_DEBTS.filter(r => r.projectId === p.id);
+    const e = debts.find(r => hxNorm(r.rental) === hxNorm(a.rental));
+    if(!e) throw hxErr(debts.length
+      ? `У «${p.name}» нет оплаты ренталу «${hxLine(a.rental, 40)}». Есть: ${debts.map(r => r.rental).join(', ')}`
+      : `У «${p.name}» пока нет оплат ренталам — сначала позиции в смету (estimate.add)`);
+    const r = hxPayItem(e, a, ctx, {kind:'rental', pid:p.id, rental:e.rental}, `ренталу «${e.rental}»`);
+    hxTouch(ctx, p);
+    ctx.summary = `«${p.name}»: оплата ренталу «${e.rental}» ${fmtMoney(r.amount)} · ${payTypeLabel(a.type)} · ${fmtDate(r.date)}`
+      + (r.closed ? ' · расчёт закрыт' : ` · осталось ${fmtMoney(r.left)}`);
+  },
+  'personal.debt'(a, ctx){
+    const who = hxLine(a.who, 80);
+    if(!who) throw hxErr('Не указано, кто (who)');
+    const amount = Math.round(hxNum(a.amount, 'amount', 0) * 100) / 100;
+    if(!(amount > 0)) throw hxErr('Сумма должна быть больше нуля');
+    if(a.direction !== 'owed' && a.direction !== 'owe') throw hxErr('«direction» — owed (мне должны) или owe (я должен)');
+    const note = hxLine(a.note, 200);
+    const d = {id:personalSeq++, who, amount, direction:a.direction, note, paid:false, paymentType:null, paymentDate:null, hx:ctx.cmd.id};
+    PERSONAL_DEBTS.push(d);
+    ctx.patches.push({k:'pdebt', id:d.id, hx:ctx.cmd.id});
+    ctx.summary = (a.direction === 'owed' ? `${who} должен мне ${fmtMoney(amount)}` : `Я должен: ${who} · ${fmtMoney(amount)}`)
+      + (note ? ` · ${note}` : '');
+  },
+  'project.dates'(a, ctx){
+    const p = hxFindProject(a.project);
+    const list = Array.isArray(a.dates) ? a.dates : (a.dates ? [a.dates] : []);
+    const dates = [...new Set(list.map(d => hxIso(d, 'dates')))].sort();
+    if(!dates.length) throw hxErr('Нужна хотя бы одна дата (dates)');
+    if(dates.length > 60) throw hxErr('Слишком много дней за раз');
+    hxTouch(ctx, p);
+    const old = projectDates(p).slice().sort();
+    if(old.join() === dates.join()){ ctx.summary = `«${p.name}»: даты уже такие`; return; }
+    const how = hxMoveDates(p, dates);
+    ctx.patches.push({k:'dates', pid:p.id, before:old, after:dates});
+    ctx.summary = `«${p.name}»: ${old.map(fmtDate).join(', ')} → ${dates.map(fmtDate).join(', ')}`
+      + (how === 'move' ? ' · дни переехали вместе со сметой, командой и заметками' : '');
+  },
+  'project.cancel'(a, ctx){
+    const p = hxFindProject(a.project);
+    hxTouch(ctx, p);
+    if(p.cancelled){ ctx.summary = `«${p.name}» уже отменён`; return; }
+    const reason = hxLine(a.reason, 200);
+    hxCancelNoPenalty(p, reason, ctx.cmd.id);
+    ctx.patches.push({k:'cancel', pid:p.id, hx:ctx.cmd.id});
+    ctx.summary = `«${p.name}» отменён без неустойки · смета обнулена, начислений нет` + (reason ? ` · ${reason}` : '');
+  },
+  'project.restore'(a, ctx){
+    const q = String(a.project == null ? '' : a.project).trim();
+    if(!q) throw hxErr('Не указан проект');
+    const t = hxFindTrash(q);
+    if(t){
+      hxUntrash(t);
+      const p = PROJECTS.find(x => x.id === t.pid);
+      ctx.patches.push({k:'untrash', pid:t.pid});
+      hxTouch(ctx, p);
+      ctx.summary = `«${p.name}» вернулся из корзины`;
+      return;
+    }
+    const p = hxFindProject(q);
+    hxTouch(ctx, p);
+    if(!p.cancelled){ ctx.summary = `«${p.name}» и так не отменён и не в корзине`; return; }
+    const hadPenalty = !!(p.cancelInfo && p.cancelInfo.penalty);
+    const reason = (p.cancelInfo && p.cancelInfo.reason) || '';
+    const kept = restoreCancelledData(p);
+    ctx.patches.push({k:'restore', pid:p.id, hadPenalty, reason});
+    ctx.summary = `«${p.name}» восстановлен из отмены`
+      + (kept ? ` · по ${kept} ${plural(kept, 'позиции', 'позициям', 'позициям')} неустойку уже платили — их суммы оставлены как есть` : '');
+  },
+  'project.trash'(a, ctx){
+    const p = hxFindProject(a.project);
+    hxMoneyGuard(p, 'в корзину не убираю: оплаты пропали бы из финансов. Отмени проект или удали его в приложении');
+    ctx.pid = p.id; ctx.pname = p.name;
+    hxTrash(p, ctx.cmd.id);
+    ctx.patches.push({k:'trash', pid:p.id});
+    ctx.summary = `«${p.name}» убран в корзину — вернуть можно отсюда же`;
+  },
 };
 
 /* ---- отмена: шаги записи в обратном порядке ----
@@ -15646,6 +15921,71 @@ const HX_REVERT = {
     refreshPaymentMeta(p);
     if(p.steps && p.paidAmount < p.sum) p.steps[5][1] = 0;   // как при удалении поступления руками
   },
+  est(pt){
+    const p = PROJECTS.find(x => x.id === pt.pid);
+    if(!p) return;
+    const lines = allEstimate(p).filter(l => l.hx === pt.hx);
+    if(!lines.length) return;
+    const e = RENTAL_DEBTS.find(r => r.projectId === p.id && r.rental === lines[0].rental);
+    if(e && e.paid) throw hxErr(`Оплата ренталу «${e.rental}» уже закрыта — позиции из сметы не убираю`);
+    if(lines.some(l => l.byHand)) throw hxErr('Эти позиции уже правили руками — отменять не буду, чтобы не затереть');
+    allDays(p).forEach(d => { if(Array.isArray(d.estimate)) d.estimate = d.estimate.filter(l => l.hx !== pt.hx); });
+    resyncRentals(p);
+    syncEstimateToFiles(p);
+  },
+  rental(pt){
+    const i = RENTALS.indexOf(pt.name);
+    if(i < 0) return;
+    const used = RENTAL_DEBTS.some(r => r.rental === pt.name) || PROJECTS.some(p => allEstimate(p).some(l => l.rental === pt.name))
+      || PRICE_BOOK.some(x => x.rental === pt.name);
+    if(used) throw hxErr(`«${pt.name}» уже есть в сметах, оплатах или прайсах — из списка не убираю`);
+    RENTALS.splice(i, 1);
+  },
+  spay(pt){
+    const item = hxPayTarget(pt);
+    if(!item) return;
+    const i = (item.payments || []).findIndex(x => x.hx === pt.hx);
+    if(i < 0) return;
+    if(item.paid && !pt.closed) throw hxErr('Расчёт уже закрыли руками — выплату из него не убираю, поправь в приложении');
+    item.payments.splice(i, 1);
+    if(pt.closed) item.paid = !!pt.before.paid;
+    const last = item.payments[item.payments.length - 1];
+    item.paymentType = last ? last.type : pt.before.paymentType;
+    item.paymentDate = last ? last.date : pt.before.paymentDate;
+  },
+  pdebt(pt){
+    const i = PERSONAL_DEBTS.findIndex(d => d.id === pt.id && d.hx === pt.hx);
+    if(i < 0) return;
+    if(PERSONAL_DEBTS[i].paid) throw hxErr('Этот долг уже отмечен погашенным — не удаляю');
+    PERSONAL_DEBTS.splice(i, 1);
+  },
+  dates(pt){
+    const p = hxRevP(pt);
+    if(projectDates(p).slice().sort().join() !== pt.after.join()) throw hxErr(`Даты «${p.name}» уже меняли после Hermes — отменять не буду`);
+    hxMoveDates(p, pt.before);
+  },
+  cancel(pt){
+    const p = hxRevP(pt);
+    if(!p.cancelled) return;
+    if(!p.cancelInfo || p.cancelInfo.hx !== pt.hx) throw hxErr(`«${p.name}» уже отменяли заново руками — не трогаю`);
+    restoreCancelledData(p);
+  },
+  restore(pt, ctx){
+    const p = hxRevP(pt);
+    if(p.cancelled) return;
+    if(pt.hadPenalty) throw hxErr(`«${p.name}» был отменён с неустойкой — снова отменять его надо в приложении, там выбирается неустойка`);
+    hxCancelNoPenalty(p, pt.reason, ctx.cmd.id);
+  },
+  trash(pt){
+    const t = TRASH.find(x => x.pid === pt.pid);
+    if(t) hxUntrash(t);
+  },
+  untrash(pt, ctx){
+    const p = PROJECTS.find(x => x.id === pt.pid);
+    if(!p) return;
+    hxMoneyGuard(p, 'снова в корзину не убираю');
+    hxTrash(p, ctx.cmd.id);
+  },
 };
 function hxRevertEntry(e, ctx){
   (e.patches || []).slice().reverse().forEach(pt => {
@@ -15659,13 +15999,15 @@ function hxRevertEntry(e, ctx){
    Перед командой запоминаем всё, что она может задеть; упала на полпути —
    возвращаем как было. Код синхронный: таймеры сохранения не вклинятся. */
 function hxSnap(){
-  return JSON.stringify({pr:PROJECTS, cr:CREW, qn:QUICK_NOTES, ct:CUSTOM_TASKS, lg:HERMES_LOG, s:[quickNoteSeq, customTaskSeq]});
+  return JSON.stringify({pr:PROJECTS, cr:CREW, qn:QUICK_NOTES, ct:CUSTOM_TASKS, lg:HERMES_LOG, rn:RENTALS,
+    rd:RENTAL_DEBTS, pd:PERSONAL_DEBTS, tr:TRASH, s:[quickNoteSeq, customTaskSeq, personalSeq]});
 }
 function hxRestore(snap){
   const s = JSON.parse(snap);
   replaceArray(PROJECTS, s.pr); replaceArray(CREW, s.cr);
   replaceArray(QUICK_NOTES, s.qn); replaceArray(CUSTOM_TASKS, s.ct);
-  HERMES_LOG = s.lg; quickNoteSeq = s.s[0]; customTaskSeq = s.s[1];
+  replaceArray(RENTALS, s.rn); replaceArray(RENTAL_DEBTS, s.rd); replaceArray(PERSONAL_DEBTS, s.pd);
+  HERMES_LOG = s.lg; TRASH = s.tr; quickNoteSeq = s.s[0]; customTaskSeq = s.s[1]; personalSeq = s.s[2];
 }
 function hxCmd(raw, id){
   const c = (raw && typeof raw === 'object') ? raw : {};
@@ -15983,8 +16325,12 @@ function renderHermesJournal(){
   st.innerHTML = hxStatusHTML();
   bt.innerHTML = hxActive() ? '<button class="btn ghost tiny" onclick="hermesCheckNow(this)">Проверить ящик</button>' : '';
   const rows = HERMES_LOG.slice().reverse();
-  list.innerHTML = rows.length ? rows.map(hxRowHTML).join('')
-    : '<div class="empty-hint">Hermes пока ничего не вносил. Напиши ему в Телеграме — записи появятся здесь.</div>';
+  const trash = TRASH.length ? `<div class="hx-trash"><div class="hx-trash-title">Корзина</div>${TRASH.slice().reverse().map(t =>
+    `<div class="hx-trash-row"><span>${esc(t.name)} · <span class="hx-when">${esc(hxWhen(t.at))}</span></span>`
+    + (/^[\w-]+$/.test(t.pid) ? `<button class="btn ghost tiny" onclick="hxTrashRestore('${t.pid}')">Вернуть</button>` : '')
+    + '</div>').join('')}</div>` : '';
+  list.innerHTML = trash + (rows.length ? rows.map(hxRowHTML).join('')
+    : '<div class="empty-hint">Hermes пока ничего не вносил. Напиши ему в Телеграме — записи появятся здесь.</div>');
 }
 function openHermesJournal(){
   renderHermesJournal();
@@ -16027,16 +16373,16 @@ function hxUndoLocal(id){
    даже если проверка упала. Код синхронный — таймер сохранения не вклинится. */
 function hxSandbox(fn){
   const keep = {pr:PROJECTS.slice(), cr:CREW.slice(), qn:QUICK_NOTES.slice(), ct:CUSTOM_TASKS.slice(),
-    lg:HERMES_LOG, s:[quickNoteSeq, customTaskSeq], day:currentDayIso};
-  const copy = JSON.parse(hxSnap());
-  replaceArray(PROJECTS, copy.pr); replaceArray(CREW, copy.cr);
-  replaceArray(QUICK_NOTES, copy.qn); replaceArray(CUSTOM_TASKS, copy.ct);
-  HERMES_LOG = copy.lg;
+    rn:RENTALS.slice(), rd:RENTAL_DEBTS.slice(), pd:PERSONAL_DEBTS.slice(), tr:TRASH,
+    lg:HERMES_LOG, s:[quickNoteSeq, customTaskSeq, personalSeq], day:currentDayIso};
+  hxRestore(hxSnap());                // проверки работают на копиях
   try{ return fn(); }
   finally{
     replaceArray(PROJECTS, keep.pr); replaceArray(CREW, keep.cr);
     replaceArray(QUICK_NOTES, keep.qn); replaceArray(CUSTOM_TASKS, keep.ct);
-    HERMES_LOG = keep.lg; quickNoteSeq = keep.s[0]; customTaskSeq = keep.s[1]; currentDayIso = keep.day;
+    replaceArray(RENTALS, keep.rn); replaceArray(RENTAL_DEBTS, keep.rd); replaceArray(PERSONAL_DEBTS, keep.pd);
+    HERMES_LOG = keep.lg; TRASH = keep.tr;
+    quickNoteSeq = keep.s[0]; customTaskSeq = keep.s[1]; personalSeq = keep.s[2]; currentDayIso = keep.day;
   }
 }
 function hxT(op, args){ return hxApplyCommand(hxCmd({v:1, op, args, say:'самопроверка'}, 'selfcheck-' + (++hxT.n))); }
@@ -17607,11 +17953,11 @@ const SELF_CHECK_CASES = [
       const p = PROJECTS.find(x => x.id === pid);
       return (r.ok && p.steps[4][1] === 1 && p.invoiceSent === true) ? 1 : 0;
     }), expect:1},
-  {group:'Hermes', name:'Операции следующего этапа отклоняются с понятной причиной, данные не тронуты',
+  {group:'Hermes', name:'Неизвестная операция отклоняется с понятной причиной, данные не тронуты',
     run:()=>hxSandbox(()=>{
       const before = hxSnap();
-      const r = hxT('crew.pay', {project:'p1', person:'x', amount:1000, type:'cash'});
-      return (!r.ok && /руками/.test(r.error) && hxSnap() === before) ? 1 : 0;
+      const r = hxT('project.explode', {project:'p1'});
+      return (!r.ok && /Неизвестная операция/.test(r.error) && hxSnap() === before) ? 1 : 0;
     }), expect:1},
   {group:'Hermes', name:'Отмена создания: пустой проект удаляется, с командой — отказ',
     run:()=>hxSandbox(()=>{
@@ -17639,6 +17985,144 @@ const SELF_CHECK_CASES = [
       const a = hxT('note.add', {project:'альфа тест', text:'x'});
       const b = hxT('note.add', {project:'альфа', text:'y'});
       return (a.ok && !b.ok && /несколько проектов/.test(b.error)) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Смета от рентала: позиции в смете и оплата ренталу; отмена убирает и то и другое',
+    run:()=>hxSandbox(()=>{
+      hxT('rental.add', {name:'Тест Рентал'});
+      const pid = hxT('project.create', {name:'Тест смета', dates:['2030-01-10']}).ctx.pid;
+      const {r, e} = hxTLog('estimate.add', {project:pid, rental:'тест рентал', shifts:2, lines:[
+        {sec:'Свет', name:'Прибор', qty:2, price:5000}, {sec:'Логистика', name:'Газель', qty:1, price:8000, shifts:1}]});
+      const debt = RENTAL_DEBTS.find(d => d.projectId === pid && d.rental === 'Тест Рентал');
+      const ok1 = r.ok && debt && debt.amount === 28000 && PROJECTS.find(x => x.id === pid).estimate.filter(l => l.rental === 'Тест Рентал').length === 2;
+      const u = hxT('undo', {command:e.id});
+      const p = PROJECTS.find(x => x.id === pid);
+      return (ok1 && u.ok && !RENTAL_DEBTS.some(d => d.projectId === pid) && !p.estimate.some(l => l.rental)) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Оплата ренталу закрыта — новые позиции от него не принимаются',
+    run:()=>hxSandbox(()=>{
+      hxT('rental.add', {name:'Тест Рентал'});
+      const pid = hxT('project.create', {name:'Тест закрыто', dates:['2030-01-10']}).ctx.pid;
+      hxT('estimate.add', {project:pid, rental:'Тест Рентал', lines:[{sec:'Свет', name:'Прибор', qty:1, price:5000}]});
+      RENTAL_DEBTS.find(d => d.projectId === pid).paid = true;
+      const r = hxT('estimate.add', {project:pid, rental:'Тест Рентал', lines:[{sec:'Свет', name:'Ещё', qty:1, price:5000}]});
+      return (!r.ok && /закрыта/.test(r.error) && PROJECTS.find(x => x.id === pid).estimate.length === 1) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Рентал в другом регистре — тот же, второй не заводится',
+    run:()=>hxSandbox(()=>{
+      hxT('rental.add', {name:'Тест Рентал'});
+      const n = RENTALS.length;
+      const r = hxT('rental.add', {name:'тест рентал'});
+      return (r.ok && RENTALS.length === n) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Выплата человеку: частями, целиком закрывает, больше остатка — отказ, отмена открывает',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест выплаты', dates:['2030-01-10']}).ctx.pid;
+      hxT('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель'});
+      hxT('shift.set', {project:pid, shiftStart:'08:00', shiftEnd:'20:00'});
+      const c = () => PROJECTS.find(x => x.id === pid).units[0].crew.find(x => x.id === '__sc_hx1');
+      const due = settlementLeft(c());
+      const over = hxT('crew.pay', {project:pid, person:'__sc_hx1', amount:due + 1000, type:'cash'});
+      const part = hxTLog('crew.pay', {project:pid, person:'__sc_hx1', amount:1000, type:'cash'});
+      const rest = hxTLog('crew.pay', {project:pid, person:'__sc_hx1', amount:due - 1000, type:'noncash', date:'2030-01-11'});
+      const closed = c().paid === true && settlementPaid(c()) === due;
+      const u = hxT('undo', {command:rest.e.id});
+      return (due > 0 && !over.ok && part.r.ok && rest.r.ok && closed && u.ok && c().paid === false
+        && settlementPaid(c()) === 1000 && c().paymentType === 'cash') ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Оплата ренталу по команде ложится в его расчёт, отмена убирает',
+    run:()=>hxSandbox(()=>{
+      hxT('rental.add', {name:'Тест Рентал'});
+      const pid = hxT('project.create', {name:'Тест рентал', dates:['2030-01-10']}).ctx.pid;
+      hxT('estimate.add', {project:pid, rental:'Тест Рентал', lines:[{sec:'Грип', name:'Стойка', qty:2, price:5000}]});
+      const {r, e} = hxTLog('rental.pay', {project:pid, rental:'ТЕСТ рентал', amount:4000, type:'noncash'});
+      const d = () => RENTAL_DEBTS.find(x => x.projectId === pid);
+      const paid = settlementPaid(d()) === 4000 && !d().paid;
+      const u = hxT('undo', {command:e.id});
+      return (r.ok && paid && u.ok && settlementPaid(d()) === 0) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Личный долг по команде и его отмена',
+    run:()=>hxSandbox(()=>{
+      const {r, e} = hxTLog('personal.debt', {who:'Тест Вася', amount:5000, direction:'owed', note:'за кабель'});
+      const d = PERSONAL_DEBTS.find(x => x.who === 'Тест Вася');
+      const ok1 = r.ok && d && d.direction === 'owed' && d.amount === 5000 && d.note === 'за кабель';
+      const u = hxT('undo', {command:e.id});
+      return (ok1 && u.ok && !PERSONAL_DEBTS.some(x => x.who === 'Тест Вася')) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Перенос многодневного: дни едут со своим содержимым, отмена возвращает',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест перенос', dates:['2030-01-10', '2030-01-11']}).ctx.pid;
+      hxT('note.add', {project:pid, day:'2030-01-11', text:'второй день'});
+      const {r, e} = hxTLog('project.dates', {project:pid, dates:['2030-01-17', '2030-01-18']});
+      const p = PROJECTS.find(x => x.id === pid);
+      const d2 = p.days.find(d => d.iso === '2030-01-18');
+      const moved = d2 && d2.notes.some(n => n.text === 'второй день') && p.date === '2030-01-17';
+      const u = hxT('undo', {command:e.id});
+      const q = PROJECTS.find(x => x.id === pid);
+      const back = q.days.find(d => d.iso === '2030-01-11');
+      return (r.ok && moved && u.ok && back && back.notes.some(n => n.text === 'второй день')) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'День, где уже что-то заведено, командой не убирается',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест дни', dates:['2030-01-10', '2030-01-11']}).ctx.pid;
+      hxT('note.add', {project:pid, day:'2030-01-11', text:'важное'});
+      const r = hxT('project.dates', {project:pid, dates:['2030-01-10']});
+      return (!r.ok && projectDates(PROJECTS.find(x => x.id === pid)).length === 2) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Однодневный стал многодневным: заведённое остаётся на своём дне',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест расширение', dates:['2030-01-10']}).ctx.pid;
+      hxT('note.add', {project:pid, text:'заметка дня'});
+      const r = hxT('project.dates', {project:pid, dates:['2030-01-09', '2030-01-10']});
+      const p = PROJECTS.find(x => x.id === pid);
+      const d = p.days && p.days.find(x => x.iso === '2030-01-10');
+      return (r.ok && d && d.notes.some(n => n.text === 'заметка дня')) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Отмена проекта без неустойки обнуляет начисления, отмена записи возвращает их до рубля',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест отмена проекта', dates:['2030-01-10']}).ctx.pid;
+      hxT('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель'});
+      hxT('shift.set', {project:pid, shiftStart:'08:00', shiftEnd:'20:00'});
+      const c = () => PROJECTS.find(x => x.id === pid).units[0].crew.find(x => x.id === '__sc_hx1');
+      const s0 = PROJECTS.find(x => x.id === pid).sum, a0 = c().amount;
+      const {r, e} = hxTLog('project.cancel', {project:pid, reason:'перенос бюджета'});
+      const p1 = PROJECTS.find(x => x.id === pid);
+      const off = p1.cancelled && p1.sum === 0 && c().amount === 0 && p1.cancelInfo.reason === 'перенос бюджета';
+      const u = hxT('undo', {command:e.id});
+      const p2 = PROJECTS.find(x => x.id === pid);
+      return (s0 > 0 && r.ok && off && u.ok && !p2.cancelled && p2.sum === s0 && c().amount === a0) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Деньги по проекту уже ходили — отмена и корзина по команде не проходят',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест с деньгами', dates:['2030-01-10']}).ctx.pid;
+      const p = PROJECTS.find(x => x.id === pid); p.sum = 50000; p.sumManual = true;
+      hxT('client.payment', {project:pid, amount:10000, type:'cash'});
+      const a = hxT('project.cancel', {project:pid}), b = hxT('project.trash', {project:pid});
+      return (!a.ok && !b.ok && PROJECTS.some(x => x.id === pid && !x.cancelled)) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Корзина: проект уходит с оплатой ренталу и задачами, возврат — целиком',
+    run:()=>hxSandbox(()=>{
+      hxT('rental.add', {name:'Тест Рентал'});
+      const pid = hxT('project.create', {name:'Тест корзина', dates:['2030-01-10']}).ctx.pid;
+      hxT('estimate.add', {project:pid, rental:'Тест Рентал', lines:[{sec:'Свет', name:'Прибор', qty:1, price:5000}]});
+      hxT('task.add', {text:'позвонить', project:pid});
+      const t = hxT('project.trash', {project:pid});
+      const gone = t.ok && !PROJECTS.some(x => x.id === pid) && !RENTAL_DEBTS.some(d => d.projectId === pid)
+        && !CUSTOM_TASKS.some(k => k.projectId === pid) && TRASH.some(x => x.pid === pid);
+      const back = hxT('project.restore', {project:'тест корзина'});
+      const whole = back.ok && PROJECTS.some(x => x.id === pid) && RENTAL_DEBTS.some(d => d.projectId === pid)
+        && CUSTOM_TASKS.some(k => k.projectId === pid) && !TRASH.some(x => x.pid === pid);
+      return (gone && whole) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Возврат отменённого, а отмена этой записи — снова отменён без неустойки',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест возврат', dates:['2030-01-10']}).ctx.pid;
+      hxT('project.cancel', {project:pid});
+      const {r, e} = hxTLog('project.restore', {project:pid});
+      const restored = !PROJECTS.find(x => x.id === pid).cancelled;
+      const u = hxT('undo', {command:e.id});
+      return (r.ok && restored && u.ok && PROJECTS.find(x => x.id === pid).cancelled) ? 1 : 0;
     }), expect:1},
 ];
 
