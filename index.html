@@ -1517,6 +1517,29 @@
   .modal-overlay{position:fixed;inset:0;background:rgba(10,9,7,.6);z-index:150;display:none;
     align-items:center;justify-content:center;padding:1rem;overflow:hidden;}
   .modal-overlay.show{display:flex;animation:fade .18s var(--ease);}
+  /* Hermes: плашка «внёс N записей» над контентом и строки журнала.
+     z-index ниже модалок (150): открытое окно её перекрывает. */
+  .hx-pill{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    z-index:140;display:none;align-items:center;gap:.5rem;max-width:calc(100vw - 32px);
+    padding:.55rem 1rem;border-radius:999px;border:1px solid var(--line);background:var(--bg-raised);
+    color:var(--ink);font:500 .8rem/1.2 var(--font-body);box-shadow:var(--shadow);cursor:pointer;}
+  .hx-pill.show{display:flex;animation:fade .18s var(--ease);}
+  .hx-pill .hx-pill-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hx-pill .hx-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none;}
+  .hx-pill.warn .hx-dot{background:var(--warn);}
+  .hx-row{border-top:1px solid var(--line);padding:.65rem 0;}
+  .hx-row:first-child{border-top:0;}
+  .hx-top{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;font-size:.72rem;color:var(--ink-muted);}
+  .hx-when{font-family:var(--font-mono);}
+  .hx-proj{border:0;background:none;padding:0;color:var(--ink);font:inherit;font-weight:600;cursor:pointer;
+    text-decoration:underline;text-underline-offset:2px;}
+  .hx-proj.off{text-decoration:none;color:var(--ink-muted);cursor:default;}
+  .hx-sum{margin-top:.3rem;font-size:.86rem;color:var(--ink);overflow-wrap:anywhere;}
+  .hx-row.undone .hx-sum{text-decoration:line-through;color:var(--ink-muted);}
+  .hx-err{margin-top:.25rem;font-size:.78rem;color:var(--warn);overflow-wrap:anywhere;}
+  .hx-say{margin-top:.25rem;font-size:.76rem;color:var(--ink-muted);font-style:italic;overflow-wrap:anywhere;}
+  .hx-meta{margin-top:.25rem;font-size:.7rem;color:var(--ink-muted);}
+  .hx-actions{margin-top:.4rem;}
   /* Прокручивается только карточка — один скролл-контейнер вместо двух вложенных.
      dvh учитывает адресную строку на телефоне, vh оставлен запасным вариантом. */
   .modal-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;
@@ -2528,6 +2551,8 @@
 <!-- Сохранение и перенос: ручное сохранение + мост между входами.
      У значка экрана, Safari и браузера внутри Claude хранилища разные —
      этот мост переносит данные между ними в два тапа. -->
+<!-- Hermes внёс записи — плашка внизу, тап открывает журнал -->
+<button class="hx-pill" id="hermesPill" onclick="openHermesJournal()"></button>
 <div class="modal-overlay" id="syncModal">
   <div class="modal-card" style="max-width:440px;">
     <div class="db-head">
@@ -2542,6 +2567,9 @@
     <div class="db-section-title">Облако — общая база устройств</div>
     <div class="form-hint" id="cloudStatus"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;" id="cloudButtons"></div>
+    <div class="db-section-title">Hermes — помощник в Телеграме</div>
+    <div class="form-hint" id="hxPanelStatus"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;" id="hxPanelButtons"></div>
     <div class="db-section-title">Перенос между входами</div>
     <div class="form-hint">У значка на экране, Safari и браузера внутри Claude — разные хранилища.
       Перенос в два тапа: здесь «Скопировать данные», в другом входе — «Вставить данные».
@@ -2555,6 +2583,20 @@
       <button class="btn ghost tiny" onclick="exportState()">Выгрузить файл</button>
       <button class="btn ghost tiny" onclick="document.getElementById('syncImportInput').click()">Загрузить файл</button>
     </div>
+  </div>
+</div>
+<!-- Журнал Hermes: всё, что он внёс, с исходной фразой и отменой -->
+<div class="modal-overlay" id="hermesModal">
+  <div class="modal-card" style="max-width:480px;">
+    <div class="db-head">
+      <h3>Журнал Hermes</h3>
+      <button class="btn ghost tiny" onclick="closeHermesJournal()">✕</button>
+    </div>
+    <div class="form-hint" id="hxStatus" style="margin-top:.4rem;"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;" id="hxButtons"></div>
+    <div id="hxList" style="margin-top:.6rem;"></div>
+    <div class="form-hint" style="margin-top:.8rem;">Каждая команда хранится ещё и в ящике на GitHub —
+      там её след не стирается, даже если запись здесь отменить.</div>
   </div>
 </div>
 <div class="modal-overlay" id="syncPasteModal">
@@ -3646,6 +3688,8 @@ let quickNotePhotos = []; // черновик фото текущей ненап
 // Кастомные задачи — могут быть привязаны к проекту (projectId) или ничьи (null)
 const CUSTOM_TASKS = [];
 let customTaskSeq = 1;
+// Журнал команд Hermes: что внесено, по какой фразе, как было и как стало (см. модуль Hermes)
+let HERMES_LOG = [];
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -5607,14 +5651,29 @@ function createProject(){
     err.textContent='Заполни хотя бы ещё одно поле: заказчик, оператор, продюсер, режиссёр или место.';
     err.style.display='block'; return;
   }
-  let id = 'p'+Date.now();
   const tripBox = document.getElementById('np-trip');
   const tripOn = !!(tripBox && tripBox.checked);
   const dates = [...npSelectedDates].sort();
   if(!dates.length) dates.push(TODAY_ISO);
-  PROJECTS.push({
-    id, name, client:fields.client||'—', operator:fields.operator||'—', producer:fields.producer||'—',
-    director:fields.director||'—', location:fields.location||'уточняется',
+  const p = makeProject(Object.assign({name, dates, trip:tripOn}, fields));
+  PROJECTS.push(p);
+  ['np-name','np-client','np-operator','np-producer','np-director','np-location'].forEach(i=>document.getElementById(i).value='');
+  if(tripBox) tripBox.checked = false;
+  resetNpDates();
+  toggleCreateProject();
+  refreshAll();
+  openProject(p.id);
+}
+/* Новый проект — одна заготовка на всех: форма создания и команды Hermes
+   заводят его одинаково. */
+function makeProject(f){
+  const dates = (f.dates && f.dates.length) ? f.dates.slice() : [TODAY_ISO];
+  // два проекта в одну миллисекунду (пачка команд) не должны получить один id
+  let t = Date.now();
+  while(PROJECTS.some(x => x.id === 'p' + t)) t++;
+  return {
+    id:'p' + t, name:f.name, client:f.client||'—', operator:f.operator||'—', producer:f.producer||'—',
+    director:f.director||'—', location:f.location||'уточняется',
     date: dates[0], dates,
     steps: STEP_NAMES.map(n=>[n,0]),
     sum:0, sumManual:false, paidAmount:0, paymentType:null, paymentDate:null,
@@ -5622,16 +5681,10 @@ function createProject(){
     scoutDate:null, expectedPaymentDate:null,
     estimate:[], units:[{id:1, name:'Юнит 1', loadStart:'', shiftStart:'', shiftEnd:'', loadEnd:'', crew:[]}],
     notes:[], files:[], projectTasks:[],
-    trip: tripOn, tripData: tripOn ? newTripData() : null,
+    trip: !!f.trip, tripData: f.trip ? newTripData() : null,
     // снимок действующих ставок: дальше проект считается по ним, даже если в «Базе данных» всё поменяется
     rates: cloneRates(CURRENT_RATES),
-  });
-  ['np-name','np-client','np-operator','np-producer','np-director','np-location'].forEach(i=>document.getElementById(i).value='');
-  if(tripBox) tripBox.checked = false;
-  resetNpDates();
-  toggleCreateProject();
-  refreshAll();
-  openProject(id);
+  };
 }
 
 function projectRowHTML(p){
@@ -6209,6 +6262,12 @@ function openProject(id, tab){
     currentDayIso = null;
   }
   migrateProjectCrew(p);   // сметы прежних версий показываем в новой разбивке
+  renderProjectScreen(p);
+  showTab(tab || 'info');
+  showScreen('screen-project');
+}
+// Всё содержимое экрана проекта — без смены вкладки и без прокрутки наверх
+function renderProjectScreen(p){
   document.getElementById('pTitle').textContent = p.name;
   document.getElementById('pSub').textContent = [p.client, fmtDate(p.date), p.location].filter(v=>v&&v!=='—').join(' · ');
   renderChecklist(p);
@@ -6219,8 +6278,17 @@ function openProject(id, tab){
   renderInfo(p); renderProjectTasks(p); renderEstimate(p); renderNotes(p); renderCrewTab(p); renderPayTab(p); renderFiles(p);
   renderTrip(p);
   applyTripUI(p);
-  showTab(tab || 'info');
-  showScreen('screen-project');
+}
+/* Данные открытого проекта поменялись не от руки (пришли команды Hermes) —
+   перерисовываем экран на месте: та же вкладка, тот же день, без прыжка наверх. */
+function rerenderOpenProject(){
+  const scr = document.getElementById('screen-project');
+  if(!currentProjectId || !scr || !scr.classList.contains('active')) return;
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(!p){ goHome(); return; }
+  if(isMultiDay(p)){ ensureDays(p); if(!p.days.some(d => d.iso === currentDayIso)) currentDayIso = p.days[0].iso; }
+  else currentDayIso = null;
+  renderProjectScreen(p);
 }
 /* Полоса съёмочных дней: показываем только у многодневных проектов.
    Переключение меняет содержимое сметы, команды, заметок и оплат. */
@@ -8936,7 +9004,7 @@ function drawNotes(p){
       </div>`;
     }
     return `<div class="note">
-      <div class="ntext">${n.source==='notes'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Заметки</span> ':''}${n.source==='quick'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>Быстрая</span> ':''}${esc(n.text)}</div>
+      <div class="ntext">${n.source==='notes'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Заметки</span> ':''}${n.source==='quick'?'<span class="pill pill-muted note-src"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:.15rem;"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>Быстрая</span> ':''}${n.source==='hermes'?'<span class="pill pill-muted note-src">Hermes</span> ':''}${esc(n.text)}</div>
       ${n.photos&&n.photos.length?`<div class="qn-photos">${n.photos.map((ph,pi)=>`<img src="${ph.dataUrl||''}" data-ph="p|${idx}|${pi}" class="qn-photo-thumb" onclick="openProjectNotePhoto(${idx},${pi})" title="Открыть фото">`).join('')}</div>`:''}
       <div class="nmeta">
         <span>${n.parsed?'✓ перенесено в смету':'не разобрано'}</span>
@@ -9993,18 +10061,24 @@ function buildCrewLines(p, day, loadOverrides, dry){
   });
   return {newLines, problems};
 }
-function runCalcPersonnel(loadOverrides, silent){
-  const p = PROJECTS.find(x=>x.id===currentProjectId);
-  const day = activeDay(p);
-  const {newLines, problems} = buildCrewLines(p, day, loadOverrides, false);
-
+/* Пересчёт персонала одного дня — только данные, без отрисовки. Его зовут и кнопки
+   (через runCalcPersonnel), и команды Hermes: деньги считаются одним и тем же кодом. */
+function calcDayPersonnel(p, day, loadOverrides, silent){
+  const res = buildCrewLines(p, day, loadOverrides, false);
   // заменяем только раздел «Персонал», всё остальное в смете остаётся как есть
   // («Освоение» — тоже «Персонал», но это отдельная авто-строка, её не трогаем)
   // тихий пересчёт без результата (нет времени смены) не должен стирать посчитанное
-  if(!(silent && !newLines.length && problems.length)){
-    day.estimate = day.estimate.filter(i=>i.sec!=='Персонал' || i.scoutLine || i.tripFee).concat(newLines);
+  if(!(silent && !res.newLines.length && res.problems.length)){
+    day.estimate = (day.estimate || []).filter(i=>i.sec!=='Персонал' || i.scoutLine || i.tripFee).concat(res.newLines);
   }
   refreshProjectSum(p);
+  syncEstimateToFiles(p);       // смета изменилась — обновляем файл-копию в «Файлах»
+  return res;
+}
+function runCalcPersonnel(loadOverrides, silent){
+  const p = PROJECTS.find(x=>x.id===currentProjectId);
+  const day = activeDay(p);
+  const {newLines, problems} = calcDayPersonnel(p, day, loadOverrides, silent);
 
   const total = newLines.reduce((s,i)=>s+lineTotal(i),0);
   const message = `
@@ -10017,7 +10091,6 @@ function runCalcPersonnel(loadOverrides, silent){
         : '<div class="form-hint">Нечего считать — назначь людей и проставь время смены.</div>'}
     </div>`;
 
-  syncEstimateToFiles(p);       // смета изменилась — обновляем файл-копию в «Файлах»
   renderCrewTab(p);            // перерисовывает блок и очищает #calcResult
   renderEstimate(p); renderInfo(p); renderFiles(p);
   renderMoneySummary(p);
@@ -14107,6 +14180,7 @@ function refreshAll(){
   if(currentRentalName) renderRentalDetailContent(currentRentalName);
   if(currentCrewDetailId) renderCrewDetailContent(currentCrewDetailId);
   if(currentProjectId){ const cp = PROJECTS.find(x=>x.id===currentProjectId); if(cp) renderProjectTasks(cp); }
+  hxRenderPill();     // «Hermes внёс N записей» — в том числе пришедшие с другого устройства
 }
 /* ============= Автономное хранилище =============
    Всё состояние приложения живёт в браузере устройства и переживает перезагрузку.
@@ -14129,6 +14203,8 @@ function collectState(){
     myName: MY_NAME, myContacts: MY_CONTACTS,
     seqs: {quickNote: quickNoteSeq, customTask: customTaskSeq, priceItem: priceItemSeq,
            personal: personalSeq, client: clientSeq},
+    // журнал Hermes кладём, только когда он есть: у тех, кто им не пользуется, данные не меняются
+    ...(HERMES_LOG.length ? {hermesLog: HERMES_LOG} : {}),
     theme: document.documentElement.getAttribute('data-theme') || null,
   };
 }
@@ -14189,6 +14265,8 @@ function applyState(s){
   // у проектов из старых сохранений могло не быть снимка ставок
   PROJECTS.forEach(p=>{ if(!p.rates) p.rates = cloneRates(BASE_RATES); });
   migrateAllSettlements();   // и списка платежей по команде/ренталам
+  // журнал Hermes: в данных от старой версии приложения его нет — тогда местный не трогаем
+  if(Array.isArray(s.hermesLog)) HERMES_LOG = s.hermesLog;
   if(s.theme) applyTheme(s.theme);
   return true;
 }
@@ -14331,6 +14409,7 @@ function closeSyncPanel(){ document.getElementById('syncModal').classList.remove
 function renderSyncStatus(){
   document.getElementById('syncStatus').textContent = storageInfo();
   renderCloudPanel();
+  renderHermesPanel();
   // честный ответ системы: закреплено ли хранилище или его могут стереть
   const el = document.getElementById('syncDurability');
   if(!el) return;
@@ -14799,6 +14878,7 @@ async function cloudCheckRemote(){
       // автоправки при запуске всё-таки что-то изменили — досылаем их теперь
       if(stateStamp && stateStamp !== (cloudBootStamp || '')) cloudSchedulePush();
     }
+    hermesAfterSync();       // данные свежие — можно разбирать команды Hermes
   }
 }
 
@@ -14919,6 +14999,1049 @@ async function cloudRestore(sha){
     askNotice(cloudHuman(e), 'Не вышло');
   }
 }
+
+/* ============= Hermes: команды из Телеграма =============
+   Hermes (помощник в Телеграме) данные напрямую не трогает. Он кладёт команду
+   файлом в приватный репозиторий-ящик (inbox/<id>.json), а применяет её само
+   приложение — тем же кодом, что стоит за кнопками. Порядок id = порядок отправки.
+   Квитанция done/<id>.json — она же замок: создать файл, который уже есть, GitHub
+   не даёт, поэтому команду применяет ровно одно устройство, даже если открыты два.
+   Всё внесённое ложится в журнал (state.hermesLog): что, когда, по какой фразе,
+   как было и как стало — и отменяется одним тапом. Отмена никогда не затирает
+   то, что успели поменять руками после Hermes: тогда она честно отказывает.
+   Работает только в «Работе» и только при подключённом облаке. */
+const HX_LOG_MAX = 120;
+const HX_INBOX_DEFAULT = 'ez-crm-inbox';
+// операции второго этапа: команду не глотаем молча, а отвечаем, что внести надо руками
+const HX_LATER = ['project.dates', 'project.cancel', 'project.restore', 'project.trash',
+  'estimate.add', 'rental.add', 'crew.pay', 'rental.pay', 'personal.debt'];
+const HX_OP_LABEL = {
+  'project.create':'Новый проект', 'project.update':'Правка проекта', 'project.step':'Чекпойнт',
+  'shift.set':'Время смены', 'shift.flags':'Условия смены', 'crew.add':'Человек на смену',
+  'crew.remove':'Убрать со смены', 'crew.role':'Позиция', 'crew.gap':'Разрыв', 'person.add':'Новый человек',
+  'note.add':'Заметка', 'quicknote.add':'Быстрая заметка', 'task.add':'Задача', 'task.done':'Задача выполнена',
+  'client.payment':'Поступление от клиента', 'client.expected':'Дата оплаты', 'undo':'Отмена команды',
+  'project.dates':'Перенос дат', 'project.cancel':'Отмена проекта', 'project.restore':'Возврат проекта',
+  'project.trash':'Проект в корзину', 'estimate.add':'Позиции сметы', 'rental.add':'Новый рентал',
+  'crew.pay':'Выплата человеку', 'rental.pay':'Оплата ренталу', 'personal.debt':'Личный долг'};
+let hxBusy = false;          // одновременно ящик разбирает один проход
+let hxLastRun = 0;           // не чаще раза в 15 с, если не попросили явно
+let hxVerified = false;      // доступ к ящику проверен в этом запуске
+let hxBranch = 'main';
+let hxRetryTimer = null;
+let hxUi = {state:'idle', text:'', at:null, waiting:0};
+
+function hxActive(){ return APP_MODE === 'live' && cloudOn(); }
+function hxDeviceId(){
+  try{
+    let id = localStorage.getItem('ez-device-id');
+    if(!id){ id = 'd' + Math.random().toString(36).slice(2, 10); localStorage.setItem('ez-device-id', id); }
+    return id;
+  }catch(e){ return hxDeviceId.mem || (hxDeviceId.mem = 'd' + Math.random().toString(36).slice(2, 10)); }
+}
+function hxDevLabel(){ const c = cloudCfg(); return (c && c.label) || cloudGuessDevice(); }
+function hxRepoName(){ const c = cloudCfg() || {}; return (c.owner ? c.owner + '/' : '') + (c.inbox || HX_INBOX_DEFAULT); }
+function hxRepoPath(){ const c = cloudCfg(); return '/repos/' + c.owner + '/' + (c.inbox || HX_INBOX_DEFAULT); }
+
+/* ---- разбор аргументов ---- */
+function hxErr(msg, code){ const e = new Error(msg); e.hx = true; if(code) e.code = code; return e; }
+/* Текст из команды — чужой ввод: убираем разметку и кавычки, которые могли бы
+   вылезти в HTML или в обработчики кнопок. В русской фразе этого не видно,
+   а протащить через Телеграм кусок страницы больше нельзя. */
+function hxStr(v, max){
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/<[^<>]*>/g, '').replace(/[<>]/g, '').replace(/['`]/g, '’').replace(/"/g, '”').replace(/\\/g, '/')
+    .trim().slice(0, max || 160);
+}
+function hxLine(v, max){ return hxStr(v, max).replace(/\s+/g, ' '); }
+function hxCut(s, n){ s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+function hxNorm(s){
+  return String(s == null ? '' : s).toLowerCase().replace(/ё/g, 'е')
+    .replace(/["'«»“”„’‘`]/g, '').replace(/\s+/g, ' ').trim();
+}
+function hxSame(a, b){ return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); }
+function hxIso(v, what){
+  const s = String(v == null ? '' : v).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if(!d || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]){
+    throw hxErr(`«${what || 'дата'}» — дата ГГГГ-ММ-ДД, а пришло «${hxLine(s, 20)}»`);
+  }
+  return s;
+}
+function hxBool(v, what){
+  if(v === true || v === false) return v;
+  if(v === 1 || v === 0) return !!v;
+  const s = hxNorm(v);
+  if(['true', 'да', 'yes', 'on', '1'].includes(s)) return true;
+  if(['false', 'нет', 'no', 'off', '0'].includes(s)) return false;
+  throw hxErr(`«${what}» — да или нет (true/false)`);
+}
+function hxNum(v, what, min, max){
+  const n = typeof v === 'number' ? v : parseFloat(String(v == null ? '' : v).replace(/[\s ]/g, '').replace(',', '.'));
+  if(!isFinite(n)) throw hxErr(`«${what}» — число, а пришло «${hxLine(v, 20)}»`);
+  if(min != null && n < min) throw hxErr(`«${what}» не может быть меньше ${min}`);
+  if(max != null && n > max) throw hxErr(`«${what}» не может быть больше ${max}`);
+  return n;
+}
+function hxTime(v, what){
+  const t = normalizeTime(v == null ? '' : String(v));
+  if(t === null) throw hxErr(`«${what}» — время ЧЧ:ММ, а пришло «${hxLine(v, 20)}»`);
+  return t;
+}
+
+/* ---- кого и что имеет в виду команда ---- */
+function hxFindProject(q){
+  const raw = String(q == null ? '' : q).trim();
+  if(!raw) throw hxErr('Не указан проект');
+  const byId = PROJECTS.find(p => p.id === raw);
+  if(byId) return byId;
+  const n = hxNorm(raw);
+  let hits = PROJECTS.filter(p => hxNorm(p.name) === n);
+  if(!hits.length) hits = PROJECTS.filter(p => hxNorm(p.name).includes(n));
+  if(hits.length > 1){ const alive = hits.filter(p => !p.cancelled); if(alive.length === 1) hits = alive; }
+  if(hits.length === 1) return hits[0];
+  if(!hits.length) throw hxErr(`Проект «${hxLine(raw, 60)}» не найден`);
+  throw hxErr(`Под «${hxLine(raw, 60)}» подходят несколько проектов: `
+    + hits.slice(0, 4).map(p => `${p.name} · ${fmtDate(p.date)} · id ${p.id}`).join('; ') + '. Укажи id');
+}
+function hxFindPerson(q){
+  const raw = String(q == null ? '' : q).trim();
+  if(!raw) throw hxErr('Не указан человек');
+  const byId = CREW.find(c => c.id === raw);
+  if(byId) return byId;
+  const n = hxNorm(raw);
+  let hits = CREW.filter(c => hxNorm(c.name) === n || hxNorm(c.creditsInfo) === n);
+  if(!hits.length) hits = CREW.filter(c => hxNorm(c.name).includes(n));
+  if(hits.length === 1) return hits[0];
+  if(!hits.length) throw hxErr(`Человека «${hxLine(raw, 60)}» нет в команде — сначала заведи его (person.add)`);
+  throw hxErr(`Под «${hxLine(raw, 60)}» подходят несколько человек: `
+    + hits.slice(0, 4).map(c => `${c.name} (id ${c.id})`).join(', ') + '. Укажи id');
+}
+function hxPersonName(id){ const c = CREW.find(x => x.id === id); return c ? c.name : id; }
+function hxRole(p, q){
+  const roles = projectRates(p).roles || [];
+  const r = roles.find(x => hxNorm(x.name) === hxNorm(q));
+  if(!hxNorm(q)) throw hxErr('Не указана позиция (role)');
+  if(!r) throw hxErr(`Позиции «${hxLine(q, 40)}» нет в ставках проекта. Есть: ${roles.map(x => x.name).join(', ')}`);
+  return r.name;
+}
+// день: у многодневного проекта обязателен, у однодневного — сам проект
+function hxFindDay(p, dayArg, need){
+  const dates = projectDates(p);
+  const iso = (dayArg != null && dayArg !== '') ? hxIso(dayArg, 'day') : '';
+  if(isMultiDay(p)){
+    ensureDays(p);
+    if(!iso){
+      if(!need) return null;
+      throw hxErr(`У проекта «${p.name}» несколько дней (${dates.map(fmtDate).join(', ')}) — укажи day`);
+    }
+    const d = p.days.find(x => x.iso === iso);
+    if(!d) throw hxErr(`В проекте «${p.name}» нет дня ${fmtDate(iso)}. Дни: ${dates.map(fmtDate).join(', ')}`);
+    return d;
+  }
+  if(iso && iso !== dates[0]) throw hxErr(`У проекта «${p.name}» один день — ${fmtDate(dates[0])}, а в команде ${fmtDate(iso)}`);
+  return p;
+}
+function hxDayKey(p, day){ return day === p ? '' : day.iso; }
+function hxDayByKey(p, key){
+  if(!p) return null;
+  if(isMultiDay(p)){ ensureDays(p); return key ? (p.days.find(d => d.iso === key) || null) : p.days[0]; }
+  return (!key || key === projectDates(p)[0]) ? p : null;
+}
+function hxDayLabel(p, day){ return day === p ? '' : ' · ' + fmtDate(day.iso); }
+/* Юнит — по номеру с 1 или по названию. Следующий по счёту («Юнит 2», когда есть
+   один) заводится сам: «поставь Петю во второй юнит» не должно падать. */
+function hxFindUnit(p, day, q, ctx, create){
+  ensureUniqueUnitIds(p);          // ссылки журнала держатся за id — выравниваем их до записи
+  if(!day.units) day.units = [];
+  const units = day.units;
+  const s = q == null ? '' : String(q).trim();
+  let u = null, want = null;
+  if(!s){ u = units[0] || null; want = 1; }
+  else if(/^\d+$/.test(s)){ want = parseInt(s, 10); u = units[want - 1] || null; }
+  else {
+    u = units.find(x => hxNorm(x.name) === hxNorm(s)) || null;
+    const m = hxNorm(s).match(/^юнит\s*(\d+)$/);
+    if(!u && m) want = parseInt(m[1], 10);
+  }
+  if(u) return u;
+  if(create && want === units.length + 1){
+    const id = Math.max(0, ...allUnits(p).map(x => Number(x.id) || 0)) + 1;
+    const nu = {id, name:'Юнит ' + want, loadStart:'', shiftStart:'', shiftEnd:'', loadEnd:'', crew:[]};
+    units.push(nu);
+    ctx.patches.push({k:'unit', pid:p.id, day:hxDayKey(p, day), uid:id});
+    return nu;
+  }
+  throw hxErr(`Нет юнита «${hxLine(s || '1', 20)}»` + (units.length ? ` — есть: ${units.map(x => x.name).join(', ')}` : ''));
+}
+function hxFindMember(p, day, person, unitArg, ctx){
+  const u = (unitArg != null && unitArg !== '') ? hxFindUnit(p, day, unitArg, ctx, false)
+    : (day.units || []).find(x => (x.crew || []).some(c => c.id === person.id));
+  const c = u && (u.crew || []).find(x => x.id === person.id);
+  if(!c) throw hxErr(`${person.name} не стоит ${u && unitArg ? `в «${u.name}»` : 'на этот день'}`);
+  return {u, c};
+}
+// «я на смене» — не просто флаг: он добавляет меня в состав юнита и убирает оттуда
+function hxSetMe(u, idx, on){
+  if(on == null) delete u.me; else u.me = !!on;
+  const want = unitMeOn(u, idx);
+  if(want){ ensureMeCard(); if(!(u.crew || []).some(isMe)) u.crew.push(meMemberRecord()); }
+  else u.crew = (u.crew || []).filter(c => !isMe(c));
+}
+function hxTouch(ctx, p, day, calc){
+  if(!ctx.pid){ ctx.pid = p.id; }
+  if(ctx.pid === p.id) ctx.pname = p.name;
+  if(calc){ const key = p.id + '|' + hxDayKey(p, day); if(!ctx.calc.includes(key)) ctx.calc.push(key); }
+}
+function hxShiftText(u){
+  const fx = unitFixed(u);
+  if(fx != null) return `смена ${fmtHoursShort(fx)} ч` + (Number(u.fixedLoadHours) ? ` + П/Р ${fmtHoursShort(Number(u.fixedLoadHours))} ч` : '');
+  const parts = [];
+  if(u.shiftStart || u.shiftEnd) parts.push(`смена ${u.shiftStart || '?'}–${u.shiftEnd || '?'}`);
+  if(u.loadStart) parts.push(`погрузка с ${u.loadStart}`);
+  if(u.loadEnd) parts.push(`разгрузка до ${u.loadEnd}`);
+  return parts.join(', ') || 'время очищено';
+}
+// П/Р есть, но клиенту она идёт фиксом, а фикс не назван — в смете её пока нет
+function hxLoadFixHint(u){
+  const h = unitLoadHours(u);
+  return (!unitLoadAsOt(u) && h > 0 && !(Number(u.loadFixed) > 0))
+    ? ` · П/Р ${fmtHoursShort(h)} ч: фикс с клиента не задан (loadFixed) — в смете её пока нет` : '';
+}
+/* Пересчёт персонала после команды — тот же, что после правки руками
+   (calcDayPersonnel сидит и под кнопками), только без отрисовки экрана. */
+function hxRecalc(keys){
+  (keys || []).forEach(k => {
+    const i = k.indexOf('|');
+    const p = PROJECTS.find(x => x.id === k.slice(0, i));
+    const day = p && hxDayByKey(p, k.slice(i + 1));
+    if(!day) return;
+    const units = day.units || [];
+    if(units.some((u, n) => (u.crew || []).length || unitMeOn(u, n))) calcDayPersonnel(p, day, null, true);
+    else refreshProjectSum(p);
+  });
+}
+
+/* ---- операции ---- */
+const HX_OPS = {
+  'project.create'(a, ctx){
+    const name = hxLine(a.name, 120);
+    if(!name) throw hxErr('Нужно название проекта (name)');
+    const list = Array.isArray(a.dates) ? a.dates : (a.dates ? [a.dates] : []);
+    let dates = [...new Set(list.map(d => hxIso(d, 'dates')))].sort();
+    if(!dates.length) dates = [TODAY_ISO];
+    // повтор той же команды не должен заводить второй такой же проект
+    const twin = PROJECTS.find(p => !p.cancelled && hxNorm(p.name) === hxNorm(name) && projectDates(p)[0] === dates[0]);
+    if(twin) throw hxErr(`Проект «${twin.name}» на ${fmtDate(dates[0])} уже есть (id ${twin.id}) — второй не завожу`);
+    const p = makeProject({name, dates, client:hxLine(a.client, 120), operator:hxLine(a.operator, 80),
+      producer:hxLine(a.producer, 80), director:hxLine(a.director, 80), location:hxLine(a.location, 160),
+      trip: a.trip != null && a.trip !== '' ? hxBool(a.trip, 'trip') : false});
+    PROJECTS.push(p);
+    ctx.patches.push({k:'proj', pid:p.id});
+    hxTouch(ctx, p);
+    ctx.summary = `Новый проект «${p.name}» · ${dates.map(fmtDate).join(', ')}` + (p.client !== '—' ? ` · ${p.client}` : '');
+  },
+  'project.update'(a, ctx){
+    const p = hxFindProject(a.project);
+    const set = (a.set && typeof a.set === 'object' && !Array.isArray(a.set)) ? a.set : null;
+    if(!set || !Object.keys(set).length) throw hxErr('Нечего менять — пустой set');
+    const EMPTY = {name:null, client:'—', operator:'—', producer:'—', director:'—', location:'уточняется'};
+    const LABEL = {name:'название', client:'заказчик', operator:'оператор', producer:'продюсер', director:'режиссёр', location:'место'};
+    const f = {}, parts = [];
+    Object.keys(set).forEach(k => {
+      if(!(k in EMPTY)) throw hxErr(`Поле «${hxLine(k, 30)}» командой не меняется. Можно: ${Object.keys(EMPTY).join(', ')}`);
+      const v = hxLine(set[k], k === 'location' ? 160 : 120);
+      if(k === 'name' && !v) throw hxErr('Название проекта не может быть пустым');
+      const nv = v || EMPTY[k];
+      if(p[k] === nv) return;
+      f[k] = [p[k], nv]; p[k] = nv; parts.push(`${LABEL[k]} → ${nv}`);
+    });
+    hxTouch(ctx, p);
+    if(!parts.length){ ctx.summary = `«${p.name}»: всё уже так`; return; }
+    ctx.patches.push({k:'pset', pid:p.id, f});
+    ctx.summary = `«${p.name}»: ${parts.join(', ')}`;
+  },
+  'project.step'(a, ctx){
+    const p = hxFindProject(a.project);
+    const i = STEP_NAMES.findIndex(n => hxNorm(n) === hxNorm(a.step));
+    if(i < 0) throw hxErr(`Чекпойнта «${hxLine(a.step, 30)}» нет. Есть: ${STEP_NAMES.join(', ')}`);
+    const on = hxBool(a.on, 'on');
+    if(!p.steps) p.steps = STEP_NAMES.map(n => [n, 0]);
+    hxTouch(ctx, p);
+    if(!!p.steps[i][1] === on){ ctx.summary = `«${p.name}»: «${STEP_NAMES[i]}» уже ${on ? 'отмечен' : 'снят'}`; return; }
+    if(i === 3 && on) throw hxErr('«Факт. смета» ставится сама, когда в приложении сформирована фактическая смета — открой проект и нажми «Факт. смета»');
+    if(i === 0 && !on && (p.scoutDate || allEstimate(p).some(x => x.scoutLine))) {
+      throw hxErr('Освоение уже стоит в смете и календаре — снимать его надо в приложении, иначе смета разъедется');
+    }
+    ctx.patches.push({k:'step', pid:p.id, i, before:p.steps[i][1] ? 1 : 0, after:on ? 1 : 0});
+    p.steps[i][1] = on ? 1 : 0;
+    // «Счёт» и признак «счёт выставлен» ходят парой — как у галочки в приложении
+    if(i === 4 && !!p.invoiceSent !== on){ ctx.patches.push({k:'pset', pid:p.id, f:{invoiceSent:[p.invoiceSent, on]}}); p.invoiceSent = on; }
+    ctx.summary = `«${p.name}»: ${on ? '✓' : 'снят'} «${STEP_NAMES[i]}»`;
+  },
+  'shift.set'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const u = hxFindUnit(p, day, a.unit, ctx, true);
+    const f = {};
+    const put = (k, v) => { if(hxSame(u[k], v)) return; f[k] = [u[k], v]; if(v == null) delete u[k]; else u[k] = v; };
+    let anyTime = false;
+    ['loadStart', 'shiftStart', 'shiftEnd', 'loadEnd'].forEach(k => {
+      if(a[k] === undefined) return;
+      put(k, hxTime(a[k], k)); anyTime = true;
+    });
+    const hasFix = 'fixedHours' in a, hasFixLoad = 'fixedLoadHours' in a;
+    if(hasFix && (a.fixedHours == null || a.fixedHours === '' || Number(a.fixedHours) === 0)){
+      put('fixedHours', null); put('fixedLoadHours', null);          // назад к времени
+    } else if(hasFix){
+      put('fixedHours', hxNum(a.fixedHours, 'fixedHours', 0, 24));
+      put('fixedLoadHours', hasFixLoad ? hxNum(a.fixedLoadHours, 'fixedLoadHours', 0, 24) : (Number(u.fixedLoadHours) || 0));
+    } else if(hasFixLoad){
+      if(unitFixed(u) == null) throw hxErr('«fixedLoadHours» задаётся вместе с fixedHours — у этого юнита смена по времени');
+      put('fixedLoadHours', hxNum(a.fixedLoadHours, 'fixedLoadHours', 0, 24));
+    } else if(anyTime && unitFixed(u) != null){
+      // время важнее фикса: иначе новые часы молча не считались бы
+      put('fixedHours', null); put('fixedLoadHours', null);
+    }
+    if(!anyTime && !hasFix && !hasFixLoad) throw hxErr('Нечего менять — не пришло ни времени, ни часов');
+    hxTouch(ctx, p, day, true);
+    if(Object.keys(f).length) ctx.patches.push({k:'uset', pid:p.id, day:hxDayKey(p, day), uid:u.id, f});
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · ${u.name}: ${hxShiftText(u)}` + hxLoadFixHint(u);
+  },
+  'shift.flags'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const u = hxFindUnit(p, day, a.unit, ctx, true);
+    const f = {}, parts = [];
+    const put = (k, v) => { if(hxSame(u[k], v)) return; f[k] = [u[k], v]; u[k] = v; };
+    const FLAG = {night:['ночная', unitNight], lunch:['текущий обед', unitLunch],
+      progressive:['прогрессивы', unitProgressive], loadAsOt:['П/Р переработкой', unitLoadAsOt]};
+    Object.keys(FLAG).forEach(k => {
+      if(a[k] === undefined) return;
+      const on = hxBool(a[k], k);
+      if(FLAG[k][1](u) !== on) put(k, on);
+      parts.push(`${FLAG[k][0]} ${on ? '✓' : '✗'}`);
+    });
+    if(a.gapHours !== undefined){
+      const h = hxNum(a.gapHours, 'gapHours', 0, 24);
+      put('gapHours', h); parts.push(h ? `разрыв ${fmtHoursShort(h)} ч` : 'без разрыва');
+    }
+    if(a.taxi !== undefined){
+      const t = Math.round(hxNum(a.taxi, 'taxi', 0));
+      put('taxi', t); parts.push(t ? `такси ${fmtMoney(t)}` : 'без такси');
+    }
+    if(a.loadFixed !== undefined){
+      const t = Math.round(hxNum(a.loadFixed, 'loadFixed', 0));
+      put('loadFixed', t); parts.push(`фикс за П/Р ${fmtMoney(t)}`);
+    }
+    let meP = null;
+    if(a.me !== undefined){
+      const idx = day.units.indexOf(u);
+      const on = hxBool(a.me, 'me');
+      if(unitMeOn(u, idx) !== on){ meP = {k:'me', pid:p.id, day:hxDayKey(p, day), uid:u.id, before:u.me, after:on}; hxSetMe(u, idx, on); }
+      parts.push(on ? 'я на смене' : 'меня на смене нет');
+    }
+    if(!parts.length) throw hxErr('Нечего менять — не пришло ни одного флага');
+    if(Object.keys(f).length) ctx.patches.push({k:'uset', pid:p.id, day:hxDayKey(p, day), uid:u.id, f});
+    if(meP) ctx.patches.push(meP);
+    hxTouch(ctx, p, day, true);
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · ${u.name}: ${parts.join(', ')}` + hxLoadFixHint(u);
+  },
+  'crew.add'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const person = hxFindPerson(a.person);
+    const u = hxFindUnit(p, day, a.unit, ctx, true);
+    hxTouch(ctx, p, day, true);
+    if(isMe(person)){
+      const idx = day.units.indexOf(u);
+      if(!unitMeOn(u, idx)){ ctx.patches.push({k:'me', pid:p.id, day:hxDayKey(p, day), uid:u.id, before:u.me, after:true}); hxSetMe(u, idx, true); }
+      ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · ${u.name}: я на смене`;
+      return;
+    }
+    const role = hxRole(p, a.role);
+    // человек в один день стоит только в одном юните — как и в приложении
+    const where = (day.units || []).find(x => (x.crew || []).some(c => c.id === person.id));
+    if(where){
+      const c = where.crew.find(x => x.id === person.id);
+      if(where === u && c.role === role){ ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: ${person.name} уже стоит в «${u.name}» — ${role}`; return; }
+      throw hxErr(where === u
+        ? `${person.name} уже стоит в «${u.name}» как ${c.role} — позицию меняет crew.role`
+        : `${person.name} уже стоит в «${where.name}» на этот день`);
+    }
+    u.crew.push({id:person.id, role, pass:false, credit:false, paid:false,
+      amount: roleShiftRate(projectRates(p), role), paymentType:null, paymentDate:null});
+    ctx.patches.push({k:'cadd', pid:p.id, day:hxDayKey(p, day), uid:u.id, cid:person.id});
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · ${u.name}: + ${person.name}, ${role}`;
+  },
+  'crew.remove'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const person = hxFindPerson(a.person);
+    hxTouch(ctx, p, day, true);
+    if(isMe(person)){
+      const units = day.units || [];
+      const u = (a.unit != null && a.unit !== '') ? hxFindUnit(p, day, a.unit, ctx, false) : units.find((x, i) => unitMeOn(x, i));
+      const idx = u ? units.indexOf(u) : -1;
+      if(!u || !unitMeOn(u, idx)){ ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: меня и так нет на смене`; return; }
+      ctx.patches.push({k:'me', pid:p.id, day:hxDayKey(p, day), uid:u.id, before:u.me, after:false});
+      hxSetMe(u, idx, false);
+      ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · ${u.name}: меня на смене нет`;
+      return;
+    }
+    const {u, c} = hxFindMember(p, day, person, a.unit, ctx);
+    if(c.paid || settlementPaid(c) > 0) throw hxErr(`По ${person.name} уже были выплаты — убрать нельзя, история должна сохраниться`);
+    const idx = u.crew.indexOf(c);
+    u.crew.splice(idx, 1);
+    ctx.patches.push({k:'cdel', pid:p.id, day:hxDayKey(p, day), uid:u.id, idx, item:JSON.parse(JSON.stringify(c))});
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · ${u.name}: − ${person.name}`;
+  },
+  'crew.role'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const person = hxFindPerson(a.person);
+    if(isMe(person)) throw hxErr('Моя позиция на смене — Гафер, она не меняется');
+    const {u, c} = hxFindMember(p, day, person, a.unit, ctx);
+    const role = hxRole(p, a.role);
+    hxTouch(ctx, p, day, true);
+    if(c.role === role){ ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: ${person.name} уже ${role}`; return; }
+    if(c.paid) throw hxErr(`Расчёт с ${person.name} за этот день закрыт — позицию не меняю`);
+    ctx.patches.push({k:'cset', pid:p.id, day:hxDayKey(p, day), uid:u.id, cid:person.id, f:{role:[c.role, role]}});
+    c.role = role;
+    c.amount = roleShiftRate(projectRates(p), role);   // ставка новой должности, как в приложении
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: ${person.name} → ${role}`;
+  },
+  'crew.gap'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const person = hxFindPerson(a.person);
+    const {u, c} = hxFindMember(p, day, person, a.unit, ctx);
+    const on = hxBool(a.on, 'on');
+    hxTouch(ctx, p, day, true);
+    if(!c.noGap === on){ ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: ${person.name} уже ${on ? 'с разрывом' : 'без разрыва'}`; return; }
+    ctx.patches.push({k:'cset', pid:p.id, day:hxDayKey(p, day), uid:u.id, cid:person.id, f:{noGap:[c.noGap, !on]}});
+    c.noGap = !on;
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)}: ${person.name} — ${on ? 'с разрывом' : 'без разрыва'}`;
+  },
+  'person.add'(a, ctx){
+    const name = hxLine(a.name, 80);
+    if(!name) throw hxErr('Нужно имя (name)');
+    const twin = CREW.find(c => hxNorm(c.name) === hxNorm(name));
+    if(twin) throw hxErr(`${twin.name} уже есть в команде (id ${twin.id})`);
+    let id = slugify(name), n = 1;
+    while(CREW.some(c => c.id === id)){ n++; id = slugify(name) + '-' + n; }
+    CREW.push({id, name, passInfo:hxStr(a.passInfo, 600), creditsInfo:hxLine(a.creditsInfo, 120)});
+    ctx.patches.push({k:'person', id});
+    ctx.summary = `В команду: ${name}`;
+  },
+  'note.add'(a, ctx){
+    const p = hxFindProject(a.project);
+    const day = hxFindDay(p, a.day, true);
+    const text = hxStr(a.text, 2000);
+    if(!text) throw hxErr('Пустая заметка');
+    if(!day.notes) day.notes = [];
+    day.notes.push({text, parsed:false, source:'hermes', createdAt:TODAY_ISO, hx:ctx.cmd.id});
+    ctx.patches.push({k:'note', pid:p.id, hx:ctx.cmd.id});
+    hxTouch(ctx, p);
+    ctx.summary = `«${p.name}»${hxDayLabel(p, day)} · заметка: ${hxCut(text, 90)}`;
+  },
+  'quicknote.add'(a, ctx){
+    const text = hxStr(a.text, 2000);
+    if(!text) throw hxErr('Пустая заметка');
+    const note = {id:quickNoteSeq++, text, photos:[], createdAt:TODAY_ISO, source:'hermes', parsed:false, hx:ctx.cmd.id};
+    QUICK_NOTES.push(note);
+    ctx.patches.push({k:'qnote', id:note.id, hx:ctx.cmd.id});
+    ctx.summary = `Быстрая заметка: ${hxCut(text, 90)}`;
+  },
+  'task.add'(a, ctx){
+    const text = hxLine(a.text, 300);
+    if(!text) throw hxErr('Пустая задача');
+    let pid = null;
+    if(a.project != null && a.project !== ''){ const p = hxFindProject(a.project); pid = p.id; hxTouch(ctx, p); }
+    const t = {id:customTaskSeq++, text, projectId:pid, done:false, hx:ctx.cmd.id};
+    CUSTOM_TASKS.push(t);
+    ctx.patches.push({k:'task', id:t.id, hx:ctx.cmd.id});
+    ctx.summary = `Задача: ${hxCut(text, 90)}` + (pid ? ` · «${ctx.pname}»` : '');
+  },
+  'task.done'(a, ctx){
+    const q = String(a.task == null ? '' : a.task).trim();
+    let t = CUSTOM_TASKS.find(x => String(x.id) === q);
+    if(!t){ const hits = CUSTOM_TASKS.filter(x => !x.done && hxNorm(x.text) === hxNorm(q)); if(hits.length === 1) t = hits[0]; }
+    if(!t) throw hxErr(`Задачи «${hxLine(q, 40)}» нет среди своих задач — автозадачи (собрать команду, выставить счёт…) закрываются сами, по делу`);
+    const p = t.projectId && PROJECTS.find(x => x.id === t.projectId);
+    if(p) hxTouch(ctx, p);
+    if(t.done){ ctx.summary = `Задача «${hxCut(t.text, 60)}» уже выполнена`; return; }
+    ctx.patches.push({k:'tset', id:t.id, f:{done:[!!t.done, true]}});
+    t.done = true;
+    ctx.summary = `✓ Задача: ${hxCut(t.text, 90)}`;
+  },
+  'client.payment'(a, ctx){
+    const p = hxFindProject(a.project);
+    const amount = Math.round(hxNum(a.amount, 'amount', 0) * 100) / 100;
+    if(!(amount > 0)) throw hxErr('Сумма должна быть больше нуля');
+    if(a.type !== 'cash' && a.type !== 'noncash') throw hxErr('«type» — cash (наличные) или noncash (безнал)');
+    const date = (a.date != null && a.date !== '') ? hxIso(a.date, 'date') : TODAY_ISO;
+    refreshProjectSum(p);
+    // то же правило, что у кнопки: больше остатка не принимаем
+    const remaining = (p.sum || 0) - (p.paidAmount || 0);
+    if(amount > remaining + 0.01){
+      throw hxErr(remaining > 0
+        ? `Больше остатка по «${p.name}» (${fmtMoney(remaining)}) — впиши остаток, а излишек оформи отдельно`
+        : `По «${p.name}» нечего получать: ${p.sum ? 'всё уже оплачено' : 'у проекта ещё нет суммы — сначала смета'}`);
+    }
+    let day;
+    if(isMultiDay(p)){ ensureDays(p); day = (a.day != null && a.day !== '') ? hxFindDay(p, a.day, true) : (p.days.find(d => d.iso === date) || p.days[0]); }
+    else day = hxFindDay(p, a.day, false) || p;
+    if(!day.payments) day.payments = [];
+    day.payments.push({amount, type:a.type, date, hx:ctx.cmd.id});
+    ctx.patches.push({k:'pay', pid:p.id, hx:ctx.cmd.id});
+    refreshProjectSum(p);
+    refreshPaymentMeta(p);
+    if(!p.steps) p.steps = STEP_NAMES.map(n => [n, 0]);
+    if(p.sum > 0 && p.paidAmount >= p.sum && !p.steps[5][1]){       // «Оплата» закрыта — деньги пришли целиком
+      ctx.patches.push({k:'step', pid:p.id, i:5, before:0, after:1});
+      p.steps[5][1] = 1;
+    }
+    hxTouch(ctx, p);
+    const left = Math.max(0, p.sum - p.paidAmount);
+    ctx.summary = `«${p.name}»: поступление ${fmtMoney(amount)} · ${payTypeLabel(a.type)} · ${fmtDate(date)}`
+      + (left ? ` · осталось ${fmtMoney(left)}` : ' · оплачено целиком');
+  },
+  'client.expected'(a, ctx){
+    const p = hxFindProject(a.project);
+    const date = hxIso(a.date, 'date');
+    hxTouch(ctx, p);
+    if(p.expectedPaymentDate === date){ ctx.summary = `«${p.name}»: дата оплаты уже ${fmtDate(date)}`; return; }
+    ctx.patches.push({k:'pset', pid:p.id, f:{expectedPaymentDate:[p.expectedPaymentDate, date]}});
+    p.expectedPaymentDate = date;
+    ctx.summary = `«${p.name}»: клиент обещал заплатить ${fmtDate(date)}`;
+  },
+  'undo'(a, ctx){
+    const id = String(a.command == null ? '' : a.command).trim();
+    const e = HERMES_LOG.find(x => x.id === id);
+    if(!e) throw hxErr(`Команды ${hxLine(id, 40)} нет в журнале — нечего отменять`);
+    if(e.status !== 'applied') throw hxErr('Эта команда не была внесена — отменять нечего');
+    if(e.undone) throw hxErr('Эта команда уже отменена');
+    if(e.op === 'undo') throw hxErr('Отмену не отменяют — пришли исходную команду ещё раз');
+    hxRevertEntry(e, ctx);
+    e.undone = {at:new Date().toISOString(), by:'hermes', cmd:ctx.cmd.id};
+    if(e.pid){ const p = PROJECTS.find(x => x.id === e.pid); if(p) hxTouch(ctx, p); else { ctx.pid = e.pid; ctx.pname = e.pname; } }
+    ctx.summary = `Отменено: ${e.summary}`;
+  },
+};
+
+/* ---- отмена: шаги записи в обратном порядке ----
+   Каждый шаг сперва сверяет, что там лежит ровно то, что оставил Hermes.
+   Не совпало — значит, руками уже поправили, и отмена отказывает целиком. */
+function hxRevP(pt){ const p = PROJECTS.find(x => x.id === pt.pid); if(!p) throw hxErr('Этого проекта уже нет'); return p; }
+function hxRevU(pt, soft){
+  const p = hxRevP(pt);
+  const d = hxDayByKey(p, pt.day);
+  const u = d && (d.units || []).find(x => x.id === pt.uid);
+  if(!u && !soft) throw hxErr('Этого юнита уже нет');
+  return {p, d, u};
+}
+function hxCalcKey(ctx, p, d){ const key = p.id + '|' + hxDayKey(p, d); if(!ctx.calc.includes(key)) ctx.calc.push(key); }
+const HX_FIELD = {name:'Название', client:'Заказчика', operator:'Оператора', producer:'Продюсера', director:'Режиссёра',
+  location:'Место', expectedPaymentDate:'Дату оплаты', invoiceSent:'Отметку «счёт выставлен»', loadStart:'Начало погрузки',
+  shiftStart:'Начало смены', shiftEnd:'Конец смены', loadEnd:'Конец разгрузки', fixedHours:'Часы смены',
+  fixedLoadHours:'Часы П/Р', night:'Ночную', lunch:'Обед', progressive:'Прогрессивы', loadAsOt:'П/Р переработкой',
+  gapHours:'Разрыв', taxi:'Такси', loadFixed:'Фикс за П/Р', role:'Позицию', noGap:'Разрыв', done:'Отметку задачи'};
+function hxRevFields(obj, f, where){
+  Object.keys(f).forEach(k => {
+    if(!hxSame(obj[k], f[k][1])) throw hxErr(`${HX_FIELD[k] || k} ${where} уже поменяли после Hermes — отменять не буду, чтобы не затереть`);
+  });
+  Object.keys(f).forEach(k => { const b = f[k][0]; if(b == null) delete obj[k]; else obj[k] = b; });
+}
+function hxProjectUserData(p){
+  if(allPayments(p).length) return 'поступления от клиента';
+  if(RENTAL_DEBTS.some(r => r.projectId === p.id)) return 'расчёты с ренталами';
+  if(projectPayCrew(p).length) return 'команда';
+  if(allEstimate(p).some(i => i.sec !== 'Персонал')) return 'позиции сметы';
+  if((p.files || []).some(f => !f.auto)) return 'файлы';
+  if(allNotes(p).some(n => n.source !== 'hermes')) return 'заметки';
+  if(CUSTOM_TASKS.some(t => t.projectId === p.id && !t.hx) || (p.projectTasks || []).length) return 'задачи';
+  if(p.cancelled) return 'отмена';
+  return '';
+}
+const HX_REVERT = {
+  proj(pt){
+    const i = PROJECTS.findIndex(p => p.id === pt.pid);
+    if(i < 0) return;
+    const why = hxProjectUserData(PROJECTS[i]);
+    if(why) throw hxErr(`В «${PROJECTS[i].name}» уже есть ${why} — проект не удаляю. Если он не нужен, удали его в приложении`);
+    PROJECTS.splice(i, 1);
+    for(let k = CUSTOM_TASKS.length - 1; k >= 0; k--) if(CUSTOM_TASKS[k].projectId === pt.pid) CUSTOM_TASKS.splice(k, 1);
+  },
+  pset(pt){ const p = hxRevP(pt); hxRevFields(p, pt.f, `в «${p.name}»`); },
+  step(pt){
+    const p = hxRevP(pt);
+    const cur = p.steps && p.steps[pt.i] ? (p.steps[pt.i][1] ? 1 : 0) : 0;
+    if(cur !== pt.after) throw hxErr(`«${STEP_NAMES[pt.i]}» в «${p.name}» уже переключили руками — отменять не буду`);
+    p.steps[pt.i][1] = pt.before ? 1 : 0;
+  },
+  unit(pt, ctx){
+    const {p, d, u} = hxRevU(pt, true);
+    if(!u) return;
+    if(unitOthers(u).length) throw hxErr(`В «${u.name}» уже стоят люди — юнит не убираю`);
+    d.units = d.units.filter(x => x !== u);
+    hxCalcKey(ctx, p, d);
+  },
+  uset(pt, ctx){ const {p, d, u} = hxRevU(pt); hxRevFields(u, pt.f, `у «${u.name}»`); hxCalcKey(ctx, p, d); },
+  me(pt, ctx){
+    const {p, d, u} = hxRevU(pt);
+    if(!hxSame(u.me, pt.after)) throw hxErr('«Я на смене» уже переключили руками — отменять не буду');
+    hxSetMe(u, d.units.indexOf(u), pt.before);
+    hxCalcKey(ctx, p, d);
+  },
+  cadd(pt, ctx){
+    const {p, d, u} = hxRevU(pt, true);
+    if(!u) return;
+    const i = (u.crew || []).findIndex(c => c.id === pt.cid);
+    if(i < 0) return;
+    const c = u.crew[i];
+    if(c.paid || settlementPaid(c) > 0) throw hxErr(`${hxPersonName(pt.cid)} уже получил выплату за этот день — со смены не убираю`);
+    u.crew.splice(i, 1);
+    hxCalcKey(ctx, p, d);
+  },
+  cdel(pt, ctx){
+    const {p, d, u} = hxRevU(pt);
+    if((d.units || []).some(x => (x.crew || []).some(c => c.id === pt.item.id))) throw hxErr(`${hxPersonName(pt.item.id)} уже снова стоит на этот день`);
+    u.crew.splice(Math.min(pt.idx, u.crew.length), 0, pt.item);
+    hxCalcKey(ctx, p, d);
+  },
+  cset(pt, ctx){
+    const {p, d, u} = hxRevU(pt);
+    const c = (u.crew || []).find(x => x.id === pt.cid);
+    if(!c) throw hxErr(`${hxPersonName(pt.cid)} уже нет в «${u.name}»`);
+    hxRevFields(c, pt.f, `у ${hxPersonName(pt.cid)}`);
+    if(pt.f.role) c.amount = roleShiftRate(projectRates(p), c.role);
+    hxCalcKey(ctx, p, d);
+  },
+  person(pt){
+    const i = CREW.findIndex(c => c.id === pt.id);
+    if(i < 0) return;
+    if(PROJECTS.some(p => projectCrew(p).some(c => c.id === pt.id))) throw hxErr(`${CREW[i].name} уже стоит в проектах — из команды не убираю`);
+    CREW.splice(i, 1);
+  },
+  note(pt){
+    const p = PROJECTS.find(x => x.id === pt.pid);
+    if(p) allDays(p).forEach(d => { const i = (d.notes || []).findIndex(n => n.hx === pt.hx); if(i > -1) d.notes.splice(i, 1); });
+  },
+  qnote(pt){ const i = QUICK_NOTES.findIndex(n => n.id === pt.id && n.hx === pt.hx); if(i > -1) QUICK_NOTES.splice(i, 1); },
+  task(pt){
+    const i = CUSTOM_TASKS.findIndex(t => t.id === pt.id && t.hx === pt.hx);
+    if(i < 0) return;
+    if(CUSTOM_TASKS[i].done) throw hxErr('Задачу уже отметили выполненной — не удаляю');
+    CUSTOM_TASKS.splice(i, 1);
+  },
+  tset(pt){ const t = CUSTOM_TASKS.find(x => x.id === pt.id); if(t) hxRevFields(t, pt.f, 'у задачи'); },
+  pay(pt){
+    const p = PROJECTS.find(x => x.id === pt.pid);
+    if(!p) return;
+    allDays(p).forEach(d => { const i = (d.payments || []).findIndex(x => x.hx === pt.hx); if(i > -1) d.payments.splice(i, 1); });
+    refreshProjectSum(p);
+    refreshPaymentMeta(p);
+    if(p.steps && p.paidAmount < p.sum) p.steps[5][1] = 0;   // как при удалении поступления руками
+  },
+};
+function hxRevertEntry(e, ctx){
+  (e.patches || []).slice().reverse().forEach(pt => {
+    const fn = HX_REVERT[pt.k];
+    if(!fn) throw hxErr('Не знаю, как отменить этот шаг');
+    fn(pt, ctx);
+  });
+}
+
+/* ---- применение одной команды: либо целиком, либо никак ----
+   Перед командой запоминаем всё, что она может задеть; упала на полпути —
+   возвращаем как было. Код синхронный: таймеры сохранения не вклинятся. */
+function hxSnap(){
+  return JSON.stringify({pr:PROJECTS, cr:CREW, qn:QUICK_NOTES, ct:CUSTOM_TASKS, lg:HERMES_LOG, s:[quickNoteSeq, customTaskSeq]});
+}
+function hxRestore(snap){
+  const s = JSON.parse(snap);
+  replaceArray(PROJECTS, s.pr); replaceArray(CREW, s.cr);
+  replaceArray(QUICK_NOTES, s.qn); replaceArray(CUSTOM_TASKS, s.ct);
+  HERMES_LOG = s.lg; quickNoteSeq = s.s[0]; customTaskSeq = s.s[1];
+}
+function hxCmd(raw, id){
+  const c = (raw && typeof raw === 'object') ? raw : {};
+  const cmd = {id, op:String(c.op || ''), say:c.say || '', ts:c.ts || '', by:c.by || '',
+    args:(c.args && typeof c.args === 'object' && !Array.isArray(c.args)) ? c.args : {}};
+  if(c.bad) cmd.bad = c.bad;
+  else if(c.v !== 1) cmd.bad = `Версия команды «${hxLine(c.v, 10)}» — приложение понимает только v1`;
+  return cmd;
+}
+function hxApplyCommand(cmd){
+  const ctx = {cmd, patches:[], calc:[], pid:null, pname:'', summary:''};
+  const snap = hxSnap();
+  try{
+    if(cmd.bad) throw hxErr(cmd.bad);
+    const fn = Object.prototype.hasOwnProperty.call(HX_OPS, cmd.op) ? HX_OPS[cmd.op] : null;
+    if(!fn) throw hxErr(HX_LATER.includes(cmd.op)
+      ? `«${HX_OP_LABEL[cmd.op]}» по команде приложение пока не вносит — внеси руками в приложении`
+      : `Неизвестная операция «${hxLine(cmd.op, 40)}»`);
+    fn(cmd.args, ctx);
+    hxRecalc(ctx.calc);
+    return {ok:true, ctx};
+  }catch(e){
+    hxRestore(snap);
+    return {ok:false, ctx, error:(e && e.hx) ? e.message : 'Сбой при применении: ' + ((e && e.message) || e)};
+  }
+}
+function hxDescribe(cmd){
+  const a = cmd.args || {};
+  const bits = [HX_OP_LABEL[cmd.op] || hxLine(cmd.op, 40) || 'Команда'];
+  if(a.project){ const p = PROJECTS.find(x => x.id === String(a.project)); bits.push(p ? `«${p.name}»` : hxLine(a.project, 60)); }
+  if(a.name) bits.push(hxLine(a.name, 60));
+  if(a.person){ bits.push(hxPersonName(hxLine(a.person, 60))); }
+  const amt = parseFloat(a.amount);
+  if(isFinite(amt) && amt > 0) bits.push(fmtMoney(amt));
+  if(a.text) bits.push(hxCut(hxLine(a.text, 200), 60));
+  return bits.join(' · ');
+}
+function hxLogAdd(cmd, res, rcSha){
+  const e = {id:cmd.id, op:cmd.op, say:hxLine(cmd.say, 240), ts:cmd.ts, at:new Date().toISOString(),
+    status: res.ok ? 'applied' : 'failed',
+    summary: (res.ok && res.ctx.summary) || hxDescribe(cmd),
+    error: res.ok ? '' : res.error,
+    pid: res.ctx.pid || null, pname: res.ctx.pname || '',
+    patches: res.ok ? res.ctx.patches : [],
+    dev: hxDeviceId(), dl: hxDevLabel(), rc:'pending'};
+  if(rcSha) e.rcSha = rcSha;
+  HERMES_LOG.push(e);
+  if(HERMES_LOG.length > HX_LOG_MAX) HERMES_LOG.splice(0, HERMES_LOG.length - HX_LOG_MAX);
+  return e;
+}
+function hxLogHas(id){ return HERMES_LOG.some(e => e.id === id); }
+
+/* ---- ящик на GitHub ---- */
+function hxErrText(r){
+  if(r.status === 404) return 'Нет доступа к ящику ' + hxRepoName();
+  if(r.status === 403) return 'GitHub не пускает в ящик: у ключа мало прав или упёрлись в лимит запросов';
+  return cloudErrText(r);
+}
+async function hxGet(path){
+  const r = await cloudApi(hxRepoPath() + '/contents/' + path, {cache:'no-store'});
+  if(r.status === 404) return null;
+  if(!r.ok) throw new Error(hxErrText(r));
+  const d = await r.json();
+  return {sha:d.sha, text:d.content ? cloudUnB64(d.content) : ''};
+}
+async function hxPut(path, obj, sha, message){
+  const body = {message, content:cloudB64(JSON.stringify(obj, null, 2))};
+  if(sha) body.sha = sha;
+  const r = await cloudApi(hxRepoPath() + '/contents/' + path, {method:'PUT', body:JSON.stringify(body)});
+  if(r.ok){ const d = await r.json(); return {ok:true, sha:(d.content && d.content.sha) || null}; }
+  // без sha GitHub отвечает 422, когда файл уже есть: квитанцию успело оставить другое устройство
+  if(r.status === 422 && !sha){ if(await hxGet(path)) return {exists:true}; }
+  if(r.status === 409 || r.status === 422) return {conflict:true};
+  throw new Error(hxErrText(r));
+}
+async function hxVerify(){
+  const r = await cloudApi(hxRepoPath(), {cache:'no-store'});
+  if(r.status === 404) throw hxErr('Нет доступа к ящику ' + hxRepoName() + ' — ключ приложения пока видит только базу.', 'noaccess');
+  if(!r.ok) throw new Error(hxErrText(r));
+  const d = await r.json();
+  if(!d.private) throw hxErr('Ящик ' + hxRepoName() + ' публичный — команды из него не принимаю. Сделай репозиторий приватным.', 'setup');
+  if(!(d.permissions && d.permissions.push)) throw hxErr('У ключа приложения только чтение ящика — нужен Contents: Read and write, иначе не оставить квитанцию.', 'setup');
+  hxBranch = d.default_branch || 'main';
+  hxVerified = true;
+}
+async function hxList(){
+  const r = await cloudApi(hxRepoPath() + '/git/trees/' + encodeURIComponent(hxBranch) + '?recursive=1', {cache:'no-cache'});
+  if(r.status === 404 || r.status === 409) return {inbox:[], done:new Set()};   // в ящике ещё пусто
+  if(!r.ok) throw new Error(hxErrText(r));
+  const d = await r.json();
+  const inbox = [], done = new Set();
+  (d.tree || []).forEach(t => {
+    const m = /^(inbox|done)\/([\w.-]+)\.json$/.exec(t.path || '');
+    if(!m) return;
+    if(m[1] === 'inbox') inbox.push(m[2]); else done.add(m[2]);
+  });
+  inbox.sort();
+  return {inbox, done};
+}
+// «взять» команду: квитанция «применяю» создаётся только если её ещё нет ни у кого
+async function hxClaim(id, cmd){
+  const body = {id, status:'applying', at:new Date().toISOString(), dev:hxDeviceId(), device:hxDevLabel()};
+  for(let i = 0; i < 3; i++){
+    const r = await hxPut('done/' + id + '.json', body, null, 'EZ CRM · взял · ' + (cmd.op || '?'));
+    if(r.ok) return r;
+    if(r.exists) return {ok:false};
+    await new Promise(res => setTimeout(res, 700 * (i + 1)));   // ветка сдвинулась под нами — ещё раз
+  }
+  return {ok:false};
+}
+// итоговые квитанции: «внесено» или «не внесено» с причиной — их читает Hermes
+async function hxFlushReceipts(){
+  const me = hxDeviceId();
+  let changed = false;
+  for(const e of HERMES_LOG.filter(x => x.rc === 'pending' && x.dev === me)){
+    const body = {id:e.id, status:e.status, at:e.at, dev:e.dev, device:e.dl};
+    if(e.error) body.error = e.error;
+    if(e.summary) body.summary = e.summary;
+    const path = 'done/' + e.id + '.json';
+    const msg = 'EZ CRM · ' + (e.status === 'applied' ? 'внесено' : 'не внесено') + ' · ' + e.op;
+    let sha = e.rcSha;
+    if(!sha){ const cur = await hxGet(path); sha = cur && cur.sha; }
+    let r = await hxPut(path, body, sha, msg);
+    if(!r.ok){ const cur = await hxGet(path); r = await hxPut(path, body, cur && cur.sha, msg); }
+    if(r.ok){ e.rc = 'sent'; delete e.rcSha; changed = true; }
+  }
+  if(changed) saveState();
+}
+/* Команды, которые недавно (10 мин) взяло другое устройство, а их данных здесь ещё нет.
+   Следующие за ними ждут: «заведи проект» и «поставь в него людей» не должны разъехаться. */
+async function hxForeignRecent(inbox, done){
+  const me = hxDeviceId(), out = [];
+  const cand = inbox.filter(id => done.has(id) && !hxLogHas(id) && hxIdAge(id) < 24 * 3600e3).slice(-10);
+  for(const id of cand){
+    const f = await hxGet('done/' + id + '.json');
+    let r = null;
+    try{ r = f && JSON.parse(f.text); }catch(e){}
+    if(r && r.dev && r.dev !== me && Date.now() - Date.parse(r.at || 0) < 10 * 60e3) out.push(id);
+  }
+  return out;
+}
+function hxIdAge(id){
+  const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/.exec(id || '');
+  return m ? Date.now() - new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : Infinity;
+}
+/* Не лезем под руку: пока открыто окно, поле ввода или правка карточки,
+   команды ждут — перерисовка экрана стёрла бы то, что человек набирает. */
+function hxUserBusy(){
+  const open = [...document.querySelectorAll('.modal-overlay.show, .panel-pop.show, .dial-overlay.show')]
+    .filter(el => el.id !== 'hermesModal' && el.id !== 'syncModal');
+  if(open.length) return true;
+  if(infoEditMode || editingPaymentDate || editingSum || noteEditIdx !== -1) return true;
+  const a = document.activeElement;
+  return !!(a && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !a.closest('#hermesModal, #syncModal'));
+}
+function hxRetrySoon(){
+  if(hxRetryTimer) return;
+  hxRetryTimer = setTimeout(() => { hxRetryTimer = null; hermesInboxCheck({force:true}); }, 20000);
+}
+function hxSay(state, text){
+  hxUi.state = state; hxUi.text = text || '';
+  if(state === 'ok') hxUi.at = new Date().toISOString();
+  renderHermesPanel();
+}
+// после сверки с облаком — сразу смотрим ящик: команды ложатся на свежие данные
+function hermesAfterSync(){ if(hxActive()) setTimeout(() => hermesInboxCheck({synced:true}), 400); }
+
+/* Главный проход: забрать новые команды по порядку, применить, отправить данные
+   в облако и только потом ответить квитанциями — чтобы Hermes, прочитав
+   «внесено», видел в базе уже новые цифры. */
+async function hermesInboxCheck(opts){
+  const o = opts || {};
+  if(!hxActive() || hxBusy || !cloudFirstSyncDone) return;
+  if(!o.force && Date.now() - hxLastRun < 15000) return;
+  if(hxUserBusy()){ hxRetrySoon(); return; }
+  hxBusy = true; hxLastRun = Date.now();
+  const applied = [];
+  try{
+    if(!hxVerified) await hxVerify();
+    const {inbox, done} = await hxList();
+    await hxFlushReceipts();                 // хвосты прошлого раза, если связь тогда оборвалась
+    const pending = inbox.filter(id => !done.has(id) && !hxLogHas(id));
+    let foreign = await hxForeignRecent(inbox, done);
+    hxUi.waiting = pending.length;
+    if(!pending.length){
+      // команду недавно внесло другое устройство — подтянем его данные из облака
+      if(foreign.length && !o.synced) cloudCheckRemote();
+      hxSay('ok');
+      return;
+    }
+    if(!o.synced){ cloudLastCheck = 0; await cloudCheckRemote(); }
+    if(cloudBusy || cloudUi.state === 'conflict' || cloudUi.state === 'error' || !cloudFirstSyncDone){
+      hxSay('wait', 'Команды ждут: сначала надо сойтись с облаком'); hxRetrySoon(); return;
+    }
+    foreign = foreign.filter(id => !hxLogHas(id));   // что уже приехало с облаком — не помеха
+    let held = false, taken = 0;
+    for(const id of pending){
+      if(hxUserBusy()){ hxRetrySoon(); held = true; break; }
+      if(foreign.some(f => f < id)){ hxRetrySoon(); held = true; break; }
+      const file = await hxGet('inbox/' + id + '.json');
+      if(!file) continue;
+      let raw;
+      try{ raw = JSON.parse(file.text); }catch(err){ raw = {bad:'Команда не читается — это не JSON'}; }
+      const cmd = hxCmd(raw, id);
+      const claim = await hxClaim(id, cmd);
+      if(!claim.ok){ taken++; break; }   // её взяло другое устройство: следующие ждут его данных
+      const res = hxApplyCommand(cmd);
+      applied.push(hxLogAdd(cmd, res, claim.sha));
+      saveState();                   // сразу на диск: закроют вкладку — внесённое не пропадёт
+    }
+    hxUi.waiting = Math.max(0, pending.length - applied.length - taken);
+    if(applied.length){
+      hxAfterApply(applied);
+      await cloudPush();             // данные — в облако…
+      await hxFlushReceipts();       // …и только потом квитанции
+    }
+    if(held && hxUi.waiting) hxSay('wait', 'Команды ждут: ' + (hxUserBusy()
+      ? 'открыто окно или идёт правка — внесу, как закончишь'
+      : 'предыдущую вносит другое устройство, жду его данных'));
+    else hxSay('ok');
+  }catch(e){
+    if(e && e.code === 'noaccess') hxVerified = false;
+    hxSay(e && e.code ? e.code : 'error', (e && e.hx) ? e.message : cloudHuman(e));
+    if(applied.length) hxAfterApply(applied);
+  }finally{
+    hxBusy = false;
+  }
+}
+function hermesCheckNow(btn){
+  if(!hxActive()){ renderHermesPanel(); return; }
+  hxVerified = false;                 // вдруг доступ только что дали
+  if(btn){ btn.disabled = true; btn.textContent = 'Проверяю…'; }
+  hermesInboxCheck({force:true}).finally(() => {
+    if(btn){ btn.disabled = false; btn.textContent = 'Проверить ящик'; }
+    renderHermesPanel();
+  });
+}
+
+/* ---- экран: плашка, журнал, раздел в «Сохранении» ---- */
+function hxAfterApply(entries){
+  refreshAll();
+  const scr = document.getElementById('screen-project');
+  if(currentProjectId && scr && scr.classList.contains('active')){
+    if(!PROJECTS.some(p => p.id === currentProjectId)) goHome();
+    else if(entries.some(e => e.pid === currentProjectId)) rerenderOpenProject();
+  }
+  hxRenderPill();
+  const m = document.getElementById('hermesModal');
+  if(m && m.classList.contains('show')) renderHermesJournal();
+}
+function hxWhen(iso){
+  try{ return new Date(iso).toLocaleString('ru-RU', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'}); }
+  catch(e){ return String(iso || ''); }
+}
+function hxSeenAt(){ try{ return localStorage.getItem('ez-hermes-seen') || ''; }catch(e){ return ''; } }
+function hxRenderPill(){
+  const el = document.getElementById('hermesPill');
+  if(!el) return;
+  const seen = hxSeenAt();
+  const list = APP_MODE === 'live' ? HERMES_LOG.filter(e => (e.at || '') > seen) : [];
+  if(!list.length){ el.classList.remove('show'); return; }
+  const bad = list.filter(e => e.status === 'failed').length, ok = list.length - bad;
+  el.classList.toggle('warn', bad > 0);
+  el.innerHTML = '<span class="hx-dot"></span><span class="hx-pill-text">'
+    + (ok ? `Hermes внёс ${ok} ${plural(ok, 'запись', 'записи', 'записей')}` : 'Hermes')
+    + (bad ? ` · ${bad} не ${plural(bad, 'прошла', 'прошли', 'прошли')}` : '') + '</span><span>›</span>';
+  el.classList.add('show');
+}
+function hxStatusHTML(){
+  if(APP_MODE !== 'live') return 'В демо-режиме команды Hermes не применяются — только в «Работе».';
+  if(!cloudOn()) return 'Hermes передаёт команды через облако. Подключи облако — и приложение начнёт их забирать.';
+  const repo = esc(hxRepoName());
+  const s = hxUi.state;
+  if(s === 'noaccess') return `<b style="color:var(--warn);">${esc(hxUi.text)}</b>`
+    + '<div style="margin-top:.35rem;">Как дать доступ: GitHub → Settings → Developer settings → Fine-grained tokens → '
+    + 'ключ, который вставлен в приложение (тот, что с доступом к <b>ez-crm-data</b>) → Edit → Repository access → '
+    + 'добавь <b>ez-crm-inbox</b> → Update. Права Contents: Read and write у ключа уже есть, вводить его заново не нужно. '
+    + 'Потом нажми «Проверить ящик».</div>';
+  if(s === 'setup' || s === 'error') return `Ящик ${repo}<br><b style="color:var(--warn);">${esc(hxUi.text)}</b>`;
+  if(s === 'wait') return `Ящик ${repo}<br>${esc(hxUi.text)}`;
+  if(s === 'ok') return `Ящик ${repo} · <span style="color:var(--ok);">проверен</span> ${hxUi.at ? hxWhen(hxUi.at) : ''}`
+    + (hxUi.waiting ? ` · ждут ${hxUi.waiting}` : '');
+  return `Ящик ${repo} · проверю, как только сойдусь с облаком`;
+}
+function renderHermesPanel(){
+  const st = document.getElementById('hxPanelStatus'), bt = document.getElementById('hxPanelButtons');
+  if(st && bt){
+    st.innerHTML = hxStatusHTML() + (HERMES_LOG.length
+      ? `<br>В журнале ${HERMES_LOG.length} ${plural(HERMES_LOG.length, 'запись', 'записи', 'записей')}` : '');
+    bt.innerHTML = '<button class="btn ghost" onclick="openHermesJournal()">Журнал Hermes</button>'
+      + (hxActive() ? '<button class="btn ghost tiny" onclick="hermesCheckNow(this)">Проверить ящик</button>' : '');
+  }
+  const m = document.getElementById('hermesModal');
+  if(m && m.classList.contains('show')){ const s = document.getElementById('hxStatus'); if(s) s.innerHTML = hxStatusHTML(); }
+}
+function hxRowHTML(e){
+  const pill = e.status === 'failed' ? '<span class="pill pill-warn">не вышло</span>'
+    : e.undone ? '<span class="pill pill-muted">отменено</span>' : '<span class="pill pill-ok">внесено</span>';
+  const alive = e.pid && /^[\w-]+$/.test(e.pid) && PROJECTS.some(p => p.id === e.pid);
+  const proj = alive ? `<button class="hx-proj" onclick="hxOpenProject('${e.pid}')">${esc(e.pname || 'проект')}</button>`
+    : (e.pname ? `<span class="hx-proj off">${esc(e.pname)}</span>` : '');
+  const canUndo = e.status === 'applied' && !e.undone && e.op !== 'undo' && (e.patches || []).length;
+  return `<div class="hx-row${e.status === 'failed' ? ' failed' : ''}${e.undone ? ' undone' : ''}">
+    <div class="hx-top"><span class="hx-when">${esc(hxWhen(e.at))}</span>${pill}${proj}</div>
+    <div class="hx-sum">${esc(e.summary)}</div>
+    ${e.error ? `<div class="hx-err">${esc(e.error)}</div>` : ''}
+    ${e.say ? `<div class="hx-say">«${esc(e.say)}»</div>` : ''}
+    ${e.undone ? `<div class="hx-meta">отменено ${e.undone.by === 'user' ? 'тобой' : 'по просьбе Hermes'} · ${esc(hxWhen(e.undone.at))}</div>` : ''}
+    ${canUndo ? `<div class="hx-actions"><button class="btn ghost tiny" onclick="hxUndoAsk('${e.id}')">Отменить</button></div>` : ''}
+  </div>`;
+}
+function renderHermesJournal(){
+  const st = document.getElementById('hxStatus'), bt = document.getElementById('hxButtons'), list = document.getElementById('hxList');
+  if(!st || !bt || !list) return;
+  st.innerHTML = hxStatusHTML();
+  bt.innerHTML = hxActive() ? '<button class="btn ghost tiny" onclick="hermesCheckNow(this)">Проверить ящик</button>' : '';
+  const rows = HERMES_LOG.slice().reverse();
+  list.innerHTML = rows.length ? rows.map(hxRowHTML).join('')
+    : '<div class="empty-hint">Hermes пока ничего не вносил. Напиши ему в Телеграме — записи появятся здесь.</div>';
+}
+function openHermesJournal(){
+  renderHermesJournal();
+  document.getElementById('hermesModal').classList.add('show');
+  const last = HERMES_LOG.reduce((m, e) => (e.at || '') > m ? e.at : m, '');
+  if(last){ try{ localStorage.setItem('ez-hermes-seen', last); }catch(e){} }
+  hxRenderPill();
+}
+function closeHermesJournal(){ document.getElementById('hermesModal').classList.remove('show'); }
+function hxOpenProject(pid){
+  closeHermesJournal(); closeSyncPanel();
+  if(PROJECTS.some(p => p.id === pid)) openProject(pid);
+}
+function hxUndoAsk(id){
+  const e = HERMES_LOG.find(x => x.id === id);
+  if(!e) return;
+  askConfirm({title:'Отменить запись Hermes?', text:`${e.summary}. Вернётся так, как было до неё.`,
+    okText:'Отменить запись', cancelText:'Оставить'}, () => hxUndoLocal(id));
+}
+function hxUndoLocal(id){
+  const e = HERMES_LOG.find(x => x.id === id);
+  if(!e || e.undone || e.status !== 'applied') return;
+  const snap = hxSnap();
+  const ctx = {cmd:{id:'user'}, patches:[], calc:[], pid:null, pname:'', summary:''};
+  try{
+    hxRevertEntry(e, ctx);
+    hxRecalc(ctx.calc);
+    e.undone = {at:new Date().toISOString(), by:'user'};
+  }catch(err){
+    hxRestore(snap);
+    askNotice((err && err.hx) ? err.message : 'Не получилось: ' + ((err && err.message) || err), 'Не отменил');
+    return;
+  }
+  saveState();
+  hxAfterApply([e]);
+}
+
+/* Самопроверка команд — в песочнице: проверки работают на копиях данных,
+   а настоящие объекты после проверки возвращаются на место нетронутыми,
+   даже если проверка упала. Код синхронный — таймер сохранения не вклинится. */
+function hxSandbox(fn){
+  const keep = {pr:PROJECTS.slice(), cr:CREW.slice(), qn:QUICK_NOTES.slice(), ct:CUSTOM_TASKS.slice(),
+    lg:HERMES_LOG, s:[quickNoteSeq, customTaskSeq], day:currentDayIso};
+  const copy = JSON.parse(hxSnap());
+  replaceArray(PROJECTS, copy.pr); replaceArray(CREW, copy.cr);
+  replaceArray(QUICK_NOTES, copy.qn); replaceArray(CUSTOM_TASKS, copy.ct);
+  HERMES_LOG = copy.lg;
+  try{ return fn(); }
+  finally{
+    replaceArray(PROJECTS, keep.pr); replaceArray(CREW, keep.cr);
+    replaceArray(QUICK_NOTES, keep.qn); replaceArray(CUSTOM_TASKS, keep.ct);
+    HERMES_LOG = keep.lg; quickNoteSeq = keep.s[0]; customTaskSeq = keep.s[1]; currentDayIso = keep.day;
+  }
+}
+function hxT(op, args){ return hxApplyCommand(hxCmd({v:1, op, args, say:'самопроверка'}, 'selfcheck-' + (++hxT.n))); }
+hxT.n = 0;
+function hxTLog(op, args){ const r = hxT(op, args); return {r, e:hxLogAdd(r.ctx.cmd, r, null)}; }
 
 /* Мои реквизиты для шапки документов */
 function renderMyContacts(){
@@ -16374,6 +17497,149 @@ const SELF_CHECK_CASES = [
       return (head === '%PDF-' && tail.indexOf('%%EOF') > -1 && b.length > 20000) ? 1 : 0;
     },
     expect:1},
+
+  {group:'Hermes', name:'Новый проект: дни по порядку, заказчик и снимок ставок на месте',
+    run:()=>hxSandbox(()=>{
+      const r = hxT('project.create', {name:'Тест Hermes', dates:['2030-01-11', '2030-01-10'], client:'Клиент'});
+      const p = r.ok && PROJECTS.find(x => x.id === r.ctx.pid);
+      return (p && p.dates.join() === '2030-01-10,2030-01-11' && p.client === 'Клиент' && p.rates && p.steps.length === 7) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Повтор той же команды не заводит второй проект',
+    run:()=>hxSandbox(()=>{
+      const n = PROJECTS.length;
+      hxT('project.create', {name:'Тест Hermes', dates:['2030-01-10']});
+      const again = hxT('project.create', {name:'тест  «Hermes»', dates:['2030-01-10']});
+      return (PROJECTS.length - n) + (again.ok ? 10 : 0);
+    }), expect:1},
+  {group:'Hermes', name:'Человек и время смены: персонал пересчитан сам, с переработкой',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест смены', dates:['2030-01-10']}).ctx.pid;
+      const a = hxT('crew.add', {project:pid, person:'тест осветитель', role:'осветитель'});
+      const b = hxT('shift.set', {project:pid, shiftStart:'8', shiftEnd:'22:00'});
+      const p = PROJECTS.find(x => x.id === pid);
+      const c = p.units[0].crew.find(x => x.id === '__sc_hx1');
+      const q = JSON.parse(JSON.stringify(p)); q.estimate = [];
+      calcDayPersonnel(q, q, null, true);
+      return (a.ok && b.ok && p.units[0].shiftStart === '08:00' && p.sum > 0 && p.sum === q.sum
+        && c.amount > roleShiftRate(projectRates(p), 'Осветитель')) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Многодневный проект: команда без дня отклоняется и ничего не меняет',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест дни', dates:['2030-01-10', '2030-01-11']}).ctx.pid;
+      const before = JSON.stringify(PROJECTS);
+      const r = hxT('shift.set', {project:pid, shiftStart:'09:00'});
+      return (!r.ok && /укажи day/.test(r.error) && JSON.stringify(PROJECTS) === before) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Человек не встаёт в два юнита одного дня',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест юниты', dates:['2030-01-10']}).ctx.pid;
+      const a = hxT('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель'});
+      const b = hxT('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель', unit:2});
+      return (a.ok && !b.ok && PROJECTS.find(x => x.id === pid).units.length === 1) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Поступление больше остатка — отказ, как у кнопки',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест деньги', dates:['2030-01-10']}).ctx.pid;
+      const p = PROJECTS.find(x => x.id === pid); p.sum = 50000; p.sumManual = true;
+      const r = hxT('client.payment', {project:pid, amount:60000, type:'cash'});
+      return (!r.ok && /Больше остатка/.test(r.error) && !allPayments(PROJECTS.find(x => x.id === pid)).length) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Поступление целиком закрывает «Оплату», отмена возвращает как было',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест деньги', dates:['2030-01-10']}).ctx.pid;
+      let p = PROJECTS.find(x => x.id === pid); p.sum = 50000; p.sumManual = true;
+      const {r, e} = hxTLog('client.payment', {project:pid, amount:50000, type:'noncash', date:'2030-01-12'});
+      p = PROJECTS.find(x => x.id === pid);
+      const closed = p.steps[5][1] === 1 && p.paidAmount === 50000 && p.paymentDate === '2030-01-12';
+      const u = hxT('undo', {command:e.id});
+      p = PROJECTS.find(x => x.id === pid);
+      return (r.ok && closed && u.ok && p.paidAmount === 0 && p.steps[5][1] === 0 && !p.paymentDate) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Отмена не затирает правку, сделанную руками после Hermes',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест правка', dates:['2030-01-10']}).ctx.pid;
+      const {e} = hxTLog('shift.set', {project:pid, shiftStart:'08:00', shiftEnd:'20:00'});
+      PROJECTS.find(x => x.id === pid).units[0].shiftEnd = '21:00';
+      const u = hxT('undo', {command:e.id});
+      const unit = PROJECTS.find(x => x.id === pid).units[0];
+      return (!u.ok && /уже поменяли/.test(u.error) && unit.shiftEnd === '21:00' && unit.shiftStart === '08:00'
+        && !HERMES_LOG.find(x => x.id === e.id).undone) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Отмена «человек на смену» убирает его и возвращает сумму',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест отмена', dates:['2030-01-10']}).ctx.pid;
+      hxT('shift.set', {project:pid, shiftStart:'08:00', shiftEnd:'20:00'});
+      const s0 = PROJECTS.find(x => x.id === pid).sum;
+      const {e} = hxTLog('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель'});
+      const s1 = PROJECTS.find(x => x.id === pid).sum;
+      const u = hxT('undo', {command:e.id});
+      const p = PROJECTS.find(x => x.id === pid);
+      return (u.ok && s1 > s0 && p.sum === s0 && !p.units[0].crew.some(c => c.id === '__sc_hx1')) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Команда с ошибкой посередине не оставляет следов',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест целиком', dates:['2030-01-10']}).ctx.pid;
+      const r = hxT('shift.set', {project:pid, shiftStart:'09:00', shiftEnd:'25:99'});
+      const u = PROJECTS.find(x => x.id === pid).units[0];
+      return (!r.ok && u.shiftStart === '' && u.shiftEnd === '') ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Текст из команды очищается от разметки и кавычек',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест текст', dates:['2030-01-10']}).ctx.pid;
+      hxT('note.add', {project:pid, text:'<img src=x onerror="alert(1)">Привет \'мир\''});
+      const n = PROJECTS.find(x => x.id === pid).notes[0];
+      return (n && n.source === 'hermes' && !/[<>"']/.test(n.text) && /Привет/.test(n.text)) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Отменить одну команду дважды нельзя',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест дважды', dates:['2030-01-10']}).ctx.pid;
+      const {e} = hxTLog('client.expected', {project:pid, date:'2030-02-01'});
+      const u1 = hxT('undo', {command:e.id}), u2 = hxT('undo', {command:e.id});
+      return (u1.ok && !u2.ok && !PROJECTS.find(x => x.id === pid).expectedPaymentDate) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'«Счёт» по команде ставит и отметку «счёт выставлен»',
+    run:()=>hxSandbox(()=>{
+      const pid = hxT('project.create', {name:'Тест счёт', dates:['2030-01-10']}).ctx.pid;
+      const r = hxT('project.step', {project:pid, step:'счёт', on:true});
+      const p = PROJECTS.find(x => x.id === pid);
+      return (r.ok && p.steps[4][1] === 1 && p.invoiceSent === true) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Операции следующего этапа отклоняются с понятной причиной, данные не тронуты',
+    run:()=>hxSandbox(()=>{
+      const before = hxSnap();
+      const r = hxT('crew.pay', {project:'p1', person:'x', amount:1000, type:'cash'});
+      return (!r.ok && /руками/.test(r.error) && hxSnap() === before) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Отмена создания: пустой проект удаляется, с командой — отказ',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const {e} = hxTLog('project.create', {name:'Тест удаление', dates:['2030-01-10']});
+      hxT('crew.add', {project:e.pid, person:'__sc_hx1', role:'Осветитель'});
+      const u1 = hxT('undo', {command:e.id});
+      hxT('crew.remove', {project:e.pid, person:'__sc_hx1'});
+      const u2 = hxT('undo', {command:e.id});
+      return (!u1.ok && u2.ok && !PROJECTS.some(x => x.id === e.pid)) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Человека с выплатами со смены не убрать',
+    run:()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест выплата', dates:['2030-01-10']}).ctx.pid;
+      hxT('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель'});
+      PROJECTS.find(x => x.id === pid).units[0].crew.find(c => c.id === '__sc_hx1').payments = [{amount:1000, type:'cash', date:'2030-01-10'}];
+      const r = hxT('crew.remove', {project:pid, person:'__sc_hx1'});
+      return (!r.ok && PROJECTS.find(x => x.id === pid).units[0].crew.some(c => c.id === '__sc_hx1')) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Проект по названию: точное совпадение находится, двусмысленное — отказ',
+    run:()=>hxSandbox(()=>{
+      hxT('project.create', {name:'Альфа Тест', dates:['2030-01-10']});
+      hxT('project.create', {name:'Альфа Тест 2', dates:['2030-01-11']});
+      const a = hxT('note.add', {project:'альфа тест', text:'x'});
+      const b = hxT('note.add', {project:'альфа', text:'y'});
+      return (a.ok && !b.ok && /несколько проектов/.test(b.error)) ? 1 : 0;
+    }), expect:1},
 ];
 
 function runSelfCheck(){
@@ -16549,6 +17815,14 @@ document.addEventListener('visibilitychange', ()=>{
 window.addEventListener('online', ()=>{ if(cloudUi.state === 'error') cloudPush(); });
 cloudSay(cloudOn() ? 'ok' : 'off');
 if(cloudOn()) setTimeout(cloudCheckRemote, 900);
+/* Hermes: ящик смотрим сразу после сверки с облаком (hermesAfterSync), при возврате
+   в приложение и раз в минуту — только пока приложение перед глазами. Устройство,
+   которое просто лежит открытым, команды не хватает: иначе оно спорило бы с тем,
+   в котором сейчас работают. */
+hxRenderPill();
+window.addEventListener('focus', () => { setTimeout(() => hermesInboxCheck(), 1500); });
+document.addEventListener('visibilitychange', () => { if(!document.hidden) setTimeout(() => hermesInboxCheck(), 1500); });
+setInterval(() => { if(!document.hidden && document.hasFocus()) hermesInboxCheck(); }, 60000);
 </script>
 
 
