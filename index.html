@@ -65,6 +65,12 @@
     --mono-bg:#EFEDE5; --shadow: 0 1px 2px rgba(20,15,5,.06), 0 10px 26px -14px rgba(20,15,5,.18);
   }
   :root{ --ease: cubic-bezier(.4,0,.2,1); } /* apple-ish: fast, no overshoot */
+  /* Безопасные зоны экрана: на айфоне со значка «Домой» верх занимают часы и остров,
+     низ — полоса жеста. Окна раньше начинались в 16px от края, крестик попадал
+     в системную зону и тапы по нему проглатывались. Считаем их отдельно,
+     чтобы одинаково применить и к модалкам, и к выдвижным панелям. */
+  :root{ --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --overlay-max: calc(100dvh - 1.6rem - var(--safe-top) - var(--safe-bottom)); }
   /* Стрелка выпадающих списков — своя, цветом под тему */
   :root{ --sel-arrow:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23918E86' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>"); }
   :root[data-theme="light"]{ --sel-arrow:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23726E64' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>"); }
@@ -280,15 +286,14 @@
        разрыв между последним рядом и легендой резал глаз */
     .cal-toolbar{margin-bottom:1.05rem;}
     .cal-panel{padding-bottom:.6rem;}
-    /* легенда вплотную к сетке; с появлением метки «отменён» пунктов стало шесть —
-       в одну строку они на телефоне не влезают, поэтому разрешаем перенос,
-       но сами пункты не рвём */
-    .panel .legend{gap:.2rem .34rem;font-size:.55rem;flex-wrap:wrap;white-space:nowrap;margin-top:.15rem;}
-    .panel .legend span{gap:.22rem;}
-    .panel .legend i{width:6px;height:6px;}
-    .panel .legend .coin-ico{width:8px;height:8px;}
-    .panel .legend .coin-ico{width:9px;height:9px;}
+    /* легенда вплотную к сетке. Шесть пунктов влезают в одну строку только
+       с короткими подписями («Ждём ₽», «День ₽») — полные формулировки живут
+       в title. Перенос оставлен на случай совсем узкого экрана. */
+    .panel .legend{gap:.18rem .24rem;font-size:.57rem;flex-wrap:wrap;white-space:nowrap;
+      margin-top:.15rem;justify-content:space-between;}
+    .panel .legend span{gap:.2rem;}
     .panel .legend i{width:7px;height:7px;}
+    .panel .legend .coin-ico{width:9px;height:9px;}
   }
 
   /* minmax(0,1fr): у голого 1fr пол — min-content, и длинная плашка события
@@ -632,6 +637,13 @@
   .cm-body{display:none;padding:0 .45rem .4rem;}
   .cm.open .cm-body{display:block;}
   .cm-tools{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;margin:.1rem 0 .35rem;}
+  /* У человека контролов до пяти, и на телефоне они вставали ступеньками,
+     оставляя полстроки пустой: роль и кнопки тянутся по ряду и заполняют его
+     до края. На широком экране строка и так одна — растягивать не нужно. */
+  @media (max-width:900px){
+    .cm-tools-crew .role-select,
+    .cm-tools-crew .btn{flex:1 1 auto;min-width:0;white-space:nowrap;}
+  }
   /* Внутри раскрытой строки рамка вокруг выплаты только утяжеляет: человек уже
      в своей карточке, второй контур ничего не разделяет. */
   .cm-body .pay-row{border:none;background:none;padding:.3rem 0;}
@@ -663,6 +675,9 @@
   .ov-line{display:flex;justify-content:space-between;gap:.6rem;font-size:.8rem;padding:.15rem 0;}
   .ov-line.warn{color:var(--warn);}
   .pay-tools{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+  /* Под записью о поступлении кнопки шли вплотную к ней — тот же шаг, что между
+     остальными блоками денег */
+  .pay-fact + .pay-tools{margin-top:.6rem;}
   /* Назначить рентал: список, сумма и кнопка в одну строку на любой ширине */
   .rental-add{display:flex;gap:.4rem;align-items:center;flex-wrap:nowrap;margin-top:.4rem;}
   .rental-add .role-select{flex:1 1 0;min-width:0;}
@@ -956,13 +971,21 @@
   .hours-note .ot{color:var(--warn);}
   .hours-note .load{color:var(--accent-ink);}
   /* Тумблеры юнита — та же логика вкл/выкл, что и на циферблате смены */
-  .unit-toggles{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.45rem;}
   .unit-toggle{border:1px solid var(--line);background:var(--bg-raised);color:var(--ink-muted);
     border-radius:9px;padding:.4rem .6rem;font-size:.7rem;font-weight:600;font-family:inherit;
     cursor:pointer;transition:background .15s ease,border-color .15s ease,color .15s ease;}
   .unit-toggle.on{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
+  .unit-toggles{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.45rem;}
+  /* На телефоне восемь чипов вставали ступеньками на четыре строки, и половина
+     каждой строки пустовала. Чипы тянутся по ряду и заполняют его до края,
+     подписи не рвутся. На широком экране всё и так помещалось в строку —
+     там растягивать нечего, иначе кнопки раздуваются. */
+  @media (max-width:900px){
+    .unit-toggles .unit-toggle{flex:1 1 auto;display:inline-flex;align-items:center;
+      justify-content:center;white-space:nowrap;padding:.34rem .5rem;font-size:.66rem;}
+  }
   /* Действия под юнитами — одним рядом, «Расчёт персонала» прижат вправо */
-  .crew-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
+  .crew-actions{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;}
   .crew-actions-main{margin-left:auto;}
   @media (max-width:560px){ .crew-actions-main{margin-left:0;width:100%;} }
   /* Модалка «Погрузка/разгрузка» */
@@ -977,7 +1000,7 @@
   /* База данных */
   /* .modal-card задаёт свою ширину ниже по файлу — берём специфичностью, а не порядком */
   .modal-card.db-card{max-width:min(720px,94vw);width:min(720px,94vw);
-    max-height:calc(100vh - 2rem);max-height:calc(100dvh - 2rem);overflow-y:auto;}
+    max-height:calc(100vh - 2rem);max-height:var(--overlay-max);overflow-y:auto;}
   .db-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;}
   .db-head h3{margin:0;}
   .db-section-title{font-family:var(--font-mono);font-size:.62rem;text-transform:uppercase;
@@ -1104,7 +1127,7 @@
   .panel-pop-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;
     box-shadow:var(--shadow);padding:.9rem 1rem;display:flex;flex-direction:column;
     width:min(26vw,520px);min-width:320px;
-    height:50vh;height:50dvh;min-height:340px;max-height:calc(100dvh - 2rem);
+    height:50vh;height:50dvh;min-height:340px;max-height:var(--overlay-max);
     overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
     overflow-anchor:none;}
   /* Подложка под панелями: гасит фон и ловит клик мимо */
@@ -1121,9 +1144,14 @@
   #quickNoteModal .panel-pop-card textarea:focus{border-color:var(--accent);}
   /* Калькулятор в режиме панели — шире и со своей прокруткой */
   #dialOverlay.panel-pop .panel-pop-card{width:min(34vw,620px);min-width:340px;
-    height:80vh;height:80dvh;max-height:calc(100dvh - 2rem);overflow-y:auto;align-items:center;}
+    height:80vh;height:80dvh;max-height:var(--overlay-max);overflow-y:auto;align-items:center;}
   @media (max-width:900px){
-    .panel-pop{left:50%!important;top:50%!important;transform:translate(-50%,-50%) scale(.98);}
+    /* Центр — по безопасной зоне, а не по стеклу: остров сверху выше домашней
+       полосы снизу, и панель прижималась к нему вплотную — крестик попадал
+       под остров и тап по нему не доходил. */
+    .panel-pop{left:50%!important;
+      top:calc(50% + (var(--safe-top) - var(--safe-bottom)) / 2)!important;
+      transform:translate(-50%,-50%) scale(.98);}
     .panel-pop.show{transform:translate(-50%,-50%) scale(1);}
     .panel-pop-card{width:min(92vw,520px);height:70vh;height:70dvh;}
     #quickNoteModal .panel-pop-card{width:min(88vw,420px);height:38vh;height:38dvh;min-height:230px;}
@@ -1440,14 +1468,17 @@
   .dial-title{font-family:var(--font-display);font-size:1.1rem;font-weight:600;margin:.4rem 0 1.1rem;text-align:center;}
   /* Третья мерка — по высоте экрана: на коротком телефоне циферблат ужимается сам,
      иначе калькулятор не помещается и приходится скроллить. */
-  .dial-wrap{position:relative;width:min(166px,44vw,20vh);height:min(166px,44vw,20vh);touch-action:none;
+  /* Соразмерно карточке по ширине, с полем по краям; по высоте — потолок,
+     чтобы на коротком экране циферблат не съедал всё окно */
+  .dial-wrap{position:relative;width:min(276px,74vw,29vh);height:min(276px,74vw,29vh);touch-action:none;
     cursor:grab;flex:none;}
   .dial-wrap:active{cursor:grabbing;}
   .dial-wrap.moving-start{border-radius:50%;box-shadow:0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft);}
   .dial-wrap svg{width:100%;height:100%;display:block;}
-  .dial-hours{font-family:var(--font-mono);font-size:1.22rem;font-weight:700;text-align:center;
-    margin:.2rem 0 .15rem;line-height:1.05;flex:none;}
-  .dial-hours small{display:block;font-family:var(--font-body);font-size:.68rem;font-weight:500;
+  .dial-hours{font-family:var(--font-mono);font-size:1.5rem;font-weight:700;text-align:center;
+    margin:.1rem 0 .3rem;line-height:1.05;flex:none;
+    display:flex;align-items:baseline;justify-content:center;gap:.4rem;}
+  .dial-hours small{display:inline;font-family:var(--font-body);font-size:.66rem;font-weight:500;
     color:var(--ink-muted);text-transform:uppercase;letter-spacing:.05em;margin-top:.25rem;}
   /* Начало и конец смены под циферблатом + переключатель день/ночь:
      циферблат 12-часовой, поэтому 15:00 и 3:00 — одна и та же точка. */
@@ -1459,7 +1490,8 @@
     width:100%;height:3.62rem;flex:none;overflow:hidden;}
   .dsl-line{max-width:100%;height:1.15rem;line-height:1.15rem;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .dsl-row{display:flex;gap:.4rem;height:1.3rem;align-items:center;}
+  .dsl-row{display:flex;gap:.35rem;height:1.3rem;align-items:center;justify-content:center;flex-wrap:nowrap;}
+  .dsl-row .dial-ampm{white-space:nowrap;}
   .dial-diag{width:100%;max-width:380px;font-family:var(--font-mono);font-size:.58rem;
     line-height:1.35;color:var(--ink-muted);background:var(--bg-sunk);border:1px solid var(--line);
     border-radius:8px;padding:.35rem .5rem;margin-bottom:.5rem;white-space:pre-wrap;word-break:break-word;}
@@ -1515,7 +1547,8 @@
      а не оказаться под невидимой подложкой с нерабочими кнопками. Ниже picker-pop (300) —
      он всплывает НАД модалкой, когда дата/время выбираются прямо внутри неё. */
   .modal-overlay{position:fixed;inset:0;background:rgba(10,9,7,.6);z-index:150;display:none;
-    align-items:center;justify-content:center;padding:1rem;overflow:hidden;}
+    align-items:center;justify-content:center;overflow:hidden;
+    padding:calc(.8rem + var(--safe-top)) 1rem calc(.8rem + var(--safe-bottom));}
   .modal-overlay.show{display:flex;animation:fade .18s var(--ease);}
   /* Hermes: плашка «внёс N записей» над контентом и строки журнала.
      z-index ниже модалок (150): открытое окно её перекрывает. */
@@ -1549,7 +1582,7 @@
      dvh учитывает адресную строку на телефоне, vh оставлен запасным вариантом. */
   .modal-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:14px;
     padding:1.2rem 1.3rem;max-width:360px;width:100%;box-shadow:var(--shadow);
-    max-height:calc(100vh - 2rem);max-height:calc(100dvh - 2rem);
+    max-height:calc(100vh - 2rem);max-height:var(--overlay-max);
     overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
     overflow-anchor:none;}
   /* Пока открыт слой, страница под ним зафиксирована: не прокручивается и не прыгает.
@@ -1895,11 +1928,11 @@
       <div id="calBody"></div>
       <div class="legend">
         <span><i style="background:var(--pending)"></i>В работе</span>
-        <span><i style="background:var(--warn)"></i>Ждём оплату</span>
+        <span title="Ждём оплату"><i style="background:var(--warn)"></i>Ждём&nbsp;₽</span>
         <span><i style="background:var(--ok)"></i>Закрыт</span>
         <span><i style="background:var(--ink-muted)"></i>Отменён</span>
         <span><svg class="coin-ico" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5" cy="5" r="3.4"></circle><path d="M7.6 7.6 L10.4 10.4"></path></svg>Освоение</span>
-        <span><svg class="coin-ico" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>День оплаты</span>
+        <span><svg class="coin-ico" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6" cy="6" r="4.7"></circle><circle cx="6" cy="6" r="2.1"></circle></svg>День&nbsp;₽</span>
       </div>
     </div>
 
@@ -2150,10 +2183,11 @@
     <h3 class="dial-title" style="margin:0;">Быстрый расчёт команды</h3>
     <button class="btn ghost tiny" onclick="closeHoursDial()">✕</button>
   </div>
+  <!-- Часы ВЫШЕ циферблата: при кручении палец закрывал число под ним -->
+  <div class="dial-hours" onclick="dialDiagTap()"><span id="dialHoursNum">0 ч</span><small>смена</small></div>
   <div class="dial-wrap" id="dialWrap">
     <svg id="dialSvg" viewBox="0 0 320 320"></svg>
   </div>
-  <div class="dial-hours" onclick="dialDiagTap()"><span id="dialHoursNum">0 ч</span><small>смена</small></div>
   <!-- Строка диагностики: включается тройным тапом по числу часов. Нужна, чтобы поймать
        «съезд» на живом телефоне: видно угол пальца, сдвиг центра и что прислала система. -->
   <div class="dial-diag" id="dialDiag" style="display:none;"></div>
@@ -2163,6 +2197,7 @@
     <div class="dsl-row" id="dialShiftBtns" style="visibility:hidden;">
       <button class="dial-ampm" id="dialAmPmBtn" onclick="toggleDialStartPM()" title="Циферблат 12-часовой — уточни, день это или ночь">после полудня</button>
       <button class="dial-ampm" id="dialMoveStartBtn" onclick="toggleDialMoveStart()">сдвинуть начало</button>
+      <button class="dial-ampm" id="dialStepBtn" onclick="toggleDialStep()" title="Шаг, которым цепляется стрелка">шаг 30 мин</button>
     </div>
     <div class="dsl-hint" id="dialShiftHint"></div>
   </div>
@@ -3814,7 +3849,21 @@ let dialGrab = 'end';      // что тянем в этом жесте: 'end' �
    уезжала на новое время. Теперь по умолчанию палец всегда тянет ТОЛЬКО конец. */
 let dialMoveStart = false;
 const DIAL_MAX_ANGLE = 360*3; // не даём накрутить больше 36 часов — за пределами разумной смены
-const DIAL_SNAP = 7.5;        // 7.5° = 15 минут
+/* Шаг фиксации. Пятнадцать минут оказались мельче, чем нужно: смены считают
+   получасами и целыми часами. 15° = 30 минут, 30° = час ровно. Переключается
+   чипом под циферблатом; выбор запоминается на устройстве. */
+const DIAL_STEPS = {half: 15, hour: 30};
+let dialStepKey = (()=>{ try{ return localStorage.getItem('ez-dial-step')==='hour' ? 'hour' : 'half'; }catch(e){ return 'half'; } })();
+function dialStepDeg(){ return DIAL_STEPS[dialStepKey] || 15; }
+function toggleDialStep(){
+  dialStepKey = dialStepKey === 'half' ? 'hour' : 'half';
+  try{ localStorage.setItem('ez-dial-step', dialStepKey); }catch(e){}
+  // уже набранное подгоняем под новый шаг, иначе подпись врёт относительно дуги
+  dialStartAngle = dialWrap360(dialSnap(dialStartAngle));
+  dialSetCum(dialSnap(dialCumAngle));
+  renderDial();
+  updateDialCostIfReady();
+}
 
 /* ===== Почему механика абсолютная, а не «по приращениям» =====
    Прежний циферблат складывал разницу углов между кадрами. Пока смена начиналась
@@ -3861,7 +3910,7 @@ function dialCtmOffset(){   // где центр рисунка сейчас н�
   const q = p.matrixTransform(m);
   return {x:q.x, y:q.y};
 }
-function dialSnap(deg){ return Math.round(deg/DIAL_SNAP)*DIAL_SNAP; }
+function dialSnap(deg){ const st = dialStepDeg(); return Math.round(deg/st)*st; }
 function dialWrap360(deg){ return ((deg % 360) + 360) % 360; }
 function dialSyncCum(){ dialCumAngle = Math.min(DIAL_MAX_ANGLE, dialLaps*360 + dialNorm); }
 
@@ -4148,6 +4197,7 @@ function renderDial(){
   dialSetText(ampm, dialStartPM ? 'после полудня' : 'до полудня');
   const mv = document.getElementById('dialMoveStartBtn');
   if(mv) mv.classList.toggle('on', dialMoveStart);
+  dialSetText(document.getElementById('dialStepBtn'), dialStepKey === 'hour' ? 'шаг 1 ч' : 'шаг 30 мин');
   const wrapEl = document.getElementById('dialWrap');
   if(wrapEl) wrapEl.classList.toggle('moving-start', dialMoveStart);
   if(dialDiag) dialDiagRender();
@@ -9478,9 +9528,9 @@ function renderCrewTab(p){
       <div class="unit-toggles">
         <button class="unit-toggle ${unitMeOn(u, uIdx)?'on':''}" id="unit-me-${u.id}" onclick="toggleUnitMe(${u.id})" title="Мой гонорар гафера уходит в смету, но не в выплаты — эти деньги остаются в моём доходе"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>Я на смене</button>
         <button class="unit-toggle ${unitProgressive(u)?'on':''}" id="unit-prog-${u.id}" onclick="toggleUnitFlag(${u.id},'progressive')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg>Прогрессивы</button>
+        <button class="unit-toggle ${unitNight(u)?'on':''}" id="unit-night-${u.id}" onclick="toggleUnitFlag(${u.id},'night')" title="Ночная смена — часы после полуночи по ночной ставке"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>Ночь</button>
+        <button class="unit-toggle ${unitLunch(u)?'on':''}" id="unit-lunch-${u.id}" onclick="toggleUnitFlag(${u.id},'lunch')" title="Текущий обед — едим на ходу, смена не прерывается"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v6M9.3 2v6M11.5 2v6"/><path d="M17 2c-1.6 0-2.8 1.7-2.8 4.5S15.4 11 17 11v11"/></svg>Обед</button>
         <button class="unit-toggle ${unitLoadAsOt(u)?'on':''}" id="unit-load-${u.id}" onclick="toggleUnitFlag(${u.id},'loadAsOt')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M2 8h11v8H2z"/><path d="M13 11h4.5l2.5 3v2h-7z"/><circle cx="6" cy="18" r="1.6"/><circle cx="16.5" cy="18" r="1.6"/></svg>П/Р переработка</button>
-        <button class="unit-toggle ${unitNight(u)?'on':''}" id="unit-night-${u.id}" onclick="toggleUnitFlag(${u.id},'night')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>Ночная смена</button>
-        <button class="unit-toggle ${unitLunch(u)?'on':''}" id="unit-lunch-${u.id}" onclick="toggleUnitFlag(${u.id},'lunch')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M7 2v7a2 2 0 0 0 2 2v11M7 2v6M9.3 2v6M11.5 2v6"/><path d="M17 2c-1.6 0-2.8 1.7-2.8 4.5S15.4 11 17 11v11"/></svg>Текущий обед</button>
         <button class="unit-toggle ${unitGapHours(u)>0?'on':''}" id="unit-gap-${u.id}" onclick="openGapModal(${u.id})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 1.9"/><path d="M3.5 5.5l3-2M20.5 5.5l-3-2"/></svg>Разрыв${unitGapHours(u)>0?` · ${fmtHoursShort(unitGapHours(u))} ч`:''}</button>
         <button class="unit-toggle ${unitFixed(u)!=null?'on':''}" id="unit-fix-${u.id}" onclick="openFixModal(${u.id})" title="Задать длину смены числом, без времени начала и конца"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Фикс${unitFixed(u)!=null?` · ${fmtHoursShort(unitFixed(u))} ч`:''}</button>
         <button class="unit-toggle ${(u.taxi>0)?'on':''}" id="unit-taxi-${u.id}" onclick="openTaxiModal(${u.id})"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.25rem;"><path d="M4 16v-3.5l1.8-4A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1.5l1.8 4V16"/><path d="M4 16h16v2.5h-3V16M7 18.5V16"/><path d="M9.5 4h5"/></svg>Такси${u.taxi>0?` · ${fmtMoney(u.taxi)}`:''}</button>
@@ -9531,7 +9581,7 @@ function renderCrewTab(p){
             <span class="cm-chev">›</span>
           </button>
           <div class="cm-body">
-            <div class="cm-tools">
+            <div class="cm-tools cm-tools-crew">
               <select class="role-select" onchange="setCrewRole(${u.id},'${c.id}',this.value)" title="Позиция на проекте">
                 ${ROLES.map(r=>`<option value="${r}" ${c.role===r?'selected':''}>${r}</option>`).join('')}
               </select>
@@ -9556,7 +9606,7 @@ function renderCrewTab(p){
     </div>`;
   }).join('')
   + `<div class="crew-actions">
-       <button class="btn ghost" onclick="addUnit()">+ Добавить юнит</button>
+       <button class="btn ghost" onclick="addUnit()" title="Добавить юнит">+ Юнит</button>
        <button class="btn ghost" onclick="openCrewPassModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c0-1.7 1.3-3 3-3s3 1.3 3 3"/><path d="M14.5 10h4M14.5 13.5h4"/></svg>Пропуск</button>
        <button class="btn ghost" onclick="openCrewCreditsModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M3 8l2.5-4h3L6 8z"/><path d="M9 8l2.5-4h3L12 8z"/><path d="M15 8l2.5-4h3L18 8z"/><rect x="3" y="8" width="18" height="12" rx="1.5"/></svg>Кредитсы</button>
        <span class="form-hint" style="align-self:center;">Деньги считаются сами — как только меняешь время, состав или тумблеры.</span>
