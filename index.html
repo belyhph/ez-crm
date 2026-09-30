@@ -1735,6 +1735,26 @@
   .picker-day.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:700;}
   .picker-day.today{border:1px solid var(--accent);}
   .picker-day.pad{visibility:hidden;}
+  /* ===== Быстрый переход по месяцам =====
+     До нужного месяца был десяток нажатий на стрелку. Тап по названию
+     открывает год списком: месяц выбирается сразу, год листается тут же. */
+  .cal-title-btn{border:none;background:none;padding:0;margin:0;color:inherit;
+    display:inline-flex;align-items:baseline;gap:.18rem;cursor:pointer;text-align:left;}
+  .cal-title-btn::after{content:'⌄';font-family:var(--font-body);font-size:.72em;
+    opacity:.5;line-height:1;align-self:center;margin-top:-.1em;}
+  .cal-title-btn:hover{color:var(--accent-ink);}
+  /* в «Расписании» листать нечего — и выбирать месяц не из чего */
+  .cal-toolbar.no-nav .cal-title-btn{pointer-events:none;}
+  .cal-toolbar.no-nav .cal-title-btn::after{display:none;}
+  .mp-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.1rem .1rem .45rem;}
+  .mp-year{font-family:var(--font-mono);font-size:.95rem;font-weight:700;letter-spacing:.02em;}
+  .mp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.3rem;min-width:246px;}
+  .mp-m{border:1px solid transparent;background:var(--bg-sunk);color:var(--ink);border-radius:9px;
+    padding:.45rem .25rem;font-family:inherit;font-size:.74rem;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mp-m:hover{border-color:var(--accent);color:var(--accent-ink);}
+  .mp-m.now{border-color:var(--line);}
+  .mp-m.on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent);font-weight:700;}
 
   /* ===== Широкие экраны: айпад альбомно и ноут (от 900px) =====
      Всё ниже 900px не трогается вообще — телефонная вёрстка остаётся как была.
@@ -1881,7 +1901,8 @@
           </button>
         </div>
         <div class="cal-toolbar-right">
-          <h3 class="panel-title" id="calTitle">Июль 2026</h3>
+          <button class="panel-title cal-title-btn" id="calTitle" onclick="openMonthPicker(this)"
+            title="Выбрать месяц и год">Июль 2026</button>
           <div class="cal-nav" id="calNav">
             <button class="icon-btn" onclick="shiftCal(-1)">‹</button>
             <button class="icon-btn" onclick="shiftCal(1)">›</button>
@@ -2714,15 +2735,16 @@
   </div>
 </div>
 
-<!-- Фактическая смета: правки часов по факту + добор оборудования, затем файл -->
+<!-- Смета: правки часов, добор оборудования, затем файл -->
 <div class="modal-overlay" id="factEstModal">
   <div class="modal-card db-card" style="max-width:560px;">
     <div class="db-head">
-      <h3>Фактическая смета</h3>
+      <h3>Смета</h3>
       <button class="btn ghost tiny" onclick="closeFactEst()">✕</button>
     </div>
-    <div class="form-hint">Проверь часы смены и погрузки по каждому юниту — фактическая смета
-      считается по ним. Если перед сменой добирал оборудование, загрузи файлы этих ренталов.</div>
+    <div class="form-hint">Проверь часы смены и погрузки по каждому юниту — персонал считается
+      по ним. Если добирал оборудование, загрузи файлы этих ренталов. Пересформировать смету
+      можно сколько угодно раз: файл в проекте всегда один, последний.</div>
     <div id="factUnits"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem;">
       <button class="btn ghost" onclick="openEstImport()">Загрузить файл рентала</button>
@@ -2730,7 +2752,8 @@
     </div>
     <div class="form-hint" id="factHint" style="margin-top:.5rem;"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem;">
-      <button class="btn" onclick="factGenerate()">Сформировать фактическую смету</button>
+      <button class="btn" onclick="factGenerate()">Сформировать смету</button>
+      <button class="btn ghost" onclick="estStepMarkOnly()" title="Отметить чекпойнт, не собирая файл">Просто отметить</button>
       <button class="btn ghost" onclick="closeFactEst()">Отмена</button>
     </div>
   </div>
@@ -3041,7 +3064,12 @@
 
 <script>
 /* ============= Colour + phase model (derived from the flat 7-step checklist) ============= */
-const STEP_NAMES = ['Освоение','Смета','Команда','Факт. смета','Счёт','Оплата','Чек'];
+const STEP_NAMES = ['Освоение','Смета','Команда','Счёт','Оплата','Чек'];
+/* Чекпойнты по имени, а не по номеру. Раньше по коду были рассыпаны steps[STEP.bill],
+   steps[STEP.paid]… — и стоило убрать один шаг, как смысл всех следующих сдвигался.
+   Смета теперь одна: «первичная» и «фактическая» были одним и тем же документом
+   на разных стадиях, и держать под них два чекпойнта было нечего. */
+const STEP = {scout:0, estimate:1, crew:2, bill:3, paid:4, check:5};
 // «В работе» — приглушённый жёлтый (не акцент): на календаре читается лучше, чем монохром
 const PHASE_COLORS = ['var(--pending)','var(--warn)','var(--ok)']; // в работе / ждём оплату / закрыт
 const PHASE_SOFT   = ['var(--pending-soft)','var(--warn-soft)','var(--ok-soft)'];
@@ -3050,8 +3078,8 @@ const PHASE_TEXT   = ['var(--pending)','var(--warn)','var(--ok)'];
    но помечен отдельно: серая плашка с зачёркнутым названием. Во всём остальном
    (деньги, задачи, списки проектов) он по-прежнему не участвует — там activeProjects(). */
 function calendarProjects(){ return PROJECTS; }
-function calChipBg(p){ return p.cancelled ? 'var(--mono-bg)' : PHASE_SOFT[projectPhase(p)]; }
-function calChipFg(p){ return p.cancelled ? 'var(--ink-muted)' : PHASE_TEXT[projectPhase(p)]; }
+function calChipBg(p){ return (p.cancelled && !penaltyAwaiting(p)) ? 'var(--mono-bg)' : PHASE_SOFT[phaseIdx(p)]; }
+function calChipFg(p){ return (p.cancelled && !penaltyAwaiting(p)) ? 'var(--ink-muted)' : PHASE_TEXT[phaseIdx(p)]; }
 let calSearchQuery = '';
 
 const CREW = [
@@ -3162,8 +3190,17 @@ function ensurePickerPop(){
 }
 function closePicker(){
   const pop = document.getElementById('pickerPop');
-  if(pop){ pop.classList.remove('show'); setTimeout(()=>{ if(!pop.classList.contains('show')) pop.style.display='none'; }, 160); }
+  if(pop){
+    pop.classList.remove('show');
+    delete pop.dataset.kind;
+    setTimeout(()=>{ if(!pop.classList.contains('show')) pop.style.display='none'; }, 160);
+  }
   pickerTargetInput = null;
+}
+// поповер бывает и без поля-хозяина (выбор месяца) — тогда закрывать его надо по самому поповеру
+function pickerOpen(){
+  const pop = document.getElementById('pickerPop');
+  return !!(pickerTargetInput || (pop && pop.classList.contains('show')));
 }
 function positionPicker(input){
   const pop = ensurePickerPop();
@@ -3360,14 +3397,16 @@ document.addEventListener('click', e=>{
 });
 // Клик мимо поповера закрывает его
 document.addEventListener('pointerdown', e=>{
-  if(!pickerTargetInput) return;
+  if(!pickerOpen()) return;
   const pop = document.getElementById('pickerPop');
   if(pop && pop.contains(e.target)) return;
   if(e.target===pickerTargetInput) return;
+  // тап по названию месяца обрабатывает сама кнопка — иначе поповер закрылся бы и тут же открылся
+  if(e.target.closest && e.target.closest('#calTitle')) return;
   closePicker();
 });
-document.addEventListener('keydown', e=>{ if(e.key==='Escape' && pickerTargetInput) closePicker(); });
-window.addEventListener('resize', ()=>{ if(pickerTargetInput) closePicker(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && pickerOpen()) closePicker(); });
+window.addEventListener('resize', ()=>{ if(pickerOpen()) closePicker(); });
 
 /* Поиск в шапке: на фокусе расширяем его влево, схлопывая часы и быструю заметку.
    Если в поле остался запрос — оставляем расширенным, чтобы было видно, по чему фильтруем. */
@@ -3640,7 +3679,7 @@ const PROJECTS = [
   {
     id:'zoloto', name:'Витрина', client:'Витрина', operator:'—', producer:'Марина К.', director:'—',
     date:'2026-07-23', location:'Павильон «Мосфильм», студия 4',
-    steps:[['Освоение',1],['Смета',1],['Команда',1],['Факт. смета',1],['Счёт',1],['Оплата',0],['Чек',0]],
+    steps:[['Освоение',1],['Смета',1],['Команда',1],['Счёт',1],['Оплата',0],['Чек',0]],
     sum: 412000, paidAmount:200000, paymentType:null, paymentDate:null,
     invoiceSent:true, contractSent:true, receiptSent:false,
     estimate:[
@@ -3658,7 +3697,7 @@ const PROJECTS = [
   {
     id:'nezrim', name:'Мираж — клип', client:'Мираж', operator:'—', producer:'Демо-продюсер', director:'—',
     date:'2026-07-28', location:'Лофт «Северный», Москва',
-    steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',0],['Счёт',0],['Оплата',0],['Чек',0]],
+    steps:[['Освоение',1],['Смета',1],['Команда',0],['Счёт',0],['Оплата',0],['Чек',0]],
     sum: 230500, paidAmount:0, paymentType:null, paymentDate:null,
     invoiceSent:false, contractSent:false, receiptSent:false,
     estimate:[
@@ -3679,7 +3718,7 @@ const PROJECTS = [
   {
     id:'mishechkin', name:'Дубовик — DUB', client:'Дубовик', operator:'—', producer:'Игорь П.', director:'—',
     date:'2026-08-02', location:'ул. Правды, 24, студия «Реформа»',
-    steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',0],['Счёт',0],['Оплата',0],['Чек',0]],
+    steps:[['Освоение',1],['Смета',1],['Команда',0],['Счёт',0],['Оплата',0],['Чек',0]],
     sum: 318400, paidAmount:0, paymentType:null, paymentDate:null,
     invoiceSent:false, contractSent:false, receiptSent:false,
     estimate:[
@@ -3695,7 +3734,7 @@ const PROJECTS = [
   {
     id:'ozio', name:'Ozio — Заря', client:'Заря', operator:'—', producer:'—', director:'—',
     date:'2026-08-10', location:'уточняется',
-    steps:[['Освоение',0],['Смета',0],['Команда',0],['Факт. смета',0],['Счёт',0],['Оплата',0],['Чек',0]],
+    steps:[['Освоение',0],['Смета',0],['Команда',0],['Счёт',0],['Оплата',0],['Чек',0]],
     sum: 0, paidAmount:0, paymentType:null, paymentDate:null,
     invoiceSent:false, contractSent:false, receiptSent:false,
     estimate:[], units:[{id:1, name:'Юнит 1', loadStart:'', shiftStart:'', shiftEnd:'', loadEnd:'', crew:[]}],
@@ -3704,7 +3743,7 @@ const PROJECTS = [
   {
     id:'gena', name:'Ромашка — корпоратив', client:'Ромашка', operator:'—', producer:'—', director:'—',
     date:'2026-07-10', location:'Event-holl «Красный Октябрь»',
-    steps:[['Освоение',1],['Смета',1],['Команда',1],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',0]],
+    steps:[['Освоение',1],['Смета',1],['Команда',1],['Счёт',1],['Оплата',1],['Чек',0]],
     sum: 186195, paidAmount:186195, paymentType:'noncash', paymentDate:'2026-07-11',
     invoiceSent:true, contractSent:true, receiptSent:false,
     estimate:[
@@ -3751,7 +3790,7 @@ let TRASH = [];
 /* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
    (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
    приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
-const HX_SKILL_VERSION = '376e0c3c6f10';
+const HX_SKILL_VERSION = 'd5d73aaeb18a';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -4563,16 +4602,23 @@ function crewDebtTotal(personId){
   return total;
 }
 function projectPhase(p){
-  if(p.steps[5][1]) return 2;      // оплата отмечена → закрыт
-  if(p.steps[3][1]) return 1;      // факт. смета готова, ждём оплату
-  return 0;                        // в работе
+  if(!Array.isArray(p.steps) || p.steps.length < STEP_NAMES.length) return 0;
+  if(p.steps[STEP.paid][1]) return 2;   // оплата отмечена → закрыт
+  if(p.steps[STEP.bill][1]) return 1;   // счёт выставлен, ждём оплату
+  return 0;                             // в работе
+}
+/* Индекс фазы для раскраски — один на все представления. Календарь брал его
+   мимо «завершён» и «ждём неустойку», и закрытый проект оставался жёлтым. */
+function phaseIdx(p){
+  if(penaltyAwaiting(p)) return 1;
+  if(isClosedProject(p)) return 2;
+  return projectPhase(p);
 }
 /* Отменённый с неоплаченной неустойкой — не «отменён», а «ждём оплату»: деньги
    заказчика ещё впереди. Когда неустойка пришла, проект снова просто отменён. */
 function phaseColor(p){
-  if(penaltyAwaiting(p)) return PHASE_COLORS[1];
-  if(p.cancelled) return 'var(--ink-muted)';
-  return isClosedProject(p) ? PHASE_COLORS[2] : PHASE_COLORS[projectPhase(p)];
+  if(p.cancelled && !penaltyAwaiting(p)) return 'var(--ink-muted)';
+  return PHASE_COLORS[phaseIdx(p)];
 }
 function phaseLabel(p){
   if(penaltyAwaiting(p)) return 'Ждём оплату';
@@ -4584,7 +4630,7 @@ function statusPill(p){
   if(p.cancelled) return '<span class="pill pill-muted">отменён</span>';
   if(isClosedProject(p)) return '<span class="pill pill-ok">завершён</span>';
   // «Освоение» — опциональный шаг, не блокирует статус «закрыт»
-  const next = p.steps.find((s,i)=> i!==0 && !s[1]);
+  const next = (p.steps || []).find((s,i)=> i!==STEP.scout && !s[1]);
   if(!next) return '<span class="pill pill-ok">закрыт</span>';
   const ph = projectPhase(p);
   const cls = ph===2?'pill-ok':ph===1?'pill-warn':'pill-amber';
@@ -4637,19 +4683,19 @@ function payWatchProjects(){ return openProjects().concat(penaltyAwaitingProject
 /* Отмена с неустойкой ставит «Счёт» и ожидаемую дату оплаты; прежние значения
    прячутся в preCancelBill и возвращаются при восстановлении проекта. */
 function penMarkBilled(p, payDate){
-  if(!p.preCancelBill) p.preCancelBill = {invoiceSent: !!p.invoiceSent, step4: p.steps[4][1] || 0,
-    step5: p.steps[5][1] || 0, expectedPaymentDate: p.expectedPaymentDate || null};
+  if(!p.preCancelBill) p.preCancelBill = {invoiceSent: !!p.invoiceSent, step4: p.steps[STEP.bill][1] || 0,
+    step5: p.steps[STEP.paid][1] || 0, expectedPaymentDate: p.expectedPaymentDate || null};
   p.invoiceSent = true;
-  p.steps[4][1] = 1;
-  p.steps[5][1] = (p.sum > 0 && p.paidAmount >= p.sum) ? 1 : 0;
+  p.steps[STEP.bill][1] = 1;
+  p.steps[STEP.paid][1] = (p.sum > 0 && p.paidAmount >= p.sum) ? 1 : 0;
   if(payDate) p.expectedPaymentDate = payDate;
 }
 function penUnmarkBilled(p){
   const b = p.preCancelBill;
   if(!b) return;
   p.invoiceSent = b.invoiceSent;
-  p.steps[4][1] = b.step4;
-  p.steps[5][1] = b.step5;
+  p.steps[STEP.bill][1] = b.step4;
+  p.steps[STEP.paid][1] = b.step5;
   p.expectedPaymentDate = b.expectedPaymentDate;
   delete p.preCancelBill;
 }
@@ -4724,7 +4770,7 @@ function openCancelProj(pid, afterDone){
      По умолчанию 100% — работа сделана; если освоения не было, ставится «нет». */
   const scoutDay = days.find(d => (d.estimate||[]).some(i=>i.scoutLine)) || days[0];
   const scoutLine = allEstimate(p).find(i=>i.scoutLine);
-  const scoutDone = !!(p.steps && p.steps[0] && p.steps[0][1]);
+  const scoutDone = !!(p.steps && p.steps[STEP.scout] && p.steps[STEP.scout][1]);
   if(scoutLine || scoutDone || p.scoutDate){
     gaffer.push({what:'scout', dayIso:(scoutDay.iso || p.date), name:'Освоение',
       note: [p.scoutDate ? fmtDate(p.scoutDate) : '', scoutDone ? 'проведено' : 'запланировано']
@@ -5203,6 +5249,52 @@ function hoursBetween(a,b){
 /* ============= Calendar ============= */
 /* Возврат к сегодняшнему дню — вызывается при каждом входе на главный экран:
    неважно, первый это запуск или возврат из проекта, календарь встречает сегодняшним месяцем */
+/* Выбор месяца и года. Живёт в том же поповере, что выбор даты и времени:
+   один механизм показа и закрытия, ничего нового заводить не пришлось. */
+let mpYear = 0;
+function openMonthPicker(btn){
+  if(calMode === 'work') return;                 // расписание не листается
+  const pop = ensurePickerPop();
+  const wasMine = pop.classList.contains('show') && pop.dataset.kind === 'month';
+  closePicker();
+  if(wasMine) return;                            // повторный тап по названию — закрыть
+  pickerTargetInput = null;
+  pop.dataset.kind = 'month';
+  mpYear = calMode === 'week' ? weekAnchor.getFullYear() : calYear;
+  renderMonthPicker();
+  positionPicker(btn || document.getElementById('calTitle'));
+}
+function mpShiftYear(d){ mpYear += d; renderMonthPicker(); }
+function renderMonthPicker(){
+  const pop = ensurePickerPop();
+  const curM = calMode === 'week' ? weekAnchor.getMonth() : calMonth;
+  const curY = calMode === 'week' ? weekAnchor.getFullYear() : calYear;
+  pop.innerHTML = `
+    <div class="mp-head">
+      <button class="icon-btn" data-y="-1" title="Год назад">‹</button>
+      <span class="mp-year">${mpYear}</span>
+      <button class="icon-btn" data-y="1" title="Год вперёд">›</button>
+    </div>
+    <div class="mp-grid">
+      ${MONTHS.map((n, i) => `<button class="mp-m${i === curM && mpYear === curY ? ' on' : ''}${
+        i === TODAY.getMonth() && mpYear === TODAY.getFullYear() ? ' now' : ''}" data-m="${i}">${n}</button>`).join('')}
+    </div>
+    <div class="picker-foot">
+      <button class="btn ghost tiny" data-act="today">Сегодня</button>
+      <button class="btn ghost tiny" data-act="close">Закрыть</button>
+    </div>`;
+  pop.querySelectorAll('[data-y]').forEach(b => b.onclick = () => mpShiftYear(+b.dataset.y));
+  pop.querySelectorAll('[data-m]').forEach(b => b.onclick = () => calGoTo(mpYear, +b.dataset.m));
+  pop.querySelector('[data-act="today"]').onclick = () => { closePicker(); calToToday(); };
+  pop.querySelector('[data-act="close"]').onclick = closePicker;
+}
+function calGoTo(y, m){
+  calYear = y; calMonth = m;
+  // в режиме недели прыгаем на первую неделю выбранного месяца
+  if(calMode === 'week') weekAnchor = new Date(y, m, 1);
+  closePicker();
+  renderCalendar();
+}
 function calToToday(){
   calMonth = TODAY.getMonth();
   calYear = TODAY.getFullYear();
@@ -5907,17 +5999,20 @@ function generateAutoTasks(){
   const tasks = [];
   // завершённый проект задач не создаёт совсем — в этом весь смысл кнопки «Закрыть»
   openProjects().forEach(p=>{
+    // проект без чек-листа (из старого сейва или извне) не должен ронять дэшборд
+    if(!Array.isArray(p.steps) || p.steps.length < STEP_NAMES.length) p.steps = STEP_NAMES.map(n => [n, 0]);
     const du = daysUntil(p.date);
-    const scoutDone = !!p.steps[0][1];
+    const scoutDone = !!p.steps[STEP.scout][1];
     const hasCrew = projectHasCrew(p);
     const fullyPaid = projectFullyPaid(p);
 
-    // «Сформировать первичную смету» — с момента создания проекта и до галочки «Смета» в чек-листе.
-    // Именно эта галочка её и закрывает: фактическая смета — отдельная задача, уже после съёмки.
+    // «Сформировать смету» — с момента создания проекта и до галочки «Смета».
+    // Смета одна: то, что раньше было первичной и фактической, — один документ,
+    // который к съёмке уточняется по часам.
     // соло-командировка живёт без сметы и команды — эти задачи в ней только мешают
     const soloTrip = isSoloTrip(p);
-    if(!p.steps[1][1] && !soloTrip){
-      tasks.push({key:'est1', label:'Сформировать первичную смету', projectId:p.id, tab:'estimate', date:p.date});
+    if(!p.steps[STEP.estimate][1] && !soloTrip){
+      tasks.push({key:'est1', label:'Сформировать смету', projectId:p.id, tab:'estimate', date:p.date});
     }
     if(soloTrip && !tripFee(p)){
       tasks.push({key:'tripFee', label:'Указать гонорар за командировку', projectId:p.id, tab:'trip', date:p.date});
@@ -5954,22 +6049,19 @@ function generateAutoTasks(){
     if(fullyPaid && RENTAL_DEBTS.some(r=>r.projectId===p.id) && !allRentalsPaidFor(p)){
       tasks.push({key:'payRent', label:'Оплатить ренталы', projectId:p.id, tab:'pay', date:p.date});
     }
-    // «Отправить фактическую смету» — только когда отснят последний съёмочный день
+    // «Выставить счёт / дать реквизиты» — смета есть и съёмка позади:
+    // до последнего съёмочного дня цифры ещё могут поехать по часам
     const lastShootDay = projectDates(p).slice().sort().pop();
-    if(lastShootDay<=TODAY_ISO && !p.steps[3][1] && !soloTrip){
-      tasks.push({key:'estFact', label:'Отправить фактическую смету', projectId:p.id, tab:'estimate', date:p.date});
-    }
-    // «Выставить счёт / дать реквизиты» (замена «Счёт») — как только готова факт. смета
-    if(p.steps[3][1] && !p.steps[4][1]){
+    if(p.steps[STEP.estimate][1] && !p.steps[STEP.bill][1] && lastShootDay<=TODAY_ISO && !soloTrip){
       tasks.push({key:'bill', label:'Выставить счёт / дать реквизиты', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Сформировать чек» (замена «Чек») — деньги получены целиком
-    if(fullyPaid && !p.steps[6][1]){
+    if(fullyPaid && !p.steps[STEP.check][1]){
       tasks.push({key:'check', label:'Сформировать чек', projectId:p.id, tab:'pay', date:p.date});
     }
     // «Отправить кредитсы» — появляется, как только выставлен счёт; своего чек-листа под неё
     // нет, поэтому завершается вручную кликом по галочке (как кастомная задача)
-    if(p.steps[4][1] && !p.creditsSent && !soloTrip){
+    if(p.steps[STEP.bill][1] && !p.creditsSent && !soloTrip){
       tasks.push({key:'credits', label:'Отправить кредитсы', projectId:p.id, tab:'crew', date:p.date,
         onComplete:`completeCredits('${p.id}')`});
     }
@@ -6917,15 +7009,16 @@ function renderChecklist(p){
 function toggleStep(i){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   const turningOn = !p.steps[i][1];
-  // «Факт. смета» — не галочка, а действие: правки часов, добор оборудования, файл.
-  // Галочка встанет сама, когда фактическая смета сформирована.
-  if(i===3 && turningOn){ openFactEstimate(); return; }
+  /* «Смета» — не просто галочка, а действие: правки часов, добор оборудования,
+     файл. Галочка встанет сама, когда смета сформирована; «Просто отметить»
+     в том же окне — для случая, когда файл не нужен. */
+  if(i===STEP.estimate && turningOn && !isSoloTrip(p)){ openFactEstimate(); return; }
   p.steps[i][1] = turningOn ? 1 : 0;
-  if(i===0){ // «Освоение» — опционально; если ставим — уточняем дату и стоимость, само уходит в смету
+  if(i===STEP.scout){ // «Освоение» — опционально; если ставим — уточняем дату и стоимость, само уходит в смету
     if(turningOn) openScoutModal(p.id);
     else { p.scoutDate = null; removeScoutFromEstimate(p); renderEstimate(p); }
   }
-  if(i===4){ // «Счёт» — держим invoiceSent синхронно с чек-листом
+  if(i===STEP.bill){ // «Счёт» — держим invoiceSent синхронно с чек-листом
     p.invoiceSent = !!p.steps[i][1];
     if(turningOn) openPaymentDateModal(p.id);
   }
@@ -6995,7 +7088,7 @@ function saveScout(){
 function cancelScout(){
   // без подтверждённой даты/стоимости отметка «Освоение» не имеет смысла — откатываем чек-бокс
   const p = PROJECTS.find(x=>x.id===scoutProjectId);
-  if(p){ p.steps[0][1] = 0; if(currentProjectId===p.id) renderChecklist(p); }
+  if(p){ p.steps[STEP.scout][1] = 0; if(currentProjectId===p.id) renderChecklist(p); }
   document.getElementById('scoutModal').classList.remove('show');
   refreshAll();
 }
@@ -10567,7 +10660,36 @@ function migrateEstimateClientFlag(){
     if(touched) refreshProjectSum(p);
   });
 }
+/* ===== Одна смета вместо двух =====
+   Чекпойнтов было семь: «Смета» (первичная) и «Факт. смета» (после съёмки).
+   Теперь смета одна, и в старых сохранениях четвёртый шаг схлопывается в неё:
+   если фактическая была сформирована, то и смета точно была. Имена шагов
+   заодно приводим к нынешним — по ним ищут и статус проекта, и Hermes. */
+function migrateSteps(){
+  const all = PROJECTS.concat((TRASH || []).map(t => t && t.project).filter(Boolean));
+  all.forEach(p => {
+    if(!Array.isArray(p.steps)) p.steps = STEP_NAMES.map(n => [n, 0]);
+    const i = p.steps.findIndex(x => Array.isArray(x) && /^факт/i.test(String(x[0] || '')));
+    if(i > -1){
+      const fact = p.steps[i][1] ? 1 : 0;
+      p.steps.splice(i, 1);
+      const e = p.steps[STEP.estimate];
+      if(e) e[1] = (e[1] || fact) ? 1 : 0;
+    }
+    STEP_NAMES.forEach((n, k) => {
+      if(!Array.isArray(p.steps[k])) p.steps[k] = [n, 0]; else p.steps[k][0] = n;
+    });
+    p.steps.length = STEP_NAMES.length;
+    // снимок сметы тоже был двойным: оставляем последний, он и есть смета
+    if(p.estActual || p.estPrimary){
+      if(!p.estSnap) p.estSnap = p.estActual || p.estPrimary;
+      delete p.estActual; delete p.estPrimary;
+    }
+    (p.files || []).forEach(f => { if(f && f.sourceType === 'generated-estimate') delete f.phase; });
+  });
+}
 function migrateAllSettlements(){
+  migrateSteps();
   PROJECTS.forEach(p=>{ ensureUniqueUnitIds(p); allUnits(p).forEach(u=>u.crew.forEach(migrateSettlement)); });
   RENTAL_DEBTS.forEach(migrateSettlement);
   migrateEstimateClientFlag();
@@ -10696,16 +10818,18 @@ function openReport(pid){
     </div>` : '';
 
   const myFee = allEstimate(p).filter(i => i.gaffer).reduce((s, i) => s + lineTotal(i), 0);
-  const snapP = p.estPrimary, snapA = p.estActual;
-  const estDiff = (snapP && snapA) ? ((snapA.payable != null ? snapA.payable : snapA.sum) - (snapP.payable != null ? snapP.payable : snapP.sum)) : 0;
-  const estCmp = (snapP || snapA) ? `
+  /* Смета в отчёте — одной строкой: сколько было к оплате в сформированном
+     документе и разошлось ли это с нынешней суммой проекта. */
+  const snap = p.estSnap;
+  const snapSum = snap ? (snap.payable != null ? snap.payable : snap.sum) : 0;
+  const estDiff = snap ? (f.declared - snapSum) : 0;
+  const estCmp = snap ? `
     <div class="rep-block">
-      ${snapP ? row('Первичная смета · к оплате', snapP.payable != null ? snapP.payable : snapP.sum, {}) : ''}
-      ${snapA ? row('Фактическая смета · к оплате', snapA.payable != null ? snapA.payable : snapA.sum, {}) : ''}
-      ${(snapP && snapA)
-        ? row(estDiff > 0 ? 'Вылет против первичной' : estDiff < 0 ? 'Вышло меньше первичной' : 'Совпало с первичной',
-            Math.abs(estDiff), {strong:true, color: estDiff > 0 ? 'var(--warn)' : 'var(--ok)'})
-        : `<div class="form-hint" style="margin-top:.3rem;">${snapP ? 'Фактическая смета ещё не сформирована — она делается через чекпойнт «Факт. смета».' : 'Первичная смета не формировалась.'}</div>`}
+      ${row(`Смета · к оплате${snap.at ? ' · ' + fmtDate(snap.at) : ''}`, snapSum, {})}
+      ${Math.abs(estDiff) > 0.5
+        ? row(estDiff > 0 ? 'С тех пор сумма выросла' : 'С тех пор сумма уменьшилась', Math.abs(estDiff),
+            {muted:true, color: estDiff > 0 ? 'var(--warn)' : 'var(--ok)'})
+        : ''}
     </div>` : '';
   document.getElementById('reportBody').innerHTML = `
     <div class="form-hint">${esc(p.name)} · ${projectDates(p).map(fmtDate).join(', ')}</div>
@@ -11108,7 +11232,7 @@ function submitPayment(pid, type){
   p.paidAmount += amount;
   p.paymentType = type;
   p.paymentDate = date;
-  if(p.paidAmount >= p.sum) p.steps[5][1] = 1; // «Оплата» закрыта — деньги пришли целиком
+  if(p.paidAmount >= p.sum) p.steps[STEP.paid][1] = 1; // «Оплата» закрыта — деньги пришли целиком
   renderPayTab(p); renderChecklist(p); renderInfo(p);
   if(type==='noncash') askProof(day.payments[day.payments.length-1], `Поступление · ${fmtMoney(amount)}`);
   refreshAll();
@@ -11141,7 +11265,7 @@ function deletePayment(pid, idx){
     refreshProjectSum(p);      // пересчитывает paidAmount по всем дням
     refreshPaymentMeta(p);
     // деньги пришли не полностью — чекпойнт «Оплата» снова открыт
-    if(p.paidAmount < p.sum) p.steps[5][1] = 0;
+    if(p.paidAmount < p.sum) p.steps[STEP.paid][1] = 0;
     renderPayTab(p); renderChecklist(p); renderInfo(p);
     refreshAll();
     scheduleSave();
@@ -11437,7 +11561,7 @@ function renderFiles(p){
   if(!p.files.length){ pane.innerHTML = head + '<div class="empty-hint">Файлов пока нет — импортируй с устройства, либо синхронизируй смету/договор.</div>'; return; }
   pane.innerHTML = head + p.files.map((f,i)=>`<div class="filerow file-open" onclick="openProjectFileView('${p.id}',${i})" title="Открыть предпросмотр">
       <div class="fico">${esc(f.kind)}</div>
-      <div style="flex:1;min-width:0;">${esc(f.name)}${f.auto?' <span class="pill pill-muted">авто</span>':''}${f.sourceType==='rental-estimate'?` <span class="pill pill-muted">${esc(f.rental||'от рентала')}</span>`:''}${f.sourceType==='generated-estimate'?` <span class="pill ${f.phase==='actual'?'pill-ok':'pill-muted'}">${f.phase==='actual'?'фактическая':'первичная'}</span>`:''}
+      <div style="flex:1;min-width:0;">${esc(f.name)}${f.auto?' <span class="pill pill-muted">авто</span>':''}${f.sourceType==='rental-estimate'?` <span class="pill pill-muted">${esc(f.rental||'от рентала')}</span>`:''}${f.sourceType==='generated-estimate'?' <span class="pill pill-muted">смета</span>':''}
         ${f.size?`<div class="db-file-meta">${esc(f.size)}</div>`:''}</div>
       ${(ezFileHasData(f) || ezFileEverywhere(f))?`<button class="btn ghost tiny" onclick="event.stopPropagation();downloadProjectFile('${p.id}',${i})">Скачать</button>`:''}
     </div>`).join('');
@@ -13167,10 +13291,11 @@ function editRentalDiscount(pid, rental){
   });
 }
 
-/* ============= Первичная и фактическая сметы =============
-   Обе — файлы в «Файлах» проекта, собранные по формуляру на момент формирования:
-   первичная закрывает чекпойнт «Смета», фактическая — «Факт. смета».
-   Разница между ними — в отчёте проекта и в «Финансах». */
+/* ============= Смета файлом =============
+   Смета в «Файлах» проекта — снимок формуляра на момент формирования; она же
+   закрывает чекпойнт «Смета». Раньше таких документов было два, «первичный»
+   и «фактический», но это один и тот же лист на разных стадиях: до съёмки
+   в нём прикидка часов, после — настоящие. Пересформировал — файл обновился. */
 // байты → base64 кусками: одним куском длинную строку браузер не осиливает
 function ezBytesToB64(bytes){
   let s = '';
@@ -13178,7 +13303,7 @@ function ezBytesToB64(bytes){
   for(let i = 0; i < bytes.length; i += step) s += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
   return btoa(s);
 }
-async function generateEstimateFile(p, phase){
+async function generateEstimateFile(p){
   /* Файл собирается по тому же правилу, что и экран: за выбранный день, а если
      переключатель стоит на «весь проект» — по всем дням. У каждого дня свой файл:
      состав команды и техники там разный, и один снимок на всех врал бы. */
@@ -13187,8 +13312,7 @@ async function generateEstimateFile(p, phase){
   const t = estPayable(p, items);
   const perDay = isMultiDay(p) && estDocScope !== 'all';
   const dayIso = perDay ? activeDay(p).iso : null;
-  const label = (phase === 'actual' ? 'Фактическая смета' : 'Первичная смета')
-    + (perDay ? ` · ${fmtDate(dayIso)}` : '');
+  const label = 'Смета' + (perDay ? ` · ${fmtDate(dayIso)}` : '');
   /* Файл кладём в pdf: он открывается и печатается одинаково на любом устройстве,
      а html или текст всегда можно собрать заново кнопкой «Сохранить файл».
      Если pdf почему-то не собрался — падаем на прежний html, чтобы смета
@@ -13196,24 +13320,23 @@ async function generateEstimateFile(p, phase){
   let entry;
   try{
     const bytes = await estimatePdfBytes(p, label);
-    entry = {name:`${label} — ${p.name}.pdf`, kind:'PDF', sourceType:'generated-estimate', phase,
+    entry = {name:`${label} — ${p.name}.pdf`, kind:'PDF', sourceType:'generated-estimate',
       added:TODAY_ISO, size:Math.round(bytes.length / 1024) + ' КБ',
       dataUrl:'data:application/pdf;base64,' + ezBytesToB64(bytes), payable:t.payable};
   }catch(e){
     const html = estimateStandaloneHTML(p, label);
-    entry = {name:`${label} — ${p.name}.html`, kind:'HTML', sourceType:'generated-estimate', phase,
+    entry = {name:`${label} — ${p.name}.html`, kind:'HTML', sourceType:'generated-estimate',
       added:TODAY_ISO, size:Math.round(html.length / 1024) + ' КБ',
       dataUrl:'data:text/html;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(html))), payable:t.payable};
   }
   entry.dayIso = dayIso;
   // файл дня перезаписывает файл того же дня, а не чужого
-  const idx = p.files.findIndex(f => f.sourceType === 'generated-estimate' && f.phase === phase
-    && (f.dayIso || null) === dayIso);
+  const idx = p.files.findIndex(f => f.sourceType === 'generated-estimate' && (f.dayIso || null) === dayIso);
   if(idx > -1) p.files[idx] = entry; else p.files.push(entry);
   await ezFileStash(entry);   // байты живут отдельно от состояния, иначе оно распухает
   const snap = {sum:t.total, payable:t.payable, at:TODAY_ISO};
-  if(phase === 'actual'){ p.estActual = snap; p.steps[3][1] = 1; }
-  else { p.estPrimary = snap; p.steps[1][1] = 1; }
+  p.estSnap = snap;
+  p.steps[STEP.estimate][1] = 1;
   refreshProjectSum(p);
   renderChecklist(p); renderInfo(p); renderFiles(p); renderEstimate(p);
   refreshAll();
@@ -13221,21 +13344,23 @@ async function generateEstimateFile(p, phase){
   askNotice(`${label} сохранена в «Файлах» — её можно скачать и переслать. К оплате: ${fmtMoney(t.payable)}.`, label);
   return true;
 }
-function genEstimate(pid, phase){
+function genEstimate(pid){
   const p = PROJECTS.find(x => x.id === pid);
-  if(p) generateEstimateFile(p, phase);
+  if(p) generateEstimateFile(p);
 }
 
-/* ============= Фактическая смета: окно на чекпойнте =============
-   Перед формированием — правки фактических часов по юнитам (смена и ПРР)
-   и добор оборудования новыми файлами. Первичная смета при этом не трогается. */
+/* ============= Смета: окно на чекпойнте =============
+   Перед формированием — правки часов по юнитам (смена и ПРР) и добор
+   оборудования новыми файлами. Файл в проекте один: пересформировал — обновился. */
 function openFactEstimate(){
   const p = PROJECTS.find(x => x.id === currentProjectId);
   if(!p) return;
   renderFactUnits(p);
   const crewNow = allEstimate(p).filter(i => i.sec === 'Персонал').reduce((sum, i) => sum + lineTotal(i), 0);
+  const had = (p.files || []).some(f => f.sourceType === 'generated-estimate');
   document.getElementById('factHint').innerHTML =
-    `Персонал сейчас в смете: <b>${fmtMoney(crewNow)}</b>. Если менял часы — нажми «Пересчитать персонал» до формирования.`;
+    `Персонал сейчас в смете: <b>${fmtMoney(crewNow)}</b>. Если менял часы — нажми «Пересчитать персонал» до формирования.`
+    + (had ? '<br>Смета уже сформирована — новая заменит прежний файл.' : '');
   document.getElementById('factEstModal').classList.add('show');
 }
 function closeFactEst(){ document.getElementById('factEstModal').classList.remove('show'); }
@@ -13269,7 +13394,17 @@ function factCommitTime(unitId, field, el){
 function factGenerate(){
   const p = PROJECTS.find(x => x.id === currentProjectId);
   if(!p) return;
-  generateEstimateFile(p, 'actual').then(ok => { if(ok) closeFactEst(); });
+  generateEstimateFile(p).then(ok => { if(ok) closeFactEst(); });
+}
+/* Смета бывает и не файлом — договорились на словах, посчитали в уме.
+   Тогда чекпойнт просто отмечается, и окно больше не мешает. */
+function estStepMarkOnly(){
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  if(!p) return;
+  p.steps[STEP.estimate][1] = 1;
+  closeFactEst();
+  renderChecklist(p); renderInfo(p);
+  refreshAll();
 }
 
 /* ============= Смета из прайса =============
@@ -14023,7 +14158,6 @@ function renderIncomeTab(){
     </div>
 
     ${incomeGraphicHTML(list, total, factual, pending)}
-    ${estimateCmpBlockHTML()}
 
     <div class="inc-cards">
       <div class="inc-card"><label>Общий доход</label>
@@ -14042,43 +14176,9 @@ function renderIncomeTab(){
     <div class="pay-subhead"><span>Доходы с постоплат · ${pendingList.length}</span></div>
     ${projectRows(pendingList)}`;
 }
-/* План против факта по сметам: насколько предварительный расчёт попадает
-   в итоговый. Считается по проектам, где сформированы обе сметы, — к концу года
-   видно, куда чаще всего уезжают деньги. */
-function estimateCmpBlockHTML(){
-  const list = activeProjects().filter(p => p.estPrimary && p.estActual);
-  if(!list.length) return '';
-  const val = snap => snap.payable != null ? snap.payable : (snap.sum || 0);
-  const totP = list.reduce((sum, p) => sum + val(p.estPrimary), 0);
-  const totA = list.reduce((sum, p) => sum + val(p.estActual), 0);
-  const diff = totA - totP;
-  const max = Math.max(...list.map(p => Math.max(val(p.estPrimary), val(p.estActual))), 1);
-  const rows = list.slice()
-    .sort((a, b) => (b.estActual.at || '').localeCompare(a.estActual.at || ''))
-    .map(p => {
-      const a = val(p.estPrimary), b = val(p.estActual), d = b - a;
-      return `<div class="est-cmp-row" style="cursor:pointer" onclick="openProject('${p.id}','estimate')">
-        <div class="est-cmp-name">${esc(p.name)}</div>
-        <div class="est-cmp-bars">
-          <i style="width:${Math.max(2, Math.round(a / max * 100))}%"></i>
-          <i style="width:${Math.max(2, Math.round(b / max * 100))}%;background:${d > 0 ? 'var(--warn)' : 'var(--ok)'}"></i>
-        </div>
-        <div class="est-cmp-diff mono" style="color:${d > 0 ? 'var(--warn)' : d < 0 ? 'var(--ok)' : 'var(--ink-muted)'}">${d === 0 ? 'в точку' : (d > 0 ? '+' : '−') + fmtMoney(Math.abs(d))}</div>
-      </div>`;
-    }).join('');
-  return `<div class="inc-graphic">
-    <div class="inc-split-legend" style="margin:0 0 .5rem;">
-      <span><i style="background:var(--ink-muted)"></i>первичная</span>
-      <span><i style="background:var(--warn)"></i>факт больше</span>
-      <span><i style="background:var(--ok)"></i>факт меньше</span>
-    </div>
-    ${rows}
-    <div class="est-cmp-total">Вылеты по сметам за всё время:
-      <b style="color:${diff > 0 ? 'var(--warn)' : 'var(--ok)'}">${diff === 0 ? 'ноль в ноль' : (diff > 0 ? '+' : '−') + fmtMoney(Math.abs(diff))}</b>
-      <span class="inc-note" style="display:inline;"> · первичные ${fmtMoney(totP)} → фактические ${fmtMoney(totA)} · проектов: ${list.length}</span>
-    </div>
-  </div>`;
-}
+/* Сравнение «первичная против фактической» ушло вместе со второй сметой:
+   сметный документ теперь один, сравнивать его не с чем. Разница между тем,
+   что посчитали, и тем, что получили, видна в «Доходе» и в отчёте проекта. */
 // Инфографика: доли полученного и ожидаемого + помесячная динамика внутри периода
 function incomeGraphicHTML(list, total, factual, pending){
   if(!list.length) return '';
@@ -14482,6 +14582,7 @@ function applyState(s){
   // журнал Hermes: в данных от старой версии приложения его нет — тогда местный не трогаем
   if(Array.isArray(s.hermesLog)) HERMES_LOG = s.hermesLog;
   if(Array.isArray(s.trash)) TRASH = s.trash;
+  migrateSteps();          // корзина пришла после проектов — её чек-листы тоже приводим к шести
   if(s.theme) applyTheme(s.theme);
   return true;
 }
@@ -15600,14 +15701,13 @@ const HX_OPS = {
     if(!p.steps) p.steps = STEP_NAMES.map(n => [n, 0]);
     hxTouch(ctx, p);
     if(!!p.steps[i][1] === on){ ctx.summary = `«${p.name}»: «${STEP_NAMES[i]}» уже ${on ? 'отмечен' : 'снят'}`; return; }
-    if(i === 3 && on) throw hxErr('«Факт. смета» ставится сама, когда в приложении сформирована фактическая смета — открой проект и нажми «Факт. смета»');
-    if(i === 0 && !on && (p.scoutDate || allEstimate(p).some(x => x.scoutLine))) {
+    if(i === STEP.scout && !on && (p.scoutDate || allEstimate(p).some(x => x.scoutLine))) {
       throw hxErr('Освоение уже стоит в смете и календаре — снимать его надо в приложении, иначе смета разъедется');
     }
     ctx.patches.push({k:'step', pid:p.id, i, before:p.steps[i][1] ? 1 : 0, after:on ? 1 : 0});
     p.steps[i][1] = on ? 1 : 0;
     // «Счёт» и признак «счёт выставлен» ходят парой — как у галочки в приложении
-    if(i === 4 && !!p.invoiceSent !== on){ ctx.patches.push({k:'pset', pid:p.id, f:{invoiceSent:[p.invoiceSent, on]}}); p.invoiceSent = on; }
+    if(i === STEP.bill && !!p.invoiceSent !== on){ ctx.patches.push({k:'pset', pid:p.id, f:{invoiceSent:[p.invoiceSent, on]}}); p.invoiceSent = on; }
     ctx.summary = `«${p.name}»: ${on ? '✓' : 'снят'} «${STEP_NAMES[i]}»`;
   },
   'shift.set'(a, ctx){
@@ -15829,9 +15929,9 @@ const HX_OPS = {
     refreshProjectSum(p);
     refreshPaymentMeta(p);
     if(!p.steps) p.steps = STEP_NAMES.map(n => [n, 0]);
-    if(p.sum > 0 && p.paidAmount >= p.sum && !p.steps[5][1]){       // «Оплата» закрыта — деньги пришли целиком
-      ctx.patches.push({k:'step', pid:p.id, i:5, before:0, after:1});
-      p.steps[5][1] = 1;
+    if(p.sum > 0 && p.paidAmount >= p.sum && !p.steps[STEP.paid][1]){       // «Оплата» закрыта — деньги пришли целиком
+      ctx.patches.push({k:'step', pid:p.id, i:STEP.paid, before:0, after:1});
+      p.steps[STEP.paid][1] = 1;
     }
     hxTouch(ctx, p);
     const left = Math.max(0, p.sum - p.paidAmount);
@@ -16116,7 +16216,7 @@ const HX_REVERT = {
     allDays(p).forEach(d => { const i = (d.payments || []).findIndex(x => x.hx === pt.hx); if(i > -1) d.payments.splice(i, 1); });
     refreshProjectSum(p);
     refreshPaymentMeta(p);
-    if(p.steps && p.paidAmount < p.sum) p.steps[5][1] = 0;   // как при удалении поступления руками
+    if(p.steps && p.paidAmount < p.sum) p.steps[STEP.paid][1] = 0;   // как при удалении поступления руками
   },
   est(pt){
     const p = PROJECTS.find(x => x.id === pt.pid);
@@ -16723,14 +16823,15 @@ function selfCheckUnit(over){
 function selfCheckProject(over){
   return Object.assign({id:'__selfcheck__', name:'Тестовый проект', date:'2026-01-01',
     dates:['2026-01-01'], sum:0, sumManual:false, paidAmount:0, units:[], estimate:[],
-    notes:[], payments:[], rates:selfCheckFixtureRates()}, over);
+    notes:[], payments:[], rates:selfCheckFixtureRates(),
+    steps:STEP_NAMES.map(n => [n, 0])}, over);
 }
 /* Отменённый проект с неустойкой 6 000 ₽ одному осветителю: заказчик ещё не платил.
    Чтобы проверить состояние «деньги пришли», передай paidAmount и paymentDate. */
 function selfCheckPenProject(over){
   return selfCheckProject(Object.assign({id:'__sc_penwait', cancelled:true, sum:6000, paidAmount:0,
     paymentDate:null, invoiceSent:true, expectedPaymentDate:null,
-    steps:[['Освоение',0],['Смета',0],['Команда',0],['Факт. смета',0],['Счёт',1],['Оплата',0],['Чек',0]],
+    steps:[['Освоение',0],['Смета',0],['Команда',0],['Счёт',1],['Оплата',0],['Чек',0]],
     cancelInfo:{at:'2026-01-01', penalty:true, crewTotal:6000, rentalTotal:0, gafferTotal:0, payout:6000, total:6000},
     units:[{id:1, name:'Юнит 1', crew:[{id:'__sc_a', role:'Осветитель', amount:6000,
       paid:false, payments:[], penalty:{pct:50, base:12000}}]}]}, over));
@@ -16740,7 +16841,7 @@ function selfCheckPenProject(over){
 function selfCheckClosedProject(over){
   return selfCheckProject(Object.assign({id:'__sc_closed', name:'Архивный проект',
     date:'2026-01-10', dates:['2026-01-10'], sum:100000, paidAmount:0, invoiceSent:true,
-    steps:[['Освоение',0],['Смета',0],['Команда',0],['Факт. смета',0],['Счёт',1],['Оплата',0],['Чек',0]],
+    steps:[['Освоение',0],['Смета',0],['Команда',0],['Счёт',1],['Оплата',0],['Чек',0]],
     units:[{id:1, name:'Юнит 1', crew:[{id:'__sc_a', role:'Осветитель', amount:20000,
       paid:false, payments:[]}]}]}, over));
 }
@@ -16930,7 +17031,7 @@ const SELF_CHECK_CASES = [
   {group:'Соло', name:'Соло-проект не просит собрать команду',
     run:()=>{
       const p = selfCheckProject({id:'__sc_solo', date:TODAY_ISO, dates:[TODAY_ISO], soloCrew:true,
-        steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',1]],
+        steps:[['Освоение',1],['Смета',1],['Команда',0],['Счёт',1],['Оплата',1],['Чек',1]],
         units:[{id:1, name:'Юнит 1', crew:[]}]});
       PROJECTS.push(p);
       const n = generateAutoTasks().filter(t => t.projectId==='__sc_solo' && /Собрать команду/.test(t.label)).length;
@@ -16940,7 +17041,7 @@ const SELF_CHECK_CASES = [
   {group:'Соло', name:'Без флага «соло» задача по команде остаётся на месте',
     run:()=>{
       const p = selfCheckProject({id:'__sc_solo2', date:TODAY_ISO, dates:[TODAY_ISO],
-        steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',1]],
+        steps:[['Освоение',1],['Смета',1],['Команда',0],['Счёт',1],['Оплата',1],['Чек',1]],
         units:[{id:1, name:'Юнит 1', crew:[]}]});
       PROJECTS.push(p);
       const n = generateAutoTasks().filter(t => t.projectId==='__sc_solo2' && /Собрать команду/.test(t.label)).length;
@@ -16950,7 +17051,7 @@ const SELF_CHECK_CASES = [
   {group:'Соло', name:'Соло-проект не теряет задачу «заполнить смету» по дню',
     run:()=>{
       const p = selfCheckProject({id:'__sc_solo3', date:TODAY_ISO, dates:[TODAY_ISO,'2026-12-31'], soloCrew:true,
-        steps:[['Освоение',1],['Смета',1],['Команда',0],['Факт. смета',1],['Счёт',1],['Оплата',1],['Чек',1]],
+        steps:[['Освоение',1],['Смета',1],['Команда',0],['Счёт',1],['Оплата',1],['Чек',1]],
         days:[{iso:TODAY_ISO, estimate:[], units:[{id:1,name:'Юнит 1',crew:[]}], notes:[], payments:[]},
               {iso:'2026-12-31', estimate:[], units:[{id:2,name:'Юнит 1',crew:[]}], notes:[], payments:[]}]});
       PROJECTS.push(p);
@@ -17117,11 +17218,11 @@ const SELF_CHECK_CASES = [
   {group:'Неустойка', name:'Отмена ставит «Счёт» и дату, восстановление возвращает как было',
     run:()=>{
       const p = selfCheckPenProject({invoiceSent:false, expectedPaymentDate:null,
-        steps:[['Освоение',0],['Смета',1],['Команда',0],['Факт. смета',0],['Счёт',0],['Оплата',0],['Чек',0]]});
+        steps:[['Освоение',0],['Смета',1],['Команда',0],['Счёт',0],['Оплата',0],['Чек',0]]});
       penMarkBilled(p, '2026-02-10');
-      const marked = p.invoiceSent && p.steps[4][1] === 1 && p.expectedPaymentDate === '2026-02-10';
+      const marked = p.invoiceSent && p.steps[STEP.bill][1] === 1 && p.expectedPaymentDate === '2026-02-10';
       penUnmarkBilled(p);
-      const back = !p.invoiceSent && p.steps[4][1] === 0 && p.expectedPaymentDate === null && !p.preCancelBill;
+      const back = !p.invoiceSent && p.steps[STEP.bill][1] === 0 && p.expectedPaymentDate === null && !p.preCancelBill;
       return (marked && back) ? 1 : 0;
     }, expect:1},
 
@@ -18050,11 +18151,62 @@ const SELF_CHECK_CASES = [
     },
     expect:1},
 
+  // ---- Статус в календаре ----
+  {group:'Статус', name:'Завершённый проект в календаре зелёный, а не жёлтый',
+    run:()=>{
+      const p = selfCheckProject({closed:true});
+      return (calChipFg(p) === PHASE_TEXT[2] && phaseColor(p) === PHASE_COLORS[2]) ? 1 : 0;
+    }, expect:1},
+  {group:'Статус', name:'Оплата отмечена — зелёный и в календаре, и в списке',
+    run:()=>{
+      const p = selfCheckProject({steps:STEP_NAMES.map((n,i)=>[n, i===STEP.paid?1:0])});
+      return (calChipFg(p) === PHASE_TEXT[2] && phaseColor(p) === PHASE_COLORS[2]) ? 1 : 0;
+    }, expect:1},
+  {group:'Статус', name:'Счёт выставлен — «ждём оплату», оранжевый',
+    run:()=>{
+      const p = selfCheckProject({steps:STEP_NAMES.map((n,i)=>[n, i===STEP.bill?1:0])});
+      return (calChipFg(p) === PHASE_TEXT[1] && phaseLabel(p) === 'Ждём оплату') ? 1 : 0;
+    }, expect:1},
+  {group:'Статус', name:'Отменённый с неоплаченной неустойкой в календаре оранжевый, а не серый',
+    run:()=>calChipFg(selfCheckPenProject()) === PHASE_TEXT[1] ? 1 : 0, expect:1},
+  {group:'Статус', name:'Просто отменённый — серый',
+    run:()=>calChipFg(selfCheckProject({cancelled:true})) === 'var(--ink-muted)' ? 1 : 0, expect:1},
+
+  // ---- Одна смета вместо двух ----
+  {group:'Смета', name:'Старый чек-лист из семи шагов схлопывается в шесть',
+    run:()=>scWithProject(selfCheckProject({id:'__sc_mig7', steps:[['Освоение',1],['Смета',0],['Команда',1],
+        ['Факт. смета',1],['Счёт',1],['Оплата',0],['Чек',0]]}), p=>{
+      migrateSteps();
+      return (p.steps.length === 6 && p.steps[STEP.estimate][1] === 1
+        && p.steps[STEP.bill][0] === 'Счёт' && p.steps[STEP.bill][1] === 1
+        && p.steps[STEP.check][0] === 'Чек') ? 1 : 0;
+    }), expect:1},
+  {group:'Смета', name:'Снимок фактической сметы переезжает в единый',
+    run:()=>scWithProject(selfCheckProject({id:'__sc_mig8',
+        estPrimary:{sum:1, payable:1, at:'2026-01-01'}, estActual:{sum:2, payable:2, at:'2026-01-02'}}), p=>{
+      migrateSteps();
+      return (p.estSnap && p.estSnap.payable === 2 && !p.estPrimary && !p.estActual) ? 1 : 0;
+    }), expect:1},
+  {group:'Смета', name:'Задача на смету одна и уходит по галочке',
+    run:()=>{
+      const n = over => scWithProject(selfCheckProject(Object.assign({id:'__sc_est1',
+        date:isoShift(TODAY_ISO,-1), dates:[isoShift(TODAY_ISO,-1)]}, over)), p =>
+        generateAutoTasks().filter(t => t.projectId === p.id && /смету/i.test(t.label)).length);
+      return n({}) * 10 + n({steps:STEP_NAMES.map((x,i)=>[x, i===STEP.estimate?1:0])});
+    }, expect:10},
+  {group:'Смета', name:'«Выставить счёт» появляется после сметы и после съёмки',
+    run:()=>{
+      const est = STEP_NAMES.map((x,i)=>[x, i===STEP.estimate?1:0]);
+      const n = d => scWithProject(selfCheckProject({id:'__sc_bill', date:d, dates:[d], steps:est.map(a=>a.slice())}),
+        p => generateAutoTasks().filter(t => t.projectId === p.id && t.key === 'bill').length);
+      return n(isoShift(TODAY_ISO,-1)) * 10 + n(isoShift(TODAY_ISO,3));
+    }, expect:10},
+
   {group:'Hermes', name:'Новый проект: дни по порядку, заказчик и снимок ставок на месте',
     run:()=>hxSandbox(()=>{
       const r = hxT('project.create', {name:'Тест Hermes', dates:['2030-01-11', '2030-01-10'], client:'Клиент'});
       const p = r.ok && PROJECTS.find(x => x.id === r.ctx.pid);
-      return (p && p.dates.join() === '2030-01-10,2030-01-11' && p.client === 'Клиент' && p.rates && p.steps.length === 7) ? 1 : 0;
+      return (p && p.dates.join() === '2030-01-10,2030-01-11' && p.client === 'Клиент' && p.rates && p.steps.length === STEP_NAMES.length) ? 1 : 0;
     }), expect:1},
   {group:'Hermes', name:'Повтор той же команды не заводит второй проект',
     run:()=>hxSandbox(()=>{
@@ -18104,10 +18256,10 @@ const SELF_CHECK_CASES = [
       let p = PROJECTS.find(x => x.id === pid); p.sum = 50000; p.sumManual = true;
       const {r, e} = hxTLog('client.payment', {project:pid, amount:50000, type:'noncash', date:'2030-01-12'});
       p = PROJECTS.find(x => x.id === pid);
-      const closed = p.steps[5][1] === 1 && p.paidAmount === 50000 && p.paymentDate === '2030-01-12';
+      const closed = p.steps[STEP.paid][1] === 1 && p.paidAmount === 50000 && p.paymentDate === '2030-01-12';
       const u = hxT('undo', {command:e.id});
       p = PROJECTS.find(x => x.id === pid);
-      return (r.ok && closed && u.ok && p.paidAmount === 0 && p.steps[5][1] === 0 && !p.paymentDate) ? 1 : 0;
+      return (r.ok && closed && u.ok && p.paidAmount === 0 && p.steps[STEP.paid][1] === 0 && !p.paymentDate) ? 1 : 0;
     }), expect:1},
   {group:'Hermes', name:'Отмена не затирает правку, сделанную руками после Hermes',
     run:()=>hxSandbox(()=>{
@@ -18157,7 +18309,7 @@ const SELF_CHECK_CASES = [
       const pid = hxT('project.create', {name:'Тест счёт', dates:['2030-01-10']}).ctx.pid;
       const r = hxT('project.step', {project:pid, step:'счёт', on:true});
       const p = PROJECTS.find(x => x.id === pid);
-      return (r.ok && p.steps[4][1] === 1 && p.invoiceSent === true) ? 1 : 0;
+      return (r.ok && p.steps[STEP.bill][1] === 1 && p.invoiceSent === true) ? 1 : 0;
     }), expect:1},
   {group:'Hermes', name:'Неизвестная операция отклоняется с понятной причиной, данные не тронуты',
     run:()=>hxSandbox(()=>{
