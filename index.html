@@ -2541,6 +2541,22 @@
 <!-- Отмена проекта: сразу решаем неустойку по команде и ренталам.
      Проценты считаются от базовой ставки, суммы уходят прямо в «Оплаты» —
      проект уходит из работы, а долг по неустойке остаётся видимым. -->
+<div class="modal-overlay" id="fixIncomeModal">
+  <div class="modal-card">
+    <div class="db-head">
+      <h3>Доход по проекту</h3>
+      <button class="btn ghost tiny" onclick="closeFixIncome()">✕</button>
+    </div>
+    <div class="form-hint" id="fixIncomeHint"></div>
+    <input type="number" id="fixIncomeInput" inputmode="decimal" placeholder="Сумма, ₽" style="margin-top:.6rem;">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem;">
+      <button class="btn" onclick="saveFixedIncome()">Сохранить</button>
+      <button class="btn ghost" id="fixIncomeClear" onclick="clearFixedIncome()">Убрать сумму</button>
+      <button class="btn ghost" onclick="closeFixIncome()">Отмена</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="cancelProjModal">
   <div class="modal-card db-card" style="max-width:600px;">
     <div class="db-head">
@@ -3735,7 +3751,7 @@ let TRASH = [];
 /* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
    (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
    приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
-const HX_SKILL_VERSION = 'acc60e4c8560';
+const HX_SKILL_VERSION = '376e0c3c6f10';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -4534,14 +4550,14 @@ function projectIsSettled(p){ return !!p.paymentDate && (p.sum - p.paidAmount) <
    Без выставленного счёта требовать нечего, это ещё не дебиторка. */
 /* Отмена с неустойкой — это выставленный заказчику счёт: он к оплате сразу,
    даже в старых сохранениях, где галочки «Счёт» при отмене ещё не ставилось. */
-function isReceivable(p){ return p.sum>0 && (p.invoiceSent || cancelledWithPenalty(p)) && (p.sum - p.paidAmount) > 0; }
+function isReceivable(p){ return p.sum>0 && !isClosedProject(p) && (p.invoiceSent || cancelledWithPenalty(p)) && (p.sum - p.paidAmount) > 0; }
 function receivableAmount(p){ return isReceivable(p) ? (p.sum - p.paidAmount) : 0; }
 function isCrewDebt(p, c){ return !c.paid && !isMe(c) && settlementLeft(c) > 0 && projectIsSettled(p); }
 // Суммарная задолженность перед человеком по всем проектам
 function crewDebtTotal(personId){
   let total = 0;
   // неустойка — как обычный проект: долгом становится, когда заказчик её заплатил
-  activeProjects().filter(projectIsSettled).concat(penaltyProjects().filter(projectIsSettled)).forEach(p=>{
+  openProjects().filter(projectIsSettled).concat(penaltyProjects().filter(projectIsSettled)).forEach(p=>{
     projectCrew(p).forEach(c=>{ if(c.id===personId) total += settlementLeft(c); });
   });
   return total;
@@ -4555,15 +4571,18 @@ function projectPhase(p){
    заказчика ещё впереди. Когда неустойка пришла, проект снова просто отменён. */
 function phaseColor(p){
   if(penaltyAwaiting(p)) return PHASE_COLORS[1];
-  return p.cancelled ? 'var(--ink-muted)' : PHASE_COLORS[projectPhase(p)];
+  if(p.cancelled) return 'var(--ink-muted)';
+  return isClosedProject(p) ? PHASE_COLORS[2] : PHASE_COLORS[projectPhase(p)];
 }
 function phaseLabel(p){
   if(penaltyAwaiting(p)) return 'Ждём оплату';
-  return p.cancelled ? 'Отменён' : ['В работе','Ждём оплату','Закрыт'][projectPhase(p)];
+  if(p.cancelled) return 'Отменён';
+  return isClosedProject(p) ? 'Завершён' : ['В работе','Ждём оплату','Закрыт'][projectPhase(p)];
 }
 function statusPill(p){
   if(penaltyAwaiting(p)) return '<span class="pill pill-warn">ждём оплату</span>';
   if(p.cancelled) return '<span class="pill pill-muted">отменён</span>';
+  if(isClosedProject(p)) return '<span class="pill pill-ok">завершён</span>';
   // «Освоение» — опциональный шаг, не блокирует статус «закрыт»
   const next = p.steps.find((s,i)=> i!==0 && !s[1]);
   if(!next) return '<span class="pill pill-ok">закрыт</span>';
@@ -4581,6 +4600,20 @@ function statusPill(p){
    по ВСЕМ проектам разом, должно брать список отсюда, а не из PROJECTS напрямую. */
 function activeProjects(){ return PROJECTS.filter(p=>!p.cancelled); }
 function cancelledProjects(){ return PROJECTS.filter(p=>p.cancelled); }
+/* ============= Завершённый проект =============
+   Старые проекты заводятся в календарь ради архива: делать по ним уже ничего не надо,
+   а авто-задачи по чек-листу висели бы на дэшборде вечно. «Закрыть проект» ставит
+   статус «Завершён»: задачи по нему не появляются, из денег он выпадает (ни долгов,
+   ни ожидания оплаты), но в доходе и отчётности остаётся — там его место.
+   openProjects() — живые проекты, которым ещё нужно внимание: всё, что считает задачи
+   и долги, берёт список отсюда, а activeProjects() остаётся «не отменённые». */
+function isClosedProject(p){ return !!(p && p.closed); }
+function openProjects(){ return PROJECTS.filter(p=>!p.cancelled && !p.closed); }
+function closedProjects(){ return PROJECTS.filter(p=>p.closed && !p.cancelled); }
+/* Доход можно не собирать по смете, а вписать руками: для архивного проекта это
+   единственная цифра, которая нужна. Вписанная сумма считается полученной. */
+function hasFixedIncome(p){ return !!p && p.fixedIncome != null && !isNaN(Number(p.fixedIncome)); }
+function fixedIncomeOf(p){ return hasFixedIncome(p) ? Number(p.fixedIncome) : 0; }
 function toggleProjectCancelled(pid, afterDone){
   const p = PROJECTS.find(x=>x.id===pid);
   if(!p) return;
@@ -4600,7 +4633,7 @@ function projectHasPenalty(p){ return !!(p.cancelInfo && p.cancelInfo.penalty); 
 function penaltyAwaiting(p){ return cancelledWithPenalty(p) && p.sum > 0 && (p.sum - p.paidAmount) > 0; }
 function penaltyAwaitingProjects(){ return PROJECTS.filter(penaltyAwaiting); }
 // Все, от кого ждём деньги: живые проекты и отменённые с неоплаченной неустойкой
-function payWatchProjects(){ return activeProjects().concat(penaltyAwaitingProjects()); }
+function payWatchProjects(){ return openProjects().concat(penaltyAwaitingProjects()); }
 /* Отмена с неустойкой ставит «Счёт» и ожидаемую дату оплаты; прежние значения
    прячутся в preCancelBill и возвращаются при восстановлении проекта. */
 function penMarkBilled(p, payDate){
@@ -5044,6 +5077,95 @@ function closeCancelledProjectsModal(){ document.getElementById('cancelledModal'
 
 /* Удаление насовсем — для ошибочно созданных проектов. В отличие от «отменён»,
    отменить это действие нельзя, поэтому предупреждаем максимально конкретно. */
+/* ============= Закрыть проект =============
+   Статус «Завершён» — не отмена и не удаление: проект остаётся в доходе, в календаре
+   и в отчётности, но больше ничего не просит. Если по нему висели деньги, честно
+   показываем их в вопросе: после закрытия они перестанут напоминать о себе. */
+function toggleProjectClosed(pid){
+  const p = PROJECTS.find(x=>x.id===pid);
+  if(!p) return;
+  if(p.closed){
+    delete p.closed;
+    delete p.closedAt;
+    renderInfo(p); renderChecklist(p);
+    refreshAll();
+    return;
+  }
+  const owed = Math.max(0, (p.sum||0) - (p.paidAmount||0));
+  const debt = projectDebtAmount(p);
+  const bits = [];
+  if(owed > 0) bits.push(`заказчик не доплатил ${fmtMoney(owed)}`);
+  if(debt > 0) bits.push(`команде и ренталам не выплачено ${fmtMoney(debt)}`);
+  const text = 'Задачи по проекту больше не будут появляться на дэшборде.'
+    + (bits.length ? `\n\nПо проекту ещё висят деньги: ${bits.join(', ')}. После закрытия проект уйдёт из «Долгов» и из «Ожидаем оплату» — эти суммы перестанут напоминать о себе.` : '')
+    + '\n\nДоход, смета и история останутся на месте. Вернуть проект в работу можно в любой момент.';
+  askConfirm({title:'Завершить проект?', text, okText:'Завершить', cancelText:'Не сейчас', danger: bits.length>0}, ()=>{
+    p.closed = true;
+    p.closedAt = TODAY_ISO;
+    renderInfo(p); renderChecklist(p);
+    refreshAll();
+  });
+}
+/* ============= Доход по проекту руками =============
+   Кнопка в «Расчёте»: вписанная сумма заменяет расчётный доход и считается
+   полученной — для архивных проектов это единственный способ учесть деньги,
+   не собирая смету и выплаты. */
+/* Кнопки в этом ряду равной ширины и не переносятся — длинная подпись обрезалась бы.
+   Поэтому на кнопке короткое «Доход», а вписанная сумма — строкой под рядом. */
+function fixIncomeBtnHTML(p){
+  return `<button class="btn ghost" onclick="openFixIncome('${p.id}')" title="Вписать доход по проекту руками">Доход</button>`;
+}
+function fixIncomeNoteHTML(p){
+  if(!hasFixedIncome(p)) return '';
+  return `<div class="form-hint" style="margin-top:.4rem;">Доход по проекту вписан руками:
+    <b style="color:var(--ink);">${fmtMoney(fixedIncomeOf(p))}</b> — эта сумма и идёт в «Финансы»
+    вместо расчёта. <span style="text-decoration:underline;cursor:pointer;" onclick="openFixIncome('${p.id}')">изменить</span></div>`;
+}
+let fixIncomeProjectId = null;
+function openFixIncome(pid){
+  const p = PROJECTS.find(x=>x.id===pid);
+  if(!p) return;
+  fixIncomeProjectId = pid;
+  const calc = Math.round(projectFinance(p).left || 0);
+  document.getElementById('fixIncomeHint').innerHTML =
+    `«${esc(p.name)}» — сколько по этому проекту осталось мне. Сумма встанет в «Финансы → Доход»
+     и в «Прибыль» как полученные деньги, вместо расчёта по смете и выплатам.`
+    + (calc ? ` Сейчас по расчёту выходит ${fmtMoney(calc)}.` : '');
+  const inp = document.getElementById('fixIncomeInput');
+  inp.value = hasFixedIncome(p) ? fixedIncomeOf(p) : '';
+  document.getElementById('fixIncomeClear').style.display = hasFixedIncome(p) ? '' : 'none';
+  document.getElementById('fixIncomeModal').classList.add('show');
+  if(typeof syncLayerLock === 'function') syncLayerLock();
+  setTimeout(()=>{ inp.focus(); inp.select(); }, 60);
+}
+function closeFixIncome(){
+  document.getElementById('fixIncomeModal').classList.remove('show');
+  fixIncomeProjectId = null;
+  if(typeof syncLayerLock === 'function') syncLayerLock();
+}
+function saveFixedIncome(){
+  const p = PROJECTS.find(x=>x.id===fixIncomeProjectId);
+  if(!p) return;
+  const raw = String(document.getElementById('fixIncomeInput').value).replace(',','.').replace(/\s/g,'');
+  const v = parseFloat(raw);
+  if(isNaN(v) || v < 0){ askNotice('Впиши сумму — например, 120000.', 'Пустая сумма'); return; }
+  p.fixedIncome = Math.round(v);
+  closeFixIncome();
+  rerenderProject(p);
+  refreshAll();
+}
+function clearFixedIncome(){
+  const p = PROJECTS.find(x=>x.id===fixIncomeProjectId);
+  if(!p) return;
+  delete p.fixedIncome;
+  closeFixIncome();
+  rerenderProject(p);
+  refreshAll();
+}
+function rerenderProject(p){
+  if(currentProjectId !== p.id) return;
+  renderEstimate(p); renderInfo(p);
+}
 function deleteProjectForever(pid){
   const p = PROJECTS.find(x=>x.id===pid);
   if(!p) return;
@@ -5783,7 +5905,8 @@ function isRentalDebt(r){ return settlementLeft(r) > 0; }
 
 function generateAutoTasks(){
   const tasks = [];
-  activeProjects().forEach(p=>{
+  // завершённый проект задач не создаёт совсем — в этом весь смысл кнопки «Закрыть»
+  openProjects().forEach(p=>{
     const du = daysUntil(p.date);
     const scoutDone = !!p.steps[0][1];
     const hasCrew = projectHasCrew(p);
@@ -5925,8 +6048,13 @@ function buildTaskItems(projectFilter){
   const custom = CUSTOM_TASKS.filter(t=>!t.done).map(t=>({key:`c${t.id}`, label:t.text, projectId:t.projectId, tab:'tasks', date:null,
     onComplete:`completeCustomTask(${t.id})`}));
   let items = [...pinned, ...auto, ...custom];
-  if(projectFilter) items = items.filter(t=>t.projectId===projectFilter);
-  return items;
+  if(projectFilter) return items.filter(t=>t.projectId===projectFilter);
+  /* На дэшборде завершённого проекта нет вообще: авто-задач он уже не создаёт,
+     а свои, вписанные руками, остаются видны только внутри самого проекта. */
+  return items.filter(t=>{
+    const pr = t.projectId ? PROJECTS.find(x=>x.id===t.projectId) : null;
+    return !isClosedProject(pr);
+  });
 }
 
 /* ============= План дня =============
@@ -7124,9 +7252,12 @@ function renderInfo(p){
         : cancelledWithPenalty(p) ? 'Проект отменён · неустойка получена.'
         : 'Проект отменён — не учитывается в календаре, задачах и финансах.'}
       <button class="btn ghost tiny" onclick="toggleProjectCancelled('${p.id}')">↺ Восстановить</button></div>` : ''}
+    ${p.closed && !p.cancelled ? `<div class="cancelled-banner">Проект завершён${hasFixedIncome(p)?` · доход ${fmtMoney(fixedIncomeOf(p))}`:''} — задачи по нему больше не появляются.
+      <button class="btn ghost tiny" onclick="toggleProjectClosed('${p.id}')">↺ Вернуть в работу</button></div>` : ''}
     <div style="display:flex;justify-content:flex-end;gap:.4rem;margin-bottom:.6rem;flex-wrap:wrap;">
       <button class="btn ghost" onclick="openReport('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>Отчёт</button>
       <button class="btn ghost" onclick="openMoveDates('${p.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M13 15l2.2 2.2L13 19.4"/><path d="M9 17.2h6"/></svg>Перенести даты</button>
+      <button class="btn ghost" onclick="toggleProjectClosed('${p.id}')">${p.closed?'↺ Вернуть в работу':'✓ Закрыть проект'}</button>
       <button class="btn ghost" onclick="infoEditMode=true;renderInfo(PROJECTS.find(x=>x.id===currentProjectId))">✎ Изменить</button>
     </div>
     <div class="kv">
@@ -7238,7 +7369,7 @@ function renderEstimate(p){
       <button class="btn ghost" onclick="openEstFromPrice()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M12 5v14M5 12h14"/></svg>Позиция</button>`;
   const day = activeDay(p);
   if(!day.estimate.length){
-    pane.innerHTML = `<div class="est-actions">${importBlock}</div>`
+    pane.innerHTML = `<div class="est-actions">${importBlock}${fixIncomeBtnHTML(p)}</div>` + fixIncomeNoteHTML(p)
       + '<div class="empty-hint">Считать пока нечего — загрузи файл рентала или посчитай команду.</div>';
 
     return;
@@ -7361,7 +7492,9 @@ function renderEstimate(p){
     <div class="est-actions">
       ${importBlock}
       <button class="btn ghost" id="btnPrint">${docIcon}Смета</button>
+      ${fixIncomeBtnHTML(p)}
     </div>
+    ${fixIncomeNoteHTML(p)}
     <div class="est-body"></div>
     <div id="printArea"></div>`;
   const printBtn = pane.querySelector('#btnPrint');
@@ -10522,11 +10655,17 @@ function projectFinance(p){
 /* Мой доход по проекту: то, что осталось после выплат.
    Ставка гафера и освоение уже сидят внутри «осталось», отдельно их не плюсуем —
    иначе одни и те же деньги посчитались бы дважды. */
-function projectIncome(p){ return projectFinance(p).left; }
+/* Вписанный руками доход заменяет расчёт целиком: у архивного проекта нет ни сметы,
+   ни выплат, а сумма известна — она и есть доход. */
+function projectIncome(p){ return hasFixedIncome(p) ? fixedIncomeOf(p) : projectFinance(p).left; }
+// Вписанная сумма считается полученной: в «Доходе» она идёт в фактический, а не в ожидаемый
+function incomeOnHand(p){ return hasFixedIncome(p) || projectFullyPaid(p); }
 // Проект отработан, если прошёл последний съёмочный день
 function projectShot(p){
   // отменённый с неустойкой считается отработанным сразу: деньги причитаются с момента отмены
   if(cancelledWithPenalty(p)) return true;
+  if(isClosedProject(p)) return true;   // закрыт руками — работа по нему кончилась
+  if(hasFixedIncome(p)) return true;    // доход вписан — деньги уже получены, съёмку ждать нечего
   return (projectDates(p).slice().sort().pop() || p.date) <= TODAY_ISO;
 }
 
@@ -11311,17 +11450,18 @@ function showProjectsTab(name){
 }
 function renderProjectsPaidTab(){
   const el = document.getElementById('ppane-paid');
-  const rows = activeProjects().filter(p=>p.sum>0 && (p.sum-p.paidAmount)<=0);
+  // завершённые лежат здесь же: делать по ним нечего, а искать их удобно рядом с закрытыми
+  const rows = activeProjects().filter(p=>p.closed || (p.sum>0 && (p.sum-p.paidAmount)<=0));
   el.innerHTML = rows.length ? rows.map(p=>`<div class="prow" onclick="openProject('${p.id}')">
       <div class="stripe" style="background:var(--ok)"></div>
-      <div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pmeta"><span class="mono">${fmtDate(p.date)}</span><span class="pill pill-muted">${payTypeLabel(p.paymentType)}</span></div></div>
-      <div class="psum mono">${fmtMoney(p.sum)}</div>
+      <div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pmeta"><span class="mono">${fmtDate(p.date)}</span>${p.closed?'<span class="pill pill-ok">завершён</span>':`<span class="pill pill-muted">${payTypeLabel(p.paymentType)}</span>`}</div></div>
+      <div class="psum mono">${!p.sum && hasFixedIncome(p) ? fmtMoney(fixedIncomeOf(p)) : fmtMoney(p.sum)}</div>
       <div class="pchev">›</div>
     </div>`).join('') : '<div class="empty-hint">Пока ни один проект не закрыт полностью.</div>';
 }
 function renderProjectsActiveTab(){
   const el = document.getElementById('ppane-active');
-  const rows = activeProjects().filter(p=> !(p.sum>0 && (p.sum-p.paidAmount)<=0) && !isReceivable(p))
+  const rows = openProjects().filter(p=> !(p.sum>0 && (p.sum-p.paidAmount)<=0) && !isReceivable(p))
     .slice().sort((a,b)=> new Date(a.date)-new Date(b.date));
   el.innerHTML = rows.length ? rows.map(projectRowHTML).join('') : '<div class="empty-hint">Нет проектов в работе — либо всё оплачено, либо ждём оплату.</div>';
 }
@@ -13772,14 +13912,14 @@ function projectDebtAmount(p){
 }
 // Фактический: клиент закрыл проект — платить уже надо
 function totalFactualDebt(){
-  return activeProjects().filter(projectIsSettled).reduce((s,p)=>s+projectDebtAmount(p),0)
+  return openProjects().filter(projectIsSettled).reduce((s,p)=>s+projectDebtAmount(p),0)
        + penaltyProjects().filter(projectIsSettled).reduce((s,p)=>s+projectDebtAmount(p),0)
        + PERSONAL_DEBTS.filter(d=>d.direction==='owe'&&!d.paid).reduce((s,d)=>s+d.amount,0);
 }
 // Операционный: команда отработала и оборудование взято, но деньги ещё не пришли
 function totalOperationalDebt(){
   // неоплаченная заказчиком неустойка — такой же операционный долг, как неоплаченный проект
-  return activeProjects().concat(penaltyProjects()).filter(p=>!projectIsSettled(p)).reduce((s,p)=>s+projectDebtAmount(p),0);
+  return openProjects().concat(penaltyProjects()).filter(p=>!projectIsSettled(p)).reduce((s,p)=>s+projectDebtAmount(p),0);
 }
 function totalIOwe(){ return totalFactualDebt() + totalOperationalDebt(); }
 /* ============= Финансы → Доход =============
@@ -13832,8 +13972,8 @@ function renderIncomeTab(){
   const el = document.getElementById('fpane-income');
   if(!el) return;
   const list = incomeProjects();
-  const paidList    = list.filter(p=>projectFullyPaid(p));                 // деньги на руках
-  const pendingList = list.filter(p=>!projectFullyPaid(p));               // ждём оплату
+  const paidList    = list.filter(incomeOnHand);                          // деньги на руках
+  const pendingList = list.filter(p=>!incomeOnHand(p));                    // ждём оплату
 
   const sum = arr => arr.reduce((s,p)=>s+projectIncome(p), 0);
   const total = sum(list), factual = sum(paidList), pending = sum(pendingList);
@@ -13849,8 +13989,8 @@ function renderIncomeTab(){
       const f = projectFinance(p);
       return `<div class="pay-row" style="cursor:pointer" onclick="openProject('${p.id}','pay')">
         <div class="pay-row-info">
-          <div class="pay-row-label">${esc(p.name)}${cancelledWithPenalty(p)?' <span class="pill pill-warn">неустойка</span>':''}</div>
-          <div class="pay-row-amount">${fmtDate(projectIncomeDate(p))} · ${esc(p.client||'—')}${f.remaining>0?` · ждём ${fmtMoney(f.remaining)}`:''}</div>
+          <div class="pay-row-label">${esc(p.name)}${cancelledWithPenalty(p)?' <span class="pill pill-warn">неустойка</span>':''}${isClosedProject(p)?' <span class="pill pill-ok">завершён</span>':''}${hasFixedIncome(p)?' <span class="pill pill-muted">доход вписан</span>':''}</div>
+          <div class="pay-row-amount">${fmtDate(projectIncomeDate(p))} · ${esc(p.client||'—')}${!hasFixedIncome(p) && f.remaining>0?` · ждём ${fmtMoney(f.remaining)}`:''}</div>
         </div>
         <div class="psum mono" style="color:${projectIncome(p)>=0?'var(--ok)':'var(--warn)'}">${fmtMoney(projectIncome(p))}</div>
       </div>`;
@@ -14105,7 +14245,7 @@ function personalDebtRowsHTML(direction){
 // Фактический долг — клиент закрыл проект полностью, платить надо уже сейчас
 function renderFactualDebtTab(){
   const el = document.getElementById('fpane-factual');
-  const groups = activeProjects().filter(projectIsSettled).map(p=>projectDebtGroupHTML(p,false))
+  const groups = openProjects().filter(projectIsSettled).map(p=>projectDebtGroupHTML(p,false))
     .concat(penaltyProjects().filter(projectIsSettled).map(p=>projectDebtGroupHTML(p,false))).filter(g=>g.html);
   const personalHtml = personalDebtRowsHTML('owe');
   const total = totalFactualDebt();
@@ -14119,7 +14259,7 @@ function renderFactualDebtTab(){
 // Операционный долг — команда отработала, оборудование взято, но деньги ещё не пришли
 function renderOperationalDebtTab(){
   const el = document.getElementById('fpane-opdebt');
-  const groups = activeProjects().concat(penaltyProjects()).filter(p=>!projectIsSettled(p)).map(p=>projectDebtGroupHTML(p,true)).filter(g=>g.html);
+  const groups = openProjects().concat(penaltyProjects()).filter(p=>!projectIsSettled(p)).map(p=>projectDebtGroupHTML(p,true)).filter(g=>g.html);
   const total = totalOperationalDebt();
   const head = groups.length
     ? `<div class="empty-hint" style="padding-top:0;">Команда отработала и оборудование взято, деньги ещё не пришли: <b style="color:var(--ink);">${fmtMoney(total)}</b></div>`
@@ -14145,6 +14285,7 @@ function renderOwedToMeTab(){
     + personalAddBlockHTML('owed');
 }
 function projectProfit(p){
+  if(hasFixedIncome(p)) return fixedIncomeOf(p);   // вписанная сумма — уже чистые деньги на руках
   const crewPaid = projectCrew(p).reduce((s,c)=>s+settlementPaid(c),0);
   const rentalPaid = RENTAL_DEBTS.filter(r=>r.projectId===p.id).reduce((s,r)=>s+settlementPaid(r),0);
   // такси клиент платит мне, а я раздаю ребятам — это расход, как и в отчёте проекта
@@ -14154,12 +14295,13 @@ function projectProfit(p){
 }
 function renderProfitTab(){
   const el = document.getElementById('fpane-profit');
-  const rows = activeProjects().filter(p=>p.sum>0).map(p=>({p, profit:projectProfit(p)}));
+  // проект с вписанным доходом попадает сюда даже без сметы — ради него всё и затевалось
+  const rows = activeProjects().filter(p=>p.sum>0 || hasFixedIncome(p)).map(p=>({p, profit:projectProfit(p)}));
   const total = rows.reduce((s,r)=>s+r.profit,0);
   const head = `<div class="empty-hint" style="padding-top:0;">Фактическая прибыль на сегодня: <b style="color:${total>=0?'var(--ok)':'var(--warn)'};">${total<0?'−':''}${fmtMoney(Math.abs(total))}</b></div>`;
   el.innerHTML = head + rows.map(({p,profit})=>`<div class="prow" onclick="openProject('${p.id}','pay')">
         <div class="stripe" style="background:${profit>=0?'var(--ok)':'var(--warn)'}"></div>
-        <div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pmeta"><span class="mono">получено ${fmtMoney(p.paidAmount)}</span></div></div>
+        <div class="pinfo"><div class="pname">${esc(p.name)}</div><div class="pmeta"><span class="mono">${hasFixedIncome(p)?'доход вписан':'получено '+fmtMoney(p.paidAmount)}</span></div></div>
         <div class="psum mono" style="color:${profit>=0?'var(--ok)':'var(--warn)'};">${profit<0?'−':''}${fmtMoney(Math.abs(profit))}</div>
         <div class="pchev">›</div>
       </div>`).join('');
@@ -14168,7 +14310,7 @@ function renderProfitTab(){
 function buildLedgerRows(){
   const rows = [];
   // неустойка, которую заказчик ещё не заплатил, — такие же входящие деньги
-  [...new Set(activeProjects().concat(penaltyProjects(), penaltyAwaitingProjects()))].forEach(p=>{
+  [...new Set(openProjects().concat(penaltyProjects(), penaltyAwaitingProjects()))].forEach(p=>{
     if((!p.cancelled || penaltyAwaiting(p)) && isReceivable(p)){
       rows.push({who:p.client, project:p.name, projectId:p.id, amount:receivableAmount(p), paid:false, direction:'in', date:null});
     }
@@ -16593,6 +16735,15 @@ function selfCheckPenProject(over){
     units:[{id:1, name:'Юнит 1', crew:[{id:'__sc_a', role:'Осветитель', amount:6000,
       paid:false, payments:[], penalty:{pct:50, base:12000}}]}]}, over));
 }
+/* Архивный проект: съёмка прошла, счёт выставлен, деньги не пришли, человеку не выплачено.
+   Без closed он даёт задачи и долг; с closed не должен давать ничего. */
+function selfCheckClosedProject(over){
+  return selfCheckProject(Object.assign({id:'__sc_closed', name:'Архивный проект',
+    date:'2026-01-10', dates:['2026-01-10'], sum:100000, paidAmount:0, invoiceSent:true,
+    steps:[['Освоение',0],['Смета',0],['Команда',0],['Факт. смета',0],['Счёт',1],['Оплата',0],['Чек',0]],
+    units:[{id:1, name:'Юнит 1', crew:[{id:'__sc_a', role:'Осветитель', amount:20000,
+      paid:false, payments:[]}]}]}, over));
+}
 // Проект подкладывается в общий список только на время проверки — и убирается, даже если она упала
 function scWithProject(p, fn){
   PROJECTS.push(p);
@@ -18179,6 +18330,54 @@ const SELF_CHECK_CASES = [
       const u = hxT('undo', {command:e.id});
       return (r.ok && restored && u.ok && PROJECTS.find(x => x.id === pid).cancelled) ? 1 : 0;
     }), expect:1},
+
+  // ---- Завершённые проекты и вписанный доход ----
+  {group:'Завершённые', name:'Завершённый проект не создаёт авто-задач, а открытый создаёт',
+    run:()=>{
+      const n = over => scWithProject(selfCheckClosedProject(over),
+        p=>generateAutoTasks().filter(t=>t.projectId===p.id).length);
+      return (n({closed:true}) === 0 && n({}) > 0) ? 1 : 0;
+    }, expect:1},
+  {group:'Завершённые', name:'Своя задача завершённого проекта: на дэшборде нет, внутри проекта есть',
+    run:()=>scWithProject(selfCheckClosedProject({closed:true}), p=>{
+      CUSTOM_TASKS.push({id:999001, text:'проверка', projectId:p.id, done:false});
+      try{
+        const dash = buildTaskItems(null).filter(t=>t.projectId===p.id).length;
+        const inside = buildTaskItems(p.id).filter(t=>t.projectId===p.id).length;
+        return (dash === 0 && inside === 1) ? 1 : 0;
+      } finally { const i = CUSTOM_TASKS.findIndex(t=>t.id===999001); if(i>-1) CUSTOM_TASKS.splice(i,1); }
+    }), expect:1},
+  {group:'Завершённые', name:'Завершённый проект не ждёт оплату, открытый — ждёт',
+    run:()=>(!isReceivable(selfCheckClosedProject({closed:true})) && isReceivable(selfCheckClosedProject({}))) ? 1 : 0,
+    expect:1},
+  {group:'Завершённые', name:'Долг по завершённому проекту не висит в операционном',
+    run:()=>{
+      const d = over => { const before = totalOperationalDebt();
+        return scWithProject(selfCheckClosedProject(over), ()=>totalOperationalDebt() - before); };
+      return (d({closed:true}) === 0 && d({}) === 20000) ? 1 : 0;
+    }, expect:1},
+  {group:'Завершённые', name:'Завершённый проект не попадает в фактический долг',
+    run:()=>{ const before = totalFactualDebt();
+      return scWithProject(selfCheckClosedProject({closed:true, paidAmount:100000, paymentDate:'2026-01-20'}),
+        ()=>totalFactualDebt() - before); }, expect:0},
+  {group:'Завершённые', name:'Статус завершённого проекта — «Завершён»',
+    run:()=>phaseLabel(selfCheckClosedProject({closed:true})) === 'Завершён' ? 1 : 0, expect:1},
+  {group:'Завершённые', name:'Завершённый считается отработанным, даже если съёмка впереди',
+    run:()=>projectShot(selfCheckClosedProject({closed:true, date:'2030-01-01', dates:['2030-01-01']})) ? 1 : 0,
+    expect:1},
+  {group:'Завершённые', name:'Вписанный доход заменяет расчётный',
+    run:()=>projectIncome(selfCheckClosedProject({fixedIncome:150000})), expect:150000},
+  {group:'Завершённые', name:'Вписанный доход идёт в прибыль как полученные деньги',
+    run:()=>projectProfit(selfCheckClosedProject({fixedIncome:150000})), expect:150000},
+  {group:'Завершённые', name:'Вписанный доход считается деньгами на руках',
+    run:()=>incomeOnHand(selfCheckClosedProject({fixedIncome:150000})) ? 1 : 0, expect:1},
+  {group:'Завершённые', name:'Вписанный доход виден в «Доходе», даже если съёмка впереди',
+    run:()=>projectShot(selfCheckClosedProject({fixedIncome:150000, date:'2030-01-01', dates:['2030-01-01']})) ? 1 : 0,
+    expect:1},
+  {group:'Завершённые', name:'Вписанный ноль — это сумма, а не «считай по смете»',
+    run:()=>projectIncome(selfCheckClosedProject({fixedIncome:0})), expect:0},
+  {group:'Завершённые', name:'Без вписанной суммы доход считается по проекту как раньше',
+    run:()=>projectIncome(selfCheckClosedProject({paidAmount:100000, paymentDate:'2026-01-20'})), expect:100000},
 ];
 
 function runSelfCheck(){
