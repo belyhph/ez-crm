@@ -471,6 +471,26 @@
     display:inline-flex;align-items:center;justify-content:center;font-size:.6rem;
     color:var(--ink-muted);flex:none;}
   .chip-done:hover{border-color:var(--ok);color:var(--ok);background:var(--ok-soft);}
+  /* «я» — снять задачу по команде: работаю один. Размер тот же, что у галочки. */
+  .chip-solo{font-size:.55rem;font-weight:700;}
+  /* Блок «Деньги» и свёрнутые группы «Позже» / «Прошедшие» / «Отложенные» */
+  .dash-money{margin-bottom:.3rem;}
+  .dash-fold-head{display:flex;align-items:center;gap:.4rem;width:100%;padding:.5rem 0;background:none;
+    border:none;border-top:1px solid var(--line);color:var(--ink-muted);font-family:inherit;
+    font-size:.75rem;cursor:pointer;text-align:left;}
+  .dash-money .dash-fold-head{border-top:none;padding-top:.2rem;}
+  .dash-fold-head.static{cursor:default;}
+  .dash-fold-chev{width:10px;flex:none;}
+  .dash-fold-title{font-weight:600;color:var(--ink);}
+  .dash-fold-meta{margin-left:auto;font-size:.7rem;}
+  .dm-row{display:flex;align-items:center;gap:.5rem;padding:.4rem 0;
+    border-bottom:1px solid var(--line);cursor:pointer;}
+  .dm-row:last-child{border-bottom:none;}
+  .dm-info{flex:1;min-width:0;}
+  .dm-label{font-size:.82rem;font-weight:500;}
+  .dm-proj{font-size:.68rem;color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dm-sum{font-size:.8rem;flex:none;}
+  .chip-solo:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);}
 
   /* Вкладки дэшборда: «Общий» / «На сегодня» / «Прошедшие» — своя строка под шапкой,
      иначе на 393px переключатель и кнопки шапки не уживаются в одной строке. */
@@ -3061,6 +3081,8 @@
       <button class="btn" onclick="planMenuPick('today')">Сегодня</button>
       <button class="btn ghost" onclick="planMenuPick('tomorrow')">Завтра</button>
       <button class="btn ghost" id="planMenuClear" onclick="planMenuPick(null)">Убрать из плана</button>
+      <button class="btn ghost" id="planMenuSnooze" onclick="planMenuSnooze()">Отложить на неделю</button>
+      <button class="btn ghost" id="planMenuWake" onclick="planMenuWake()" style="display:none;">Вернуть сейчас</button>
     </div>
     <div style="margin-top:.8rem;"><button class="btn ghost" onclick="closePlanMenu()">Отмена</button></div>
   </div>
@@ -3996,7 +4018,7 @@ let TRASH = [];
 /* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
    (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
    приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
-const HX_SKILL_VERSION = '01e9292674c3';
+const HX_SKILL_VERSION = '0b1ab2769619';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -4680,6 +4702,14 @@ function isMe(c){ return !!(c && (c.me || c.id === ME_ID)); }
 function payableCrew(list){ return (list || []).filter(c => !isMe(c)); }
 function projectPayCrew(p){ return payableCrew(projectCrew(p)); }
 function unitOthers(u){ return payableCrew((u || {}).crew); }
+/* «Работаю один» бывает не только по флагу «Соло проект»: достаточно встать на смену
+   самому и никого больше не назначать. Полоса команды в этом случае уже не предупреждает
+   («Команда · 1 · Я»), поэтому и дэшборд просить собрать команду не должен.
+   Сигнал — именно моя карточка в составе юнита (её ставит тумблер «я на смене»),
+   а не unitMeOn: он по умолчанию true у первого юнита даже с пустым составом. */
+function unitHasMe(u){ return (((u || {}).crew) || []).some(isMe); }
+function dayHasMe(d){ return ((d || {}).units || []).some(unitHasMe); }
+function projectSoloByMe(p){ return allUnits(p).some(unitHasMe) && !projectPayCrew(p).length; }
 // карточка «это я» в базе людей — чтобы пропуск и кредитсы жили там же, где у всех
 function ensureMeCard(){
   let me = CREW.find(c => c.id === ME_ID);
@@ -6219,7 +6249,8 @@ function generateAutoTasks(){
     // соло-командировка живёт без сметы и команды — эти задачи в ней только мешают
     const soloTrip = isSoloTrip(p);
     if(!p.steps[STEP.estimate][1] && !soloTrip){
-      tasks.push({key:'est1', label:'Сформировать смету', projectId:p.id, tab:'estimate', date:p.date});
+      tasks.push({key:'est1', label:'Сформировать смету', projectId:p.id, tab:'estimate', date:p.date,
+        onComplete:`quickStep('${p.id}','estimate')`});
     }
     if(soloTrip && !tripFee(p)){
       tasks.push({key:'tripFee', label:'Указать гонорар за командировку', projectId:p.id, tab:'trip', date:p.date});
@@ -6236,35 +6267,40 @@ function generateAutoTasks(){
       // сразу нужны свои смета и команда — иначе задача всплыла бы только перед съёмкой.
       allDays(p).forEach((d,i)=>{
         const dayHasCrew = (d.units||[]).some(u=>unitOthers(u).length);
-        if(!dayHasCrew && !soloCrew){
+        // в дне, где на смене только я, собирать некого
+        if(!dayHasCrew && !soloCrew && !dayHasMe(d)){
           tasks.push({key:`crewD:${d.iso}`, label:`Собрать команду · день ${i+1}`, projectId:p.id, tab:'crew',
-                      date:d.iso, dayIso:d.iso});
+                      date:d.iso, dayIso:d.iso, solo:true});
         }
         if(!(d.estimate||[]).length){
           tasks.push({key:`estD:${d.iso}`, label:`Заполнить смету · день ${i+1}`, projectId:p.id, tab:'estimate',
                       date:d.iso, dayIso:d.iso});
         }
       });
-    } else if(!hasCrew && !soloCrew && (du<5 || scoutDone)){
-      tasks.push({key:'crew', label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date});
+    } else if(!hasCrew && !soloCrew && !projectSoloByMe(p) && (du<5 || scoutDone)){
+      tasks.push({key:'crew', label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date, solo:true});
     }
     // «Оплатить команду» — деньги от клиента получены целиком, но не все в команде закрыты
     if(fullyPaid && projectPayCrew(p).length>0 && !allCrewPaidFor(p)){
-      tasks.push({key:'payCrew', label:'Оплатить команду', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'payCrew', label:'Оплатить команду', projectId:p.id, tab:'pay', date:p.date,
+        amount: projectPayCrew(p).reduce((s,c)=>s+settlementLeft(c),0)});
     }
     // «Оплатить ренталы» — аналогично, по ренталам проекта
     if(fullyPaid && RENTAL_DEBTS.some(r=>r.projectId===p.id) && !allRentalsPaidFor(p)){
-      tasks.push({key:'payRent', label:'Оплатить ренталы', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'payRent', label:'Оплатить ренталы', projectId:p.id, tab:'pay', date:p.date,
+        amount: RENTAL_DEBTS.filter(r=>r.projectId===p.id).reduce((s,r)=>s+settlementLeft(r),0)});
     }
     // «Выставить счёт / дать реквизиты» — смета есть и съёмка позади:
     // до последнего съёмочного дня цифры ещё могут поехать по часам
     const lastShootDay = projectDates(p).slice().sort().pop();
     if(p.steps[STEP.estimate][1] && !p.steps[STEP.bill][1] && lastShootDay<=TODAY_ISO && !soloTrip){
-      tasks.push({key:'bill', label:'Выставить счёт / дать реквизиты', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'bill', label:'Выставить счёт / дать реквизиты', projectId:p.id, tab:'pay', date:p.date,
+        onComplete:`quickStep('${p.id}','bill')`});
     }
     // «Сформировать чек» (замена «Чек») — деньги получены целиком
     if(fullyPaid && !p.steps[STEP.check][1]){
-      tasks.push({key:'check', label:'Сформировать чек', projectId:p.id, tab:'pay', date:p.date});
+      tasks.push({key:'check', label:'Сформировать чек', projectId:p.id, tab:'pay', date:p.date,
+        onComplete:`quickStep('${p.id}','check')`});
     }
     // «Отправить кредитсы» — появляется, как только выставлен счёт; своего чек-листа под неё
     // нет, поэтому завершается вручную кликом по галочке (как кастомная задача)
@@ -6282,7 +6318,7 @@ function generateAutoTasks(){
                 tab:'info', date:(p.cancelInfo && p.cancelInfo.at) || p.date});
   });
   penaltyProjects().filter(projectIsSettled).forEach(p=>{
-    tasks.push({key:'penalty', label:`Выплатить неустойку · ${fmtMoney(projectDebtAmount(p))}`, projectId:p.id,
+    tasks.push({key:'penalty', label:'Выплатить неустойку', projectId:p.id, amount: projectDebtAmount(p),
                 tab:'pay', date:(p.cancelInfo && p.cancelInfo.at) || p.date});
   });
   return tasks;
@@ -6298,8 +6334,9 @@ function generatePaymentCheckTasks(){
   payWatchProjects().forEach(p=>{
     if(!p.expectedPaymentDate) return;
     if(!(p.sum>0 && (p.sum-p.paidAmount)>0)) return;
-    if(p.expectedPaymentDate===TODAY_ISO) tasks.push({key:'payChk', label:'Проверить оплату', projectId:p.id, tab:'pay', date:p.date, pinned:true});
-    else if(p.expectedPaymentDate<TODAY_ISO) tasks.push({key:'payChk', label:'Напомнить об оплате', projectId:p.id, tab:'pay', date:p.date, pinned:true});
+    const left = p.sum - p.paidAmount;
+    if(p.expectedPaymentDate===TODAY_ISO) tasks.push({key:'payChk', label:'Проверить оплату', projectId:p.id, tab:'pay', date:p.date, pinned:true, amount:left});
+    else if(p.expectedPaymentDate<TODAY_ISO) tasks.push({key:'payChk', label:'Напомнить об оплате', projectId:p.id, tab:'pay', date:p.date, pinned:true, amount:left});
   });
   return tasks;
 }
@@ -6312,6 +6349,33 @@ function taskOpenCall(t){
 function openProjectDay(pid, tab, iso){
   currentDayIso = iso;
   openProject(pid, tab);
+}
+/* ============= Быстрые действия на чипе =============
+   По этим задачам действие одно и очевидное: смета собрана, счёт выставлен, чек сформирован.
+   Галочка на чипе делает ровно то же, что галочка в чек-листе проекта, и так же снимается
+   руками внутри проекта. «Собрать команду» снимается иначе — пометкой «работаю один». */
+function quickStep(pid, which){
+  const p = PROJECTS.find(x=>x.id===pid);
+  const idx = STEP[which];
+  if(!p || idx == null) return;
+  p.steps[idx][1] = 1;
+  if(which === 'bill'){
+    p.invoiceSent = true;
+    openPaymentDateModal(pid);   // без ожидаемой даты по проекту не будет ни одного напоминания
+  }
+  if(currentProjectId === pid){ renderChecklist(p); renderInfo(p); }
+  refreshAll();
+}
+function quickSolo(pid){
+  const p = PROJECTS.find(x=>x.id===pid);
+  if(!p) return;
+  askConfirm({title:'Работаешь один?',
+    text:`«${p.name}» — задача «Собрать команду» уйдёт, предупреждение о команде в проекте тоже. Вернуть можно кнопкой «Вернуть команду» в проекте.`,
+    okText:'Работаю один', cancelText:'Отмена'}, ()=>setSoloCrew(pid));
+}
+function taskSoloBtnHTML(t){
+  if(!t.solo || !t.projectId) return '';
+  return `<span class="chip-done chip-solo" onclick="event.stopPropagation();quickSolo('${t.projectId}')" title="Работаю один — убрать задачу">я</span>`;
 }
 // Кружок-галочка «готово» — общий для кастомных задач и авто-задач без своего чек-листа (кредитсы)
 function taskDoneBtnHTML(t){
@@ -6331,14 +6395,15 @@ function taskRowHTML(t){
       <div class="tstep">${esc(t.label)}</div>
       ${metaParts?`<div class="tproj">${metaParts}</div>`:''}
     </div>
-    ${taskDoneBtnHTML(t)}${proj?'<span class="pchev">›</span>':''}
+    ${taskDoneBtnHTML(t)}${taskSoloBtnHTML(t)}${proj?'<span class="pchev">›</span>':''}
   </div>`;
 }
 // Чип — используется в большом блоке «Задачи» на дэшборде, в ряд справа от проекта
 function taskChipHTML(t){
+  if(t.fold) return `<button class="task-chip chip-more" onclick="toggleTasksOpen('${t.fold}')">${esc(t.label)}</button>`;
   const clickAttr = t.projectId ? `onclick="${taskOpenCall(t)}"` : '';
   const planned = !!planEntry(t);
-  return `<button class="task-chip${planned?' planned':''}" ${clickAttr}>${esc(t.label)}${taskDoneBtnHTML(t)}${taskPlanBtnHTML(t)}</button>`;
+  return `<button class="task-chip${planned?' planned':''}" ${clickAttr}>${esc(t.label)}${taskDoneBtnHTML(t)}${taskSoloBtnHTML(t)}${taskPlanBtnHTML(t)}</button>`;
 }
 // projectFilter — если задан, оставляет только задачи этого проекта (для вкладки «Задачи» внутри проекта)
 function buildTaskItems(projectFilter){
@@ -6365,6 +6430,10 @@ function buildTaskItems(projectFilter){
    (проект + код правила), а не по подписи: подпись меняется
    («Выплатить неустойку · 20 000 ₽»), ключ — нет. */
 let TASK_PLAN = {};
+/* Отложенные задачи: ключ → дата, до которой задачу не показываем на дэшборде.
+   Нужны тем делам, которые технически не закрыть, но и трогать сейчас незачем
+   («кредитсы отправлю после сдачи»). Внутри проекта такая задача видна всегда. */
+let TASK_SNOOZE = {};
 let dashMode = 'all';
 function taskKey(t){ return `${t.projectId||'_'}|${t.key||t.label}`; }
 function planEntry(t){ return TASK_PLAN[taskKey(t)]; }
@@ -6425,6 +6494,29 @@ function movePlanOrd(map, keys, key, dir){
   arr.forEach((k,n)=>{ if(map[k]) map[k].ord = n; });
   return arr;
 }
+function snoozedUntil(t){
+  const d = TASK_SNOOZE[taskKey(t)];
+  return (d && d > TODAY_ISO) ? d : null;
+}
+function snoozeTask(key, days){
+  TASK_SNOOZE[key] = isoShift(TODAY_ISO, days || 7);
+  delete TASK_PLAN[key];        // отложенное из плана дня уходит, иначе оно там и останется
+  closePlanMenu();
+  renderTasksList();
+  scheduleSave();
+}
+function unsnoozeTask(key){
+  delete TASK_SNOOZE[key];
+  closePlanMenu();
+  renderTasksList();
+  scheduleSave();
+}
+// Чистим за собой: задача закрыта или срок сна вышел — ключ больше не нужен
+function pruneSnooze(map, items){
+  const live = new Set(items.map(taskKey));
+  Object.keys(map).forEach(k=>{ if(!live.has(k) || !(map[k] > TODAY_ISO)) delete map[k]; });
+  return map;
+}
 function planTask(key, when){
   if(!when){ delete TASK_PLAN[key]; }
   else{
@@ -6461,6 +6553,11 @@ function openPlanMenu(key){
   const t = buildTaskItems(null).find(x=>taskKey(x)===key);
   document.getElementById('planMenuLabel').textContent = t ? t.label : '';
   document.getElementById('planMenuClear').style.display = TASK_PLAN[key] ? '' : 'none';
+  const asleep = TASK_SNOOZE[key] && TASK_SNOOZE[key] > TODAY_ISO;
+  document.getElementById('planMenuSnooze').style.display = asleep ? 'none' : '';
+  document.getElementById('planMenuWake').style.display = asleep ? '' : 'none';
+  document.getElementById('planMenuWake').textContent = asleep
+    ? `Вернуть сейчас (отложена до ${fmtDate(TASK_SNOOZE[key])})` : 'Вернуть сейчас';
   document.getElementById('planMenuModal').classList.add('show');
 }
 function closePlanMenu(){
@@ -6469,6 +6566,8 @@ function closePlanMenu(){
   planMenuKey = null;
 }
 function planMenuPick(when){ if(planMenuKey) planTask(planMenuKey, when); }
+function planMenuSnooze(){ if(planMenuKey) snoozeTask(planMenuKey, 7); }
+function planMenuWake(){ if(planMenuKey) unsnoozeTask(planMenuKey); }
 /* ---- окно «Спланировать день»: весь список задач с переключателями ---- */
 function openPlanner(){ renderPlanner(); document.getElementById('plannerModal').classList.add('show'); }
 function closePlanner(){ document.getElementById('plannerModal').classList.remove('show'); }
@@ -6569,8 +6668,8 @@ function updateDashCounts(items){
 }
 // Дэшборд: проекты списком (сначала ближайшие предстоящие, потом прошедшие — от недавних к старым),
 // у каждого — его задачи в ряд. Показываем только проекты, у которых реально есть задачи.
-function buildProjectTaskGroups(scope){
-  const items = buildTaskItems(null);
+function buildProjectTaskGroups(scope, src){
+  const items = src || buildTaskItems(null);
   const byProject = {}; const unassigned = [];
   items.forEach(t=>{ if(t.projectId){ (byProject[t.projectId]=byProject[t.projectId]||[]).push(t); } else unassigned.push(t); });
   const todayTime = new Date(TODAY_ISO).getTime();
@@ -6594,34 +6693,148 @@ function toggleTasksOpen(pid){
   if(tasksOpen.has(pid)) tasksOpen.delete(pid); else tasksOpen.add(pid);
   renderTasksList();
 }
+/* У проекта на восемь дней задачи по дням превращали строку в простыню: восемь «Заполнить
+   смету · день N» подряд. Складываем их в один чип «Заполнить сметы · 6 дн.» — он
+   раскрывается тем же способом, что и «ещё N». */
+function foldDayTasks(key, tasks){
+  const out = [], byRule = {};
+  tasks.forEach(t=>{
+    const m = /^(crewD|estD):/.exec(t.key || '');
+    if(m) (byRule[m[1]] = byRule[m[1]] || []).push(t); else out.push(t);
+  });
+  Object.keys(byRule).forEach(rule=>{
+    const list = byRule[rule], foldKey = key + '|' + rule;
+    const title = rule === 'crewD' ? 'Собрать команду' : 'Заполнить сметы';
+    if(list.length < 2){ out.push(...list); return; }
+    if(tasksOpen.has(foldKey)){
+      out.push(...list);
+      out.push({fold:foldKey, label:'свернуть дни'});
+    } else {
+      out.push({fold:foldKey, label:`${title} · ${list.length} дн.`});
+    }
+  });
+  return out;
+}
 function taskChipsHTML(key, tasks){
-  if(tasks.length <= TASKS_SHOWN || tasksOpen.has(key)) {
-    const all = tasks.map(taskChipHTML).join('');
-    return tasks.length > TASKS_SHOWN
+  const list = foldDayTasks(key, tasks);
+  if(list.length <= TASKS_SHOWN || tasksOpen.has(key)) {
+    const all = list.map(taskChipHTML).join('');
+    return list.length > TASKS_SHOWN
       ? all + `<button class="task-chip chip-more" onclick="toggleTasksOpen('${key}')">свернуть</button>`
       : all;
   }
-  return tasks.slice(0,TASKS_SHOWN).map(taskChipHTML).join('')
-    + `<button class="task-chip chip-more" onclick="toggleTasksOpen('${key}')">ещё ${tasks.length-TASKS_SHOWN}</button>`;
+  return list.slice(0,TASKS_SHOWN).map(taskChipHTML).join('')
+    + `<button class="task-chip chip-more" onclick="toggleTasksOpen('${key}')">ещё ${list.length-TASKS_SHOWN}</button>`;
+}
+/* ---- строительные блоки «Общего» ---- */
+const DASH_SOON_DAYS = 14;              // дальше этого срока проект считается «позже»
+const MONEY_KEYS = new Set(['payChk','payCrew','payRent','penalty']);
+function isMoneyTask(t){ return MONEY_KEYS.has(t.key); }
+function plural(n, one, few, many){
+  const a = Math.abs(n) % 100, b = a % 10;
+  return (a > 10 && a < 20) ? many : (b > 1 && b < 5) ? few : (b === 1 ? one : many);
+}
+function projGroupHTML(g){
+  return `<div class="task-proj-row">
+      <div class="tpr-head" onclick="openProject('${g.p.id}','info')">
+        <span class="task-dot" style="background:${phaseColor(g.p)}"></span>
+        <div class="tpr-info"><div class="tpr-name">${esc(g.p.name)}</div><div class="tpr-date">${fmtDate(g.p.date)}</div></div>
+      </div>
+      <div class="tpr-chips">${taskChipsHTML(g.p.id, g.tasks)}</div>
+    </div>`;
+}
+/* Ближайшее — на виду, остальное под складками: проекты через месяц и отснятые
+   не должны занимать экран наравне с тем, что горит. */
+function dashBuckets(groups){
+  const soonEnd = isoShift(TODAY_ISO, DASH_SOON_DAYS);
+  const soon = [], later = [], past = [];
+  groups.forEach(g=>{
+    const ds = projectDates(g.p).slice().sort();
+    const first = ds[0] || g.p.date, last = ds[ds.length-1] || g.p.date;
+    if(last < TODAY_ISO) past.push(g);
+    else if(first > soonEnd) later.push(g);
+    else soon.push(g);
+  });
+  return {soon, later, past};
+}
+function dashFoldHTML(key, title, groups){
+  if(!groups.length) return '';
+  const n = groups.reduce((s,g)=>s+g.tasks.length,0);
+  const open = tasksOpen.has(key);
+  return `<div class="dash-fold">
+    <button class="dash-fold-head" onclick="toggleTasksOpen('${key}')">
+      <span class="dash-fold-chev">${open?'▾':'▸'}</span>
+      <span class="dash-fold-title">${title}</span>
+      <span class="dash-fold-meta">${groups.length} ${plural(groups.length,'проект','проекта','проектов')} · ${n} ${plural(n,'задача','задачи','задач')}</span>
+    </button>
+    ${open ? groups.map(projGroupHTML).join('') : ''}
+  </div>`;
+}
+/* Деньги — отдельной лентой наверху: это другой тип дел, и у каждого есть сумма.
+   В чипах проектов их больше нет, чтобы одно и то же не висело дважды. */
+function moneyBlockHTML(money){
+  if(!money.length) return '';
+  const total = money.reduce((s,t)=>s+(t.amount||0), 0);
+  const rows = money.map(t=>{
+    const p = t.projectId ? PROJECTS.find(x=>x.id===t.projectId) : null;
+    return `<div class="dm-row" onclick="${taskOpenCall(t)}">
+      <span class="task-dot" style="background:${p?phaseColor(p):'var(--ink-muted)'}"></span>
+      <div class="dm-info"><div class="dm-label">${esc(t.label)}</div>${p?`<div class="dm-proj">${esc(p.name)}</div>`:''}</div>
+      <div class="dm-sum mono">${t.amount?fmtMoney(t.amount):''}</div>
+      ${taskPlanBtnHTML(t)}
+    </div>`;
+  }).join('');
+  return `<div class="dash-money">
+    <div class="dash-fold-head static"><span class="dash-fold-title">Деньги</span>
+      <span class="dash-fold-meta mono">${fmtMoney(total)}</span></div>
+    ${rows}</div>`;
+}
+function snoozedFoldHTML(list){
+  if(!list.length) return '';
+  const open = tasksOpen.has('_snoozed');
+  const rows = !open ? '' : list.map(t=>{
+    const p = t.projectId ? PROJECTS.find(x=>x.id===t.projectId) : null;
+    return `<div class="dm-row" ${t.projectId?`onclick="${taskOpenCall(t)}"`:'style="cursor:default;"'}>
+      <span class="task-dot" style="background:${p?phaseColor(p):'var(--ink-muted)'}"></span>
+      <div class="dm-info"><div class="dm-label">${esc(t.label)}</div>
+        <div class="dm-proj">${p?esc(p.name)+' · ':''}до ${fmtDate(snoozedUntil(t))}</div></div>
+      ${taskPlanBtnHTML(t)}
+    </div>`;
+  }).join('');
+  return `<div class="dash-fold">
+    <button class="dash-fold-head" onclick="toggleTasksOpen('_snoozed')">
+      <span class="dash-fold-chev">${open?'▾':'▸'}</span>
+      <span class="dash-fold-title">Отложенные</span>
+      <span class="dash-fold-meta">${list.length}</span>
+    </button>${rows}</div>`;
 }
 function renderTasksList(){
   const items = buildTaskItems(null);
   rollPlanMap(TASK_PLAN, TODAY_ISO);   // вчерашнее — в сегодняшний план, до всех подсчётов
   prunePlanMap(TASK_PLAN, items);
   normalizePlanOrds(TASK_PLAN, items);
-  document.getElementById('taskCount').textContent = items.length;
-  updateDashCounts(items);
+  pruneSnooze(TASK_SNOOZE, items);
+  const asleep = items.filter(t=>snoozedUntil(t));
+  const awake = items.filter(t=>!snoozedUntil(t));
+  document.getElementById('taskCount').textContent = awake.length;
+  updateDashCounts(awake);
   const box = document.getElementById('taskList');
-  if(dashMode==='today'){ box.innerHTML = dashTodayHTML(items); return; }
-  const {groups, unassigned} = buildProjectTaskGroups(dashMode);
-  let html = groups.map(g=>`
-    <div class="task-proj-row">
-      <div class="tpr-head" onclick="openProject('${g.p.id}','info')">
-        <span class="task-dot" style="background:${phaseColor(g.p)}"></span>
-        <div class="tpr-info"><div class="tpr-name">${esc(g.p.name)}</div><div class="tpr-date">${fmtDate(g.p.date)}</div></div>
-      </div>
-      <div class="tpr-chips">${taskChipsHTML(g.p.id, g.tasks)}</div>
-    </div>`).join('');
+  if(dashMode==='today'){ box.innerHTML = dashTodayHTML(awake); return; }
+  if(dashMode==='past'){
+    const past = buildProjectTaskGroups('past', awake).groups;
+    box.innerHTML = past.map(projGroupHTML).join('')
+      || '<div class="empty-hint">По прошедшим проектам задач нет.</div>';
+    return;
+  }
+  /* «Общий»: сверху деньги, затем ближайшие проекты, а «позже» и «прошедшие» —
+     свёрнутыми строками: они нужны редко, а места занимали больше всего. */
+  const money = awake.filter(isMoneyTask);
+  const {groups, unassigned} = buildProjectTaskGroups('all', awake.filter(t=>!isMoneyTask(t)));
+  const {soon, later, past} = dashBuckets(groups);
+  let html = moneyBlockHTML(money)
+    + soon.map(projGroupHTML).join('')
+    + dashFoldHTML('_later', 'Позже', later)
+    + dashFoldHTML('_past', 'Прошедшие', past);
   if(unassigned.length){
     html += `<div class="task-proj-row">
       <div class="tpr-head" style="cursor:default;">
@@ -6631,9 +6844,8 @@ function renderTasksList(){
       <div class="tpr-chips">${taskChipsHTML('_none', unassigned)}</div>
     </div>`;
   }
-  box.innerHTML = html || (dashMode==='past'
-    ? '<div class="empty-hint">По прошедшим проектам задач нет.</div>'
-    : '<div class="empty-hint">Задач нет — всё под контролем.</div>');
+  html += snoozedFoldHTML(asleep);
+  box.innerHTML = html || '<div class="empty-hint">Задач нет — всё под контролем.</div>';
 }
 function toggleAddTask(){
   const f = document.getElementById('addTaskForm');
@@ -14898,7 +15110,7 @@ function collectState(){
     savedAt: new Date().toISOString(),
     projects: PROJECTS, crew: CREW, clients: CLIENTS,
     rentals: RENTALS, rentalDebts: RENTAL_DEBTS, personalDebts: PERSONAL_DEBTS,
-    quickNotes: QUICK_NOTES, customTasks: CUSTOM_TASKS, taskPlan: TASK_PLAN,
+    quickNotes: QUICK_NOTES, customTasks: CUSTOM_TASKS, taskPlan: TASK_PLAN, taskSnooze: TASK_SNOOZE,
     dbFiles: DB_FILES, rates: CURRENT_RATES,
     // версии ставок; rates выше — основная из них (её же читают прежние версии приложения и Hermes)
     rateSets: RATE_SETS, rateMain: RATE_MAIN_ID,
@@ -14932,6 +15144,7 @@ function applyState(s){
   replaceArray(CUSTOM_TASKS, s.customTasks);
   // План дня появился позже: в старых сейвах его просто нет — начинаем с пустого
   TASK_PLAN = (s.taskPlan && typeof s.taskPlan === 'object') ? s.taskPlan : {};
+  TASK_SNOOZE = (s.taskSnooze && typeof s.taskSnooze === 'object') ? s.taskSnooze : {};
   if(Array.isArray(s.dbFiles)) DB_FILES = s.dbFiles;
   // Прайсы появились позже: в сохранениях без этих ключей просто нечего восстанавливать,
   // а уже заведённые данные трогать нельзя — поэтому проверяем, а не перезаписываем вслепую.
@@ -17542,6 +17755,104 @@ const SELF_CHECK_CASES = [
       PROJECTS.splice(PROJECTS.indexOf(p), 1);
       return n;
     }, expect:0},
+  // ---- Дэшборд: деньги, складки, отложенные ----
+  {group:'Дэшборд', name:'Денежные задачи отделяются от обычных',
+    run:()=>{
+      const money = ['payChk','payCrew','payRent','penalty'].every(k=>isMoneyTask({key:k}));
+      const rest = !isMoneyTask({key:'crew'}) && !isMoneyTask({key:'est1'}) && !isMoneyTask({key:'credits'});
+      return (money && rest) ? 1 : 0;
+    }, expect:1},
+  {group:'Дэшборд', name:'У денежных задач есть сумма — её показывает блок «Деньги»',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_money', date:'2026-01-10', dates:['2026-01-10'],
+        steps:STEP_NAMES.map(n=>[n,0]), sum:100000, paidAmount:100000, paymentDate:'2026-01-11',
+        units:[{id:1, name:'Юнит 1', crew:[{id:'__sc_a', role:'Осветитель', amount:20000, paid:false, payments:[]}]}]});
+      return scWithProject(p, x=>{
+        const t = generateAutoTasks().find(y=>y.projectId===x.id && y.key==='payCrew');
+        return t ? t.amount : 0;
+      });
+    }, expect:20000},
+  {group:'Дэшборд', name:'Задачи по дням складываются в один чип, а раскрытие их возвращает',
+    run:()=>{
+      const days = ['2026-08-20','2026-08-21','2026-08-22'];
+      const tasks = days.map(iso=>({key:`estD:${iso}`, label:`Заполнить смету · ${iso}`, projectId:'pX'}));
+      const folded = foldDayTasks('pX', tasks).length;
+      tasksOpen.add('pX|estD');
+      const opened = foldDayTasks('pX', tasks).length;
+      tasksOpen.delete('pX|estD');
+      return (folded === 1 && opened === 4) ? 1 : 0;   // 1 складка против 3 задач + «свернуть»
+    }, expect:1},
+  {group:'Дэшборд', name:'Одна задача по дню не складывается',
+    run:()=>foldDayTasks('pX', [{key:'estD:2026-08-20', label:'Заполнить смету · день 1', projectId:'pX'}]).length,
+    expect:1},
+  {group:'Дэшборд', name:'Отложенная задача спит до срока, потом просыпается и ключ чистится',
+    run:()=>{
+      const t = {projectId:'__sc_snz', key:'crew'}, k = taskKey(t);
+      TASK_SNOOZE[k] = isoShift(TODAY_ISO, 3);
+      const sleeping = !!snoozedUntil(t);
+      TASK_SNOOZE[k] = isoShift(TODAY_ISO, -1);
+      const woke = !snoozedUntil(t);
+      pruneSnooze(TASK_SNOOZE, []);
+      return (sleeping && woke && !(k in TASK_SNOOZE)) ? 1 : 0;
+    }, expect:1},
+  {group:'Дэшборд', name:'Проекты раскладываются: ближайшие, «позже», «прошедшие»',
+    run:()=>{
+      const g = iso => ({p:{id:'x', date:iso, dates:[iso]}, tasks:[1]});
+      const {soon, later, past} = dashBuckets([
+        g(isoShift(TODAY_ISO, 2)), g(isoShift(TODAY_ISO, 40)), g(isoShift(TODAY_ISO, -3))]);
+      return (soon.length===1 && later.length===1 && past.length===1) ? 1 : 0;
+    }, expect:1},
+  {group:'Дэшборд', name:'Съёмка ровно на границе двух недель ещё считается ближайшей',
+    run:()=>dashBuckets([{p:{id:'x', date:isoShift(TODAY_ISO, DASH_SOON_DAYS), dates:[isoShift(TODAY_ISO, DASH_SOON_DAYS)]}, tasks:[1]}]).soon.length,
+    expect:1},
+  {group:'Дэшборд', name:'Склонение числительных в заголовках складок',
+    run:()=>(plural(1,'проект','проекта','проектов')==='проект'
+          && plural(2,'проект','проекта','проектов')==='проекта'
+          && plural(5,'проект','проекта','проектов')==='проектов'
+          && plural(11,'задача','задачи','задач')==='задач') ? 1 : 0, expect:1},
+  {group:'Дэшборд', name:'Быстрая галочка на чипе закрывает чекпойнт и снимает задачу',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_quick', date:TODAY_ISO, dates:[TODAY_ISO],
+        steps:STEP_NAMES.map(n=>[n,0]), units:[{id:1, name:'Юнит 1', crew:[]}]});
+      return scWithProject(p, x=>{
+        const was = generateAutoTasks().filter(t=>t.projectId===x.id && t.key==='est1').length;
+        x.steps[STEP.estimate][1] = 1;        // то же, что делает quickStep
+        const now = generateAutoTasks().filter(t=>t.projectId===x.id && t.key==='est1').length;
+        return (was === 1 && now === 0) ? 1 : 0;
+      });
+    }, expect:1},
+  {group:'Дэшборд', name:'Сторож суток: в демо дата заморожена, перезапуска не просит',
+    run:()=>(APP_MODE === 'demo' && realTodayIso() !== TODAY_ISO) ? 1 : (APP_MODE === 'live' ? 1 : 0),
+    expect:1},
+
+  {group:'Соло', name:'На смене только я — команду собирать не просим',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_meonly', date:TODAY_ISO, dates:[TODAY_ISO],
+        steps:STEP_NAMES.map(n=>[n,0]),
+        units:[{id:1, name:'Юнит 1', crew:[{id:ME_ID, role:'Гафер', payments:[], paid:false}]}]});
+      return scWithProject(p, x=>generateAutoTasks()
+        .filter(t=>t.projectId===x.id && /Собрать команду/.test(t.label)).length);
+    }, expect:0},
+  {group:'Соло', name:'Многодневный: где только я — тихо, где пусто — задача есть',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_meonly2', date:TODAY_ISO, dates:[TODAY_ISO,'2026-12-30'],
+        steps:STEP_NAMES.map(n=>[n,0]),
+        days:[{iso:TODAY_ISO, estimate:[{sec:'Персонал',name:'A',qty:1,days:1,price:1000,client:true}],
+               units:[{id:1, name:'Юнит 1', crew:[{id:ME_ID, role:'Гафер', payments:[], paid:false}]}], notes:[], payments:[]},
+              {iso:'2026-12-30', estimate:[{sec:'Персонал',name:'B',qty:1,days:1,price:1000,client:true}],
+               units:[{id:2, name:'Юнит 1', crew:[]}], notes:[], payments:[]}]});
+      return scWithProject(p, x=>generateAutoTasks()
+        .filter(t=>t.projectId===x.id && /Собрать команду/.test(t.label)).length);
+    }, expect:1},
+  {group:'Соло', name:'Появился второй человек — задача по команде не нужна (команда есть)',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_meplus', date:TODAY_ISO, dates:[TODAY_ISO],
+        steps:STEP_NAMES.map(n=>[n,0]),
+        units:[{id:1, name:'Юнит 1', crew:[{id:ME_ID, role:'Гафер', payments:[], paid:false},
+                                            {id:'__sc_a', role:'Осветитель', payments:[], paid:false}]}]});
+      return scWithProject(p, x=>generateAutoTasks()
+        .filter(t=>t.projectId===x.id && /Собрать команду/.test(t.label)).length);
+    }, expect:0},
   {group:'Соло', name:'Без флага «соло» задача по команде остаётся на месте',
     run:()=>{
       const p = selfCheckProject({id:'__sc_solo2', date:TODAY_ISO, dates:[TODAY_ISO],
@@ -19282,6 +19593,7 @@ if(APP_MODE === 'live' && !hadSave){
   replaceArray(QUICK_NOTES, []);
   replaceArray(CUSTOM_TASKS, []);
   TASK_PLAN = {};
+  TASK_SNOOZE = {};
   replaceArray(CLIENTS, []);
   DB_FILES = DB_FILES.filter(f => f.dataUrl);   // демо-отметки без содержимого не тащим
   saveState();
@@ -19294,6 +19606,28 @@ saveState();     // первый запуск — сразу фиксируем 
    разгружает localStorage, из-за переполнения которого сохранение срывалось. */
 setTimeout(() => { migrateFilesToBlobStore().then(moved => { if(moved) refreshAll(); }); }, 800);
 // подстраховка: не терять правки, если вкладку закрыли раньше, чем сработал таймер
+/* ============= Смена суток =============
+   «Сегодня» вычисляется один раз при запуске (TODAY/TODAY_ISO — const), а телефон держит
+   приложение в памяти сутками. Без этого после полуночи план не переезжал на новый день,
+   «Проверить оплату» молчала, «Прошедшие» отставали — пока не перезапустишь приложение.
+   Пересчитывать десяток модулей на лету опаснее, чем перезагрузить страницу: данные уже
+   в хранилище, а запуск и так проходит каждый день. Под руку не лезем: пока открыто окно
+   или идёт правка — ждём следующего возвращения. */
+function realTodayIso(){
+  const d = new Date(), pad = n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function dayWatchCheck(){
+  if(APP_MODE !== 'live') return;            // в демо дата заморожена намеренно
+  if(realTodayIso() === TODAY_ISO) return;
+  if(typeof hxUserBusy === 'function' && hxUserBusy()) return;
+  try{ saveState(); }catch(e){}
+  location.reload();
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) setTimeout(dayWatchCheck, 300); });
+window.addEventListener('pageshow', ()=>setTimeout(dayWatchCheck, 300));
+window.addEventListener('focus', ()=>setTimeout(dayWatchCheck, 300));
+setInterval(()=>{ if(!document.hidden) dayWatchCheck(); }, 60000);
 window.addEventListener('beforeunload', ()=>{ if(saveTimer) saveState(); });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && saveTimer) saveState(); });
 /* Вкладка, ожившая из фона, могла проспать правки из другой вкладки —
