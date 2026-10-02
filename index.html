@@ -1562,8 +1562,13 @@
     padding:calc(.8rem + var(--safe-top)) 1rem calc(.8rem + var(--safe-bottom));}
   .modal-overlay.show{display:flex;animation:fade .18s var(--ease);}
   /* Hermes: плашка «внёс N записей» над контентом и строки журнала.
-     z-index ниже модалок (150): открытое окно её перекрывает. */
-  .hx-pill{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);
+     z-index ниже модалок (150): открытое окно её перекрывает.
+     По центру её держат поля, а не transform. Плашка — это button, и общий
+     button:active{transform:scale(.96)} вместе с анимацией появления затирали
+     translateX(-50%): на каждое нажатие плашка отъезжала на пол своей ширины
+     и возвращалась, когда палец отпускаешь. */
+  .hx-pill{position:fixed;left:0;right:0;margin:0 auto;width:max-content;
+    bottom:calc(16px + env(safe-area-inset-bottom));
     z-index:140;display:none;align-items:center;gap:.5rem;max-width:calc(100vw - 32px);
     padding:.55rem 1rem;border-radius:999px;border:1px solid var(--line);background:var(--bg-raised);
     color:var(--ink);font:500 .8rem/1.2 var(--font-body);box-shadow:var(--shadow);cursor:pointer;}
