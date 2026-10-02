@@ -1019,6 +1019,17 @@
   .db-del{border:none;background:none;color:var(--ink-muted);cursor:pointer;font-size:.9rem;
     padding:.2rem .3rem;line-height:1;border-radius:6px;}
   .db-del:hover{color:var(--warn);background:var(--warn-soft);}
+  .rs-row{display:flex;gap:.45rem;margin-top:.55rem;}
+  .rs-row .role-select{flex:1 1 0;min-width:0;}
+  .rs-name{flex:1 1 0;min-width:0;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
+    border-radius:8px;padding:.4rem .55rem;font:inherit;font-size:.82rem;outline:none;}
+  .rs-name:focus{border-color:var(--accent);}
+  .rs-actions{display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin:.5rem 0 .6rem;}
+  .pr-rates{display:flex;align-items:center;gap:.5rem;margin:.1rem 0 .7rem;}
+  .pr-rates-label{font-family:var(--font-mono);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);flex:none;}
+  .pr-rates .role-select{flex:1 1 0;min-width:0;}
+  .pr-rates .btn{flex:none;white-space:nowrap;}
+  .pr-rates-hint{margin:-.35rem 0 .7rem;}
   .db-params{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.55rem;}
   .db-param label{display:block;font-size:.7rem;color:var(--ink-muted);margin-bottom:.2rem;}
   .db-param input{width:100%;border:1px solid var(--line);background:var(--bg-sunk);color:var(--ink);
@@ -2054,6 +2065,7 @@
          и выплатами, и держать её всегда развёрнутой незачем. -->
     <div class="tabpane" data-pane="money" id="pane-money">
       <div id="moneySummary"></div>
+      <div id="pane-rates"></div>
       <div id="pane-client"></div>
       <div id="pane-estimate"></div>
       <div id="pane-rentals"></div>
@@ -2252,9 +2264,13 @@
       <button class="btn ghost tiny" onclick="closeDataBase()">✕</button>
     </div>
     <div class="form-hint">Здесь живёт вводная информация для всех расчётов. Изменения применяются
-      <b>только к новым проектам</b> — те, что уже созданы, считаются по ставкам, действовавшим на момент их создания.</div>
+      <b>только к новым проектам</b> — уже созданные считаются по своему снимку ставок.
+      Сменить версию у проекта или обновить его до нынешних цифр можно во вкладке «Расчёт».</div>
 
-    <div class="db-section-title">Актуальные ставки команды</div>
+    <div class="db-section-title">Ставки команды — версии</div>
+    <div class="form-hint">Держи несколько таблиц — прежние, рабочие, новые — под своими названиями.
+      Основная идёт в новые проекты и в калькулятор.</div>
+    <div id="dbRateSets"></div>
     <div class="db-scroll">
       <table class="db-table" id="dbRatesTable"></table>
     </div>
@@ -3136,6 +3152,81 @@ function cloneRates(r){ return JSON.parse(JSON.stringify(r)); }
 // Действующие ставки — то, что получат НОВЫЕ проекты.
 // Хранятся вместе со всем остальным состоянием (см. модуль хранилища внизу файла).
 let CURRENT_RATES = cloneRates(BASE_RATES);
+/* Версии ставок. В «Базе данных» можно держать несколько таблиц — прежние, рабочие,
+   новые — под своими названиями. Одна помечена основной: по ней заводятся новые проекты
+   и считает калькулятор. CURRENT_RATES — это всегда ставки основной версии (тот же объект),
+   поэтому весь остальной код работает как работал. Проект выбирает версию в «Расчёте»
+   и хранит её СНИМОК: поправил версию в базе — посчитанные проекты сами не поедут. */
+let RATE_SETS = [{id:'rs1', name:'Основные ставки', rates:CURRENT_RATES}];
+let RATE_MAIN_ID = 'rs1';
+function rateSetById(id){ return RATE_SETS.find(x => x.id === id) || null; }
+function rateMainSet(){ return rateSetById(RATE_MAIN_ID) || RATE_SETS[0]; }
+// сравнение по смыслу, а не по порядку ключей: позиции, цифры, параметры смены
+function ratesKey(r){
+  return JSON.stringify([((r && r.roles) || []).map(x => [x.name, +x.shift || 0, +x.p1 || 0, +x.p2 || 0, +x.p3 || 0]),
+    +(r && r.normHours) || 0, +(r && r.band1) || 0, +(r && r.band2) || 0, +(r && r.scoutShort) || 0, +(r && r.scoutLong) || 0]);
+}
+function sameRates(a, b){ return !!a && !!b && ratesKey(a) === ratesKey(b); }
+/* По какой версии считается проект. set — версия (или null, если снимок не похож ни на одну:
+   так бывает у давних проектов), exact — совпадает ли снимок с нынешним видом версии. */
+function projectRateSet(p){
+  const byId = p.ratesId ? rateSetById(p.ratesId) : null;
+  if(byId) return {set:byId, exact:sameRates(p.rates, byId.rates)};
+  const twin = RATE_SETS.find(x => sameRates(p.rates, x.rates));
+  return twin ? {set:twin, exact:true} : {set:null, exact:false};
+}
+/* Версии из сохранения. В данных от прежней версии приложения их нет — тогда пришедшая
+   таблица становится основной, а версии, уже заведённые на этом устройстве, остаются:
+   старое устройство не должно стирать их одним своим сохранением. */
+function applyRateSets(s){
+  const ok = r => r && Array.isArray(r.roles) && r.roles.length;
+  if(Array.isArray(s.rateSets) && s.rateSets.some(x => x && ok(x.rates))){
+    RATE_SETS = s.rateSets.filter(x => x && ok(x.rates))
+      .map((x, i) => ({id:String(x.id || 'rs' + (i + 1)), name:String(x.name || 'Ставки'), rates:x.rates}));
+    RATE_MAIN_ID = rateSetById(s.rateMain) ? s.rateMain : RATE_SETS[0].id;
+  } else if(ok(s.rates)){
+    const own = RATE_SETS.length > 1 || RATE_SETS[0].name !== 'Основные ставки';
+    if(own){ rateMainSet().rates = s.rates; setTimeout(scheduleSave, 0); }
+    else { RATE_SETS = [{id:'rs1', name:'Основные ставки', rates:s.rates}]; RATE_MAIN_ID = 'rs1'; }
+  } else return;
+  CURRENT_RATES = rateMainSet().rates;
+  rebuildRateLookups();
+}
+// каких позиций проекта нет в ставках — по нулю считать нельзя
+function ratesMissingRoles(p, rates){
+  const need = new Set();
+  allDays(p).forEach(d => (d.units || []).forEach((u, i) => {
+    unitOthers(u).forEach(c => need.add(c.role || 'Осветитель'));
+    if(unitMeOn(u, i) && !(u.crew || []).some(c => (c.role || '') === 'Гафер')) need.add('Гафер');
+  }));
+  return [...need].filter(r => !rateRow(rates, r));
+}
+/* Пересчитать проект по версии ставок — только данные, без отрисовки (её зовут и «Расчёт»,
+   и команды Hermes). Закрытые выплаты не трогаются: так устроен сам пересчёт персонала. */
+function applyRatesToProject(p, set){
+  const old = projectRates(p);
+  p.rates = cloneRates(set.rates);
+  p.ratesId = set.id; p.ratesName = set.name;
+  allDays(p).forEach(day => {
+    // освоение: цена идёт за версией, если стояла стандартная, а не вписанная руками
+    (day.estimate || []).forEach(l => {
+      if(!l.scoutLine) return;
+      if(l.price === old.scoutShort) l.price = p.rates.scoutShort;
+      else if(l.price === old.scoutLong) l.price = p.rates.scoutLong;
+    });
+    const units = day.units || [];
+    // без времени смены пересчёт не идёт — у человека стоит голая ставка смены; правленную руками не трогаем
+    units.forEach(u => {
+      if(unitShiftHours(u) != null) return;
+      unitOthers(u).forEach(c => {
+        if(!c.paid && c.amount === roleShiftRate(old, c.role)) c.amount = roleShiftRate(p.rates, c.role);
+      });
+    });
+    if(units.some((u, i) => (u.crew || []).length || unitMeOn(u, i))) calcDayPersonnel(p, day, null, true);
+  });
+  refreshProjectSum(p);
+  syncEstimateToFiles(p);
+}
 
 // Ставки конкретного проекта: свой снимок, иначе — действующие
 function projectRates(p){ return (p && p.rates) ? p.rates : CURRENT_RATES; }
@@ -3425,7 +3516,8 @@ let DB_FILES = [
 function rentalFiles(name){ return DB_FILES.filter(f=>f.rental===name); }
 function openDataBase(){
   closeAllPanels();   // если осталась открыта заметка/калькулятор/ИИ — прибираем перед модалкой
-  dbDraft = cloneRates(CURRENT_RATES);
+  // черновик — все версии разом: до «Сохранить» ничего не меняется
+  dbDraft = {sets:RATE_SETS.map(x => ({id:x.id, name:x.name, rates:cloneRates(x.rates)})), main:RATE_MAIN_ID, cur:RATE_MAIN_ID};
   renderDbRates(); renderDbFiles(); renderMyContacts();
   document.getElementById('dbStorageInfo').textContent = storageInfo();
   renderDbBackups();
@@ -3444,12 +3536,72 @@ function dbSetStatus(text, isErr){
 }
 // Перерисовываем таблицу целиком только при добавлении/удалении строки —
 // на каждый ввод символа этого делать нельзя, иначе поле теряет фокус
+function dbSet(){ return dbDraft.sets.find(x => x.id === dbDraft.cur) || dbDraft.sets[0]; }
+function dbRates(){ return dbSet().rates; }
+function dbSetLabel(x){ return (x.id === dbDraft.main ? '★ ' : '') + (x.name || 'без названия'); }
+function renderDbRateSets(){
+  const box = document.getElementById('dbRateSets');
+  if(!box) return;
+  const cur = dbSet(), isMain = cur.id === dbDraft.main;
+  box.innerHTML = `<div class="rs-row">
+      <select class="role-select" id="dbSetPick" onchange="dbPickSet(this.value)" title="Какую версию править">
+        ${dbDraft.sets.map(x => `<option value="${esc(x.id)}" ${x.id === cur.id ? 'selected' : ''}>${esc(dbSetLabel(x))}</option>`).join('')}
+      </select>
+      <input class="rs-name" id="dbSetName" value="${esc(cur.name)}" placeholder="Название версии" oninput="dbRenameSet(this.value)">
+    </div>
+    <div class="rs-actions">
+      <button class="btn ghost tiny" onclick="dbCloneSet()">Клонировать</button>
+      ${isMain ? '<span class="pill pill-ok">основная</span>'
+        : '<button class="btn ghost tiny" onclick="dbMakeMain()">Сделать основной</button>'}
+      ${!isMain && dbDraft.sets.length > 1 ? '<button class="btn ghost tiny" onclick="dbDeleteSet()">Удалить версию</button>' : ''}
+    </div>`;
+}
+function dbPickSet(id){ dbDraft.cur = id; renderDbRates(); dbSetStatus(''); }
+// название правим на месте: перерисовка увела бы фокус из поля
+function dbRenameSet(v){
+  const cur = dbSet();
+  cur.name = v;
+  const pick = document.getElementById('dbSetPick');
+  if(pick && pick.selectedIndex > -1) pick.options[pick.selectedIndex].textContent = dbSetLabel(cur);
+  dbSetStatus('');
+}
+function dbCloneSet(){
+  const src = dbSet();
+  let n = 1;
+  while(dbDraft.sets.some(x => x.id === 'rs' + n)) n++;
+  const copy = {id:'rs' + n, name:(src.name || 'Ставки') + ' — копия', rates:cloneRates(src.rates)};
+  dbDraft.sets.push(copy);
+  dbDraft.cur = copy.id;
+  renderDbRates();
+  dbSetStatus('Версия склонирована — дай ей название, поправь цифры и нажми «Сохранить».');
+  const name = document.getElementById('dbSetName');
+  if(name){ name.focus(); name.select(); }
+}
+function dbMakeMain(){
+  dbDraft.main = dbSet().id;
+  renderDbRateSets();
+  dbSetStatus(`«${dbSet().name}» станет основной после «Сохранить» — по ней пойдут новые проекты.`);
+}
+function dbDeleteSet(){
+  const cur = dbSet();
+  if(cur.id === dbDraft.main || dbDraft.sets.length <= 1) return;
+  askConfirm({title:`Удалить версию «${cur.name}»?`,
+    text:'Проекты, посчитанные по ней, не изменятся — у каждого свой снимок ставок. Но выбрать её в новых уже будет нельзя.',
+    okText:'Удалить', cancelText:'Оставить', danger:true}, () => {
+    dbDraft.sets = dbDraft.sets.filter(x => x.id !== cur.id);
+    dbDraft.cur = dbDraft.main;
+    renderDbRates();
+    dbSetStatus('Версия уйдёт после «Сохранить».');
+  });
+}
 function renderDbRates(){
+  renderDbRateSets();
+  const dbDraftRates = dbRates();
   document.getElementById('dbRatesTable').innerHTML = `
     <thead><tr>
       <th>Позиция</th><th>Смена, ₽</th><th>ПР1, ₽/ч</th><th>ПР2, ₽/ч</th><th>ПР3, ₽/ч</th><th></th>
     </tr></thead>
-    <tbody>${dbDraft.roles.map((r,i)=>`
+    <tbody>${dbDraftRates.roles.map((r,i)=>`
       <tr>
         <td><input class="db-name" value="${esc(r.name)}" oninput="dbEditRole(${i},'name',this.value)"></td>
         <td><input type="number" min="0" step="100" value="${r.shift}" oninput="dbEditRole(${i},'shift',this.value)"></td>
@@ -3461,46 +3613,57 @@ function renderDbRates(){
 
   document.getElementById('dbParams').innerHTML = `
     <div class="db-param"><label>Норма смены, ч</label>
-      <input type="number" min="1" step="0.5" value="${dbDraft.normHours}" oninput="dbEditParam('normHours',this.value)"></div>
+      <input type="number" min="1" step="0.5" value="${dbDraftRates.normHours}" oninput="dbEditParam('normHours',this.value)"></div>
     <div class="db-param"><label>Часов по ПР1</label>
-      <input type="number" min="0" step="1" value="${dbDraft.band1}" oninput="dbEditParam('band1',this.value)"></div>
+      <input type="number" min="0" step="1" value="${dbDraftRates.band1}" oninput="dbEditParam('band1',this.value)"></div>
     <div class="db-param"><label>Затем часов по ПР2</label>
-      <input type="number" min="0" step="1" value="${dbDraft.band2}" oninput="dbEditParam('band2',this.value)"></div>`;
+      <input type="number" min="0" step="1" value="${dbDraftRates.band2}" oninput="dbEditParam('band2',this.value)"></div>`;
 
   document.getElementById('dbScout').innerHTML = `
     <div class="db-param"><label>Освоение до 4 ч, ₽</label>
-      <input type="number" min="0" step="500" value="${dbDraft.scoutShort}" oninput="dbEditParam('scoutShort',this.value)"></div>
+      <input type="number" min="0" step="500" value="${dbDraftRates.scoutShort}" oninput="dbEditParam('scoutShort',this.value)"></div>
     <div class="db-param"><label>Освоение свыше 4 ч, ₽</label>
-      <input type="number" min="0" step="500" value="${dbDraft.scoutLong}" oninput="dbEditParam('scoutLong',this.value)"></div>`;
+      <input type="number" min="0" step="500" value="${dbDraftRates.scoutLong}" oninput="dbEditParam('scoutLong',this.value)"></div>`;
 }
 function dbEditRole(i, field, value){
-  if(field==='name') dbDraft.roles[i].name = value;
-  else dbDraft.roles[i][field] = parseFloat(value) || 0;
+  if(field==='name') dbRates().roles[i].name = value;
+  else dbRates().roles[i][field] = parseFloat(value) || 0;
   dbSetStatus('');
 }
 function dbEditParam(key, value){
-  dbDraft[key] = parseFloat(value) || 0;
+  dbRates()[key] = parseFloat(value) || 0;
   dbSetStatus('');
 }
 function dbAddRole(){
-  dbDraft.roles.push({name:'Новая позиция', shift:0, p1:0, p2:0, p3:0});
+  dbRates().roles.push({name:'Новая позиция', shift:0, p1:0, p2:0, p3:0});
   renderDbRates();
   dbSetStatus('');
 }
 function dbRemoveRole(i){
-  if(dbDraft.roles.length<=1){ dbSetStatus('Должна остаться хотя бы одна позиция.', true); return; }
-  dbDraft.roles.splice(i,1);
+  if(dbRates().roles.length<=1){ dbSetStatus('Должна остаться хотя бы одна позиция.', true); return; }
+  dbRates().roles.splice(i,1);
   renderDbRates();
   dbSetStatus('');
 }
 function saveDataBase(){
-  const names = dbDraft.roles.map(r=>(r.name||'').trim());
-  if(names.some(n=>!n)){ dbSetStatus('У каждой позиции должно быть название.', true); return; }
-  if(new Set(names).size !== names.length){ dbSetStatus('Названия позиций не должны повторяться.', true); return; }
-  if(dbDraft.normHours<=0){ dbSetStatus('Норма смены должна быть больше нуля.', true); return; }
-  dbDraft.roles.forEach((r,i)=>r.name = names[i]);
-  CURRENT_RATES = cloneRates(dbDraft);
+  // проверяем каждую версию; где ошибка — туда и переключаем, чтобы её было видно
+  const fail = (x, text) => { dbDraft.cur = x.id; renderDbRates(); dbSetStatus(text, true); };
+  const titles = dbDraft.sets.map(x => (x.name || '').trim());
+  for(const x of dbDraft.sets){
+    const where = dbDraft.sets.length > 1 ? `«${(x.name || '').trim() || 'без названия'}»: ` : '';
+    if(!(x.name || '').trim()) return fail(x, 'У версии должно быть название.');
+    if(titles.filter(t => t.toLowerCase() === x.name.trim().toLowerCase()).length > 1) return fail(x, 'Названия версий не должны повторяться.');
+    const names = x.rates.roles.map(r=>(r.name||'').trim());
+    if(names.some(n=>!n)) return fail(x, where + 'у каждой позиции должно быть название.');
+    if(new Set(names).size !== names.length) return fail(x, where + 'названия позиций не должны повторяться.');
+    if(x.rates.normHours<=0) return fail(x, where + 'норма смены должна быть больше нуля.');
+    x.rates.roles.forEach((r,i)=>r.name = names[i]);
+  }
+  RATE_SETS = dbDraft.sets.map(x => ({id:x.id, name:x.name.trim(), rates:cloneRates(x.rates)}));
+  RATE_MAIN_ID = RATE_SETS.some(x => x.id === dbDraft.main) ? dbDraft.main : RATE_SETS[0].id;
+  CURRENT_RATES = rateMainSet().rates;
   rebuildRateLookups();
+  renderDbRateSets();
   refreshAll();
   const stored = saveState();
   if(currentProjectId){
@@ -3508,13 +3671,13 @@ function saveDataBase(){
     if(p){ renderCrewTab(p); renderPayTab(p); }
   }
   dbSetStatus(stored
-    ? 'Сохранено. Новые проекты будут считаться по этим ставкам.'
+    ? `Сохранено. Новые проекты — по версии «${rateMainSet().name}».`
     : lastSaveError, !stored);
 }
 function resetDataBase(){
-  dbDraft = cloneRates(BASE_RATES);
+  dbSet().rates = cloneRates(BASE_RATES);
   renderDbRates();
-  dbSetStatus('Исходные ставки подставлены — нажми «Сохранить», чтобы применить.');
+  dbSetStatus(`Исходные ставки подставлены в версию «${dbSet().name}» — нажми «Сохранить», чтобы применить.`);
 }
 /* Файлы: прототип без бэкенда, поэтому храним только карточку файла.
    Содержимое не читаем — оно и не нужно, позиции в смету вносятся руками. */
@@ -3790,7 +3953,7 @@ let TRASH = [];
 /* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
    (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
    приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
-const HX_SKILL_VERSION = 'd5d73aaeb18a';
+const HX_SKILL_VERSION = '3692c83da455';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -5967,7 +6130,8 @@ function makeProject(f){
     notes:[], files:[], projectTasks:[],
     trip: !!f.trip, tripData: f.trip ? newTripData() : null,
     // снимок действующих ставок: дальше проект считается по ним, даже если в «Базе данных» всё поменяется
-    rates: cloneRates(CURRENT_RATES),
+    rates: cloneRates((f.rateSet || rateMainSet()).rates),
+    ratesId: (f.rateSet || rateMainSet()).id, ratesName: (f.rateSet || rateMainSet()).name,
   };
 }
 
@@ -7299,6 +7463,54 @@ function renderMoneySummary(p){
       <button class="btn ghost tiny" onclick="openOverrun('${p.id}')">Изменить</button>
     </div>`);
   }
+  renderProjectRates(p);
+}
+/* Версия ставок проекта — строка под сводом «Расчёта». Проект хранит снимок версии;
+   здесь его можно сменить на другую версию или обновить до нынешнего вида своей. */
+function renderProjectRates(p){
+  const box = document.getElementById('pane-rates');
+  if(!box) return;
+  if(isSoloTrip(p)){ box.innerHTML = ''; return; }
+  const cur = projectRateSet(p);
+  const stale = !!cur.set && !cur.exact;
+  const own = cur.set ? '' : `<option value="" selected>${esc(p.ratesName ? p.ratesName + ' — прежний снимок' : 'Ставки на момент создания')}</option>`;
+  box.innerHTML = `<div class="pr-rates">
+      <span class="pr-rates-label">Ставки</span>
+      <select class="role-select" ${p.cancelled ? 'disabled' : ''} onchange="pickProjectRates(this.value)" title="По какой версии ставок считать проект">
+        ${own}${RATE_SETS.map(x => `<option value="${esc(x.id)}" ${cur.set && cur.set.id === x.id ? 'selected' : ''}>${esc(x.name)}${x.id === RATE_MAIN_ID ? ' · основная' : ''}</option>`).join('')}
+      </select>
+      ${stale && !p.cancelled ? `<button class="btn ghost tiny" onclick="pickProjectRates('${esc(cur.set.id)}')">Обновить</button>` : ''}
+    </div>
+    ${stale ? '<div class="form-hint pr-rates-hint">Эту версию правили в базе — проект считается по прежним цифрам. «Обновить» пересчитает его по нынешним.</div>' : ''}`;
+}
+function pickProjectRates(id){
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  const set = rateSetById(id);
+  if(!p || !set || p.cancelled){ if(p) renderProjectRates(p); return; }
+  const cur = projectRateSet(p);
+  if(cur.set && cur.set.id === set.id && cur.exact) return;
+  const miss = ratesMissingRoles(p, set.rates);
+  if(miss.length){
+    askNotice(`В версии «${set.name}» нет ${miss.length === 1 ? 'позиции' : 'позиций'}: ${miss.join(', ')}. `
+      + 'Добавь в «Базе данных» или смени людям позицию — иначе они посчитались бы по нулю.', 'Версию не сменил');
+    renderProjectRates(p);
+    return;
+  }
+  // примерка на копии: показываем, что изменится, до того как менять
+  const trial = JSON.parse(JSON.stringify(p));
+  applyRatesToProject(trial, set);
+  const a = moneyTotals(p), b = moneyTotals(trial);
+  const same = a.client === b.client && a.crewDue === b.crewDue;
+  const rub = v => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v));
+  askConfirm({title:`Считать по версии «${set.name}»?`,
+    text: same ? 'Суммы проекта от этого не изменятся — пересчитывать пока нечего.'
+      : `Смета клиенту: ${rub(a.client)} → ${rub(b.client)}\nКоманде: ${rub(a.crewDue)} → ${rub(b.crewDue)}\nМне: ${rub(a.mine)} → ${rub(b.mine)}\n\nЗакрытые выплаты не меняются.`,
+    okText: same ? 'Сменить' : 'Пересчитать', cancelText:'Оставить как есть', onNo:() => renderProjectRates(p)}, () => {
+    applyRatesToProject(p, set);
+    rerenderOpenProject();
+    refreshAll();
+    scheduleSave();
+  });
 }
 
 function renderInfo(p){
@@ -14511,6 +14723,8 @@ function collectState(){
     rentals: RENTALS, rentalDebts: RENTAL_DEBTS, personalDebts: PERSONAL_DEBTS,
     quickNotes: QUICK_NOTES, customTasks: CUSTOM_TASKS, taskPlan: TASK_PLAN,
     dbFiles: DB_FILES, rates: CURRENT_RATES,
+    // версии ставок; rates выше — основная из них (её же читают прежние версии приложения и Hermes)
+    rateSets: RATE_SETS, rateMain: RATE_MAIN_ID,
     priceBook: PRICE_BOOK, rentalTerms: RENTAL_TERMS, rentalRules: RENTAL_RULES,
     myName: MY_NAME, myContacts: MY_CONTACTS,
     seqs: {quickNote: quickNoteSeq, customTask: customTaskSeq, priceItem: priceItemSeq,
@@ -14549,10 +14763,7 @@ function applyState(s){
   if(s.rentalRules && typeof s.rentalRules === 'object') RENTAL_RULES = s.rentalRules;
   if(typeof s.myName === 'string') MY_NAME = s.myName;
   if(Array.isArray(s.myContacts)) MY_CONTACTS = s.myContacts;
-  if(s.rates && Array.isArray(s.rates.roles) && s.rates.roles.length){
-    CURRENT_RATES = s.rates;
-    rebuildRateLookups();
-  }
+  applyRateSets(s);
   if(s.seqs){
     quickNoteSeq  = s.seqs.quickNote  || quickNoteSeq;
     customTaskSeq = s.seqs.customTask || customTaskSeq;
@@ -15332,6 +15543,7 @@ const HX_INBOX_DEFAULT = 'ez-crm-inbox';
 const HX_LATER = [];
 const HX_OP_LABEL = {
   'project.create':'Новый проект', 'project.update':'Правка проекта', 'project.step':'Чекпойнт',
+  'project.rates':'Ставки проекта',
   'shift.set':'Время смены', 'shift.flags':'Условия смены', 'crew.add':'Человек на смену',
   'crew.remove':'Убрать со смены', 'crew.role':'Позиция', 'crew.gap':'Разрыв', 'person.add':'Новый человек',
   'note.add':'Заметка', 'quicknote.add':'Быстрая заметка', 'task.add':'Задача', 'task.done':'Задача выполнена',
@@ -15539,6 +15751,18 @@ function hxRecalc(keys){
   });
 }
 
+// версия ставок — по названию (или id), как она названа в «Базе данных»
+function hxFindRateSet(q){
+  const raw = String(q == null ? '' : q).trim(), n = hxNorm(raw);
+  if(!n) throw hxErr('Не указана версия ставок (rates)');
+  const byId = rateSetById(raw);
+  if(byId) return byId;
+  let hits = RATE_SETS.filter(x => hxNorm(x.name) === n);
+  if(!hits.length) hits = RATE_SETS.filter(x => hxNorm(x.name).includes(n));
+  if(hits.length === 1) return hits[0];
+  throw hxErr((hits.length ? `Под «${hxLine(raw, 40)}» подходит несколько версий ставок` : `Версии ставок «${hxLine(raw, 40)}» нет`)
+    + `. Есть: ${RATE_SETS.map(x => x.name + (x.id === RATE_MAIN_ID ? ' (основная)' : '')).join(', ')}`);
+}
 function hxFindRental(q){
   const r = RENTALS.find(x => hxNorm(x) === hxNorm(q));
   if(!hxNorm(q)) throw hxErr('Не указан рентал');
@@ -15665,13 +15889,15 @@ const HX_OPS = {
     // повтор той же команды не должен заводить второй такой же проект
     const twin = PROJECTS.find(p => !p.cancelled && hxNorm(p.name) === hxNorm(name) && projectDates(p)[0] === dates[0]);
     if(twin) throw hxErr(`Проект «${twin.name}» на ${fmtDate(dates[0])} уже есть (id ${twin.id}) — второй не завожу`);
+    const rateSet = (a.rates != null && a.rates !== '') ? hxFindRateSet(a.rates) : null;
     const p = makeProject({name, dates, client:hxLine(a.client, 120), operator:hxLine(a.operator, 80),
       producer:hxLine(a.producer, 80), director:hxLine(a.director, 80), location:hxLine(a.location, 160),
-      trip: a.trip != null && a.trip !== '' ? hxBool(a.trip, 'trip') : false});
+      trip: a.trip != null && a.trip !== '' ? hxBool(a.trip, 'trip') : false, rateSet});
     PROJECTS.push(p);
     ctx.patches.push({k:'proj', pid:p.id});
     hxTouch(ctx, p);
-    ctx.summary = `Новый проект «${p.name}» · ${dates.map(fmtDate).join(', ')}` + (p.client !== '—' ? ` · ${p.client}` : '');
+    ctx.summary = `Новый проект «${p.name}» · ${dates.map(fmtDate).join(', ')}` + (p.client !== '—' ? ` · ${p.client}` : '')
+      + (rateSet && rateSet.id !== RATE_MAIN_ID ? ` · ставки «${rateSet.name}»` : '');
   },
   'project.update'(a, ctx){
     const p = hxFindProject(a.project);
@@ -16102,6 +16328,22 @@ const HX_OPS = {
     ctx.patches.push({k:'trash', pid:p.id});
     ctx.summary = `«${p.name}» убран в корзину — вернуть можно отсюда же`;
   },
+  'project.rates'(a, ctx){
+    const p = hxFindProject(a.project);
+    const set = hxFindRateSet(a.rates);
+    hxTouch(ctx, p);
+    if(p.cancelled) throw hxErr(`«${p.name}» отменён — ставки отменённого проекта не меняю`);
+    const cur = projectRateSet(p);
+    if(cur.set && cur.set.id === set.id && cur.exact){ ctx.summary = `«${p.name}» уже считается по версии «${set.name}»`; return; }
+    const miss = ratesMissingRoles(p, set.rates);
+    if(miss.length) throw hxErr(`В версии «${set.name}» нет позиций: ${miss.join(', ')} — добавь их в версию в «Базе данных» или смени людям позицию`);
+    const was = moneyTotals(p);
+    ctx.patches.push({k:'prates', pid:p.id, after:set.id, afterKey:ratesKey(set.rates),
+      before:JSON.parse(JSON.stringify({rates:p.rates, ratesId:p.ratesId || null, ratesName:p.ratesName || null}))});
+    applyRatesToProject(p, set);
+    const now = moneyTotals(p);
+    ctx.summary = `«${p.name}»: ставки «${set.name}» · смета ${fmtMoney(was.client)} → ${fmtMoney(now.client)}, команде ${fmtMoney(was.crewDue)} → ${fmtMoney(now.crewDue)}`;
+  },
 };
 
 /* ---- отмена: шаги записи в обратном порядке ----
@@ -16282,6 +16524,13 @@ const HX_REVERT = {
     if(!p) return;
     hxMoneyGuard(p, 'снова в корзину не убираю');
     hxTrash(p, ctx.cmd.id);
+  },
+  prates(pt){
+    const p = hxRevP(pt);
+    if(p.ratesId !== pt.after || ratesKey(p.rates) !== pt.afterKey) throw hxErr(`Ставки «${p.name}» уже меняли после Hermes — отменять не буду`);
+    applyRatesToProject(p, {id:pt.before.ratesId, name:pt.before.ratesName, rates:pt.before.rates});
+    if(pt.before.ratesId == null) delete p.ratesId;
+    if(pt.before.ratesName == null) delete p.ratesName;
   },
 };
 function hxRevertEntry(e, ctx){
@@ -16814,6 +17063,21 @@ function resetAllData(){
    ставки — клон, никогда не PROJECTS/CURRENT_RATES напрямую) и никогда не трогают
    твои настоящие проекты — прогонять можно в любой момент, ничего не сломается.
    Когда пришлёшь реальный случай из практики — он добавляется сюда же строкой ниже. */
+/* Версии ставок в проверках: подставляем свои версии на время проверки и возвращаем
+   настоящие, даже если проверка упала. k — во сколько раз умножены исходные ставки. */
+function scRates(k){
+  const r = cloneRates(BASE_RATES);
+  r.roles.forEach(x => { x.shift *= k; x.p1 *= k; x.p2 *= k; x.p3 *= k; });
+  r.scoutShort *= k; r.scoutLong *= k;
+  return r;
+}
+function scWithRateSets(main, fn){
+  const keep = {sets:RATE_SETS, main:RATE_MAIN_ID, cur:CURRENT_RATES};
+  RATE_SETS = [{id:'a', name:'Старые', rates:scRates(1)}, {id:'b', name:'Новые', rates:scRates(2)}];
+  RATE_MAIN_ID = main; CURRENT_RATES = rateMainSet().rates; rebuildRateLookups();
+  try{ return fn(); }
+  finally{ RATE_SETS = keep.sets; RATE_MAIN_ID = keep.main; CURRENT_RATES = keep.cur; rebuildRateLookups(); }
+}
 function selfCheckFixtureRates(){ return cloneRates(BASE_RATES); }
 function selfCheckUnit(over){
   return Object.assign({id:1, name:'Юнит 1', loadStart:'', shiftStart:'08:00', shiftEnd:'20:00',
@@ -18530,6 +18794,84 @@ const SELF_CHECK_CASES = [
     run:()=>projectIncome(selfCheckClosedProject({fixedIncome:0})), expect:0},
   {group:'Завершённые', name:'Без вписанной суммы доход считается по проекту как раньше',
     run:()=>projectIncome(selfCheckClosedProject({paidAmount:100000, paymentDate:'2026-01-20'})), expect:100000},
+
+  {group:'Версии ставок', name:'Новый проект берёт основную версию и её название',
+    run:()=>scWithRateSets('b', ()=>{
+      const p = makeProject({name:'t', dates:['2030-01-10']});
+      return (p.ratesId === 'b' && p.ratesName === 'Новые'
+        && roleShiftRate(p.rates, 'Осветитель') === roleShiftRate(BASE_RATES, 'Осветитель') * 2) ? 1 : 0;
+    }), expect:1},
+  {group:'Версии ставок', name:'Смена версии пересчитывает персонал, закрытую выплату не трогает',
+    run:()=>scWithRateSets('a', ()=>{
+      const p = selfCheckProject({rates:scRates(1), ratesId:'a', files:[], units:[selfCheckUnit({crew:[
+        {id:'__sc_a', role:'Осветитель', amount:0, payments:[]},
+        {id:'__sc_b', role:'Осветитель', amount:13200, paid:true, payments:[{amount:13200, type:'cash', date:'2026-01-01'}]}]})]});
+      calcDayPersonnel(p, p, null, true);
+      const a0 = p.units[0].crew[0].amount, sum0 = p.sum;
+      applyRatesToProject(p, rateSetById('b'));
+      const c = p.units[0].crew;
+      return (a0 > 0 && c[0].amount === a0 * 2 && c[1].amount === 13200 && p.ratesName === 'Новые' && p.sum > sum0) ? 1 : 0;
+    }), expect:1},
+  {group:'Версии ставок', name:'Без времени смены у человека меняется голая ставка, вписанная руками сумма — нет',
+    run:()=>scWithRateSets('a', ()=>{
+      const base = roleShiftRate(BASE_RATES, 'Осветитель');
+      const p = selfCheckProject({rates:scRates(1), ratesId:'a', files:[], units:[selfCheckUnit({shiftStart:'', shiftEnd:'', me:false, crew:[
+        {id:'__sc_a', role:'Осветитель', amount:base, payments:[]},
+        {id:'__sc_b', role:'Осветитель', amount:7777, payments:[]}]})]});
+      applyRatesToProject(p, rateSetById('b'));
+      const c = p.units[0].crew;
+      return (c[0].amount === base * 2 && c[1].amount === 7777) ? 1 : 0;
+    }), expect:1},
+  {group:'Версии ставок', name:'В версии нет позиции — проект по ней не считаем',
+    run:()=>scWithRateSets('a', ()=>{
+      const thin = scRates(1); thin.roles = thin.roles.filter(r => r.name !== 'Осветитель');
+      const p = selfCheckProject({rates:scRates(1), files:[], units:[selfCheckUnit({crew:[{id:'__sc_a', role:'Осветитель', amount:0}]})]});
+      const miss = ratesMissingRoles(p, thin);
+      return (miss.length === 1 && miss[0] === 'Осветитель' && !ratesMissingRoles(p, scRates(2)).length) ? 1 : 0;
+    }), expect:1},
+  {group:'Версии ставок', name:'Версию поправили в базе — посчитанный проект не едет, пока его не обновить',
+    run:()=>scWithRateSets('a', ()=>{
+      const p = selfCheckProject({rates:scRates(1), ratesId:'a', files:[], units:[selfCheckUnit({crew:[{id:'__sc_a', role:'Осветитель', amount:0, payments:[]}]})]});
+      calcDayPersonnel(p, p, null, true);
+      const sum0 = p.sum;
+      rateSetById('a').rates = scRates(3);                 // правка версии в «Базе данных»
+      const stale = projectRateSet(p), kept = p.sum === sum0;
+      applyRatesToProject(p, rateSetById('a'));            // «Обновить» в проекте
+      return (stale.set && !stale.exact && kept && projectRateSet(p).exact && p.sum > sum0) ? 1 : 0;
+    }), expect:1},
+  {group:'Версии ставок', name:'Данные от прежней версии приложения не стирают заведённые версии',
+    run:()=>scWithRateSets('b', ()=>{
+      const incoming = scRates(3);
+      applyRateSets({rates:incoming});
+      return (RATE_SETS.length === 2 && CURRENT_RATES === incoming && rateSetById('b').rates === incoming && !!rateSetById('a')) ? 1 : 0;
+    }), expect:1},
+  {group:'Версии ставок', name:'Версии из сохранения поднимаются вместе с отметкой основной',
+    run:()=>scWithRateSets('a', ()=>{
+      applyRateSets({rates:scRates(1), rateMain:'n', rateSets:[{id:'o', name:'Прежние', rates:scRates(1)}, {id:'n', name:'Свежие', rates:scRates(4)}]});
+      return (RATE_SETS.length === 2 && RATE_MAIN_ID === 'n' && rateMainSet().name === 'Свежие'
+        && roleShiftRate(CURRENT_RATES, 'Гафер') === roleShiftRate(BASE_RATES, 'Гафер') * 4) ? 1 : 0;
+    }), expect:1},
+  {group:'Hermes', name:'Версия ставок по команде: проект пересчитан, отмена возвращает до рубля',
+    run:()=>scWithRateSets('a', ()=>hxSandbox(()=>{
+      CREW.push({id:'__sc_hx1', name:'Тест Осветитель'});
+      const pid = hxT('project.create', {name:'Тест ставок', dates:['2030-01-10']}).ctx.pid;
+      hxT('crew.add', {project:pid, person:'__sc_hx1', role:'Осветитель'});
+      hxT('shift.set', {project:pid, shiftStart:'08:00', shiftEnd:'20:00'});
+      const sum0 = PROJECTS.find(x => x.id === pid).sum;
+      const {r, e} = hxTLog('project.rates', {project:pid, rates:'новые'});
+      const p1 = PROJECTS.find(x => x.id === pid);
+      const up = r.ok && p1.ratesId === 'b' && p1.sum === sum0 * 2;
+      const u = hxT('undo', {command:e.id});
+      const p2 = PROJECTS.find(x => x.id === pid);
+      return (sum0 > 0 && up && u.ok && p2.ratesId === 'a' && p2.sum === sum0) ? 1 : 0;
+    })), expect:1},
+  {group:'Hermes', name:'Новый проект по названной версии ставок; неизвестная версия — отказ',
+    run:()=>scWithRateSets('a', ()=>hxSandbox(()=>{
+      const ok = hxT('project.create', {name:'Тест версии', dates:['2030-01-10'], rates:'Новые'});
+      const bad = hxT('project.create', {name:'Тест версии 2', dates:['2030-01-11'], rates:'прошлогодние'});
+      const p = ok.ok && PROJECTS.find(x => x.id === ok.ctx.pid);
+      return (p && p.ratesId === 'b' && !bad.ok && /Версии ставок/.test(bad.error) && !PROJECTS.some(x => x.name === 'Тест версии 2')) ? 1 : 0;
+    })), expect:1},
 ];
 
 function runSelfCheck(){
