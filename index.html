@@ -3149,6 +3149,34 @@ const BASE_RATES = {
   scoutLong: 22000,   // освоение свыше 4 ч
 };
 function cloneRates(r){ return JSON.parse(JSON.stringify(r)); }
+/* Готовые таблицы ставок — чтобы не перебивать цифры руками, когда приходит новая сетка.
+   Кнопка в «Базе данных» подставляет их в выбранную версию. Меняются только ставки позиций
+   (смена и три ступени переработки): норма, часы ступеней, освоение и всё остальное в версии
+   остаётся как было. Порядок чисел — смена, ПР1, ПР2, ПР3. */
+const RATE_PRESETS = [
+  {key:'2026-05', name:'ставки с 1 мая 2026', roles:{
+    'Гафер':       [24000, 4800, 9600, 19200],
+    'Кей грип':    [16800, 3800, 7600, 15200],
+    'Бест бой':    [16800, 3800, 7600, 15200],
+    'Диммер борд': [18600, 3800, 7600, 15200],   // в документе — Programmer
+    'Пультовик':   [18600, 3800, 7600, 15200],   // в документе — Programmer
+    'Осветитель':  [14400, 3200, 6400, 12800],
+    'Грип':        [14400, 3200, 6400, 12800],
+  }},
+];
+// позиции ищем по названию без учёта регистра; которой нет — добавляем. Возвращает, сколько позиций заполнено
+function ratesApplyPreset(rates, preset){
+  const norm = t => String(t || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+  let n = 0;
+  Object.keys(preset.roles).forEach(name => {
+    const v = preset.roles[name];
+    let row = rates.roles.find(x => norm(x.name) === norm(name));
+    if(!row){ row = {name, shift:0, p1:0, p2:0, p3:0}; rates.roles.push(row); }
+    row.shift = v[0]; row.p1 = v[1]; row.p2 = v[2]; row.p3 = v[3];
+    n++;
+  });
+  return n;
+}
 // Действующие ставки — то, что получат НОВЫЕ проекты.
 // Хранятся вместе со всем остальным состоянием (см. модуль хранилища внизу файла).
 let CURRENT_RATES = cloneRates(BASE_RATES);
@@ -3554,7 +3582,16 @@ function renderDbRateSets(){
       ${isMain ? '<span class="pill pill-ok">основная</span>'
         : '<button class="btn ghost tiny" onclick="dbMakeMain()">Сделать основной</button>'}
       ${!isMain && dbDraft.sets.length > 1 ? '<button class="btn ghost tiny" onclick="dbDeleteSet()">Удалить версию</button>' : ''}
+      ${RATE_PRESETS.map(ps => `<button class="btn ghost tiny" onclick="dbFillPreset('${ps.key}')" title="Заполнить ставки позиций в этой версии">Подставить ${esc(ps.name)}</button>`).join('')}
     </div>`;
+}
+// готовая сетка — в открытую версию; до «Сохранить» ничего не меняется
+function dbFillPreset(key){
+  const ps = RATE_PRESETS.find(x => x.key === key);
+  if(!ps || !dbDraft) return;
+  const n = ratesApplyPreset(dbRates(), ps);
+  renderDbRates();
+  dbSetStatus(`Подставил ${ps.name} в версию «${dbSet().name}»: ${n} ${plural(n, 'позиция', 'позиции', 'позиций')}. Проверь и нажми «Сохранить».`);
 }
 function dbPickSet(id){ dbDraft.cur = id; renderDbRates(); dbSetStatus(''); }
 // название правим на месте: перерисовка увела бы фокус из поля
@@ -18872,6 +18909,20 @@ const SELF_CHECK_CASES = [
       const p = ok.ok && PROJECTS.find(x => x.id === ok.ctx.pid);
       return (p && p.ratesId === 'b' && !bad.ok && /Версии ставок/.test(bad.error) && !PROJECTS.some(x => x.name === 'Тест версии 2')) ? 1 : 0;
     })), expect:1},
+
+  {group:'Версии ставок', name:'Готовые ставки с 1 мая 2026 меняют только ставки позиций',
+    run:()=>{
+      const r = scRates(1);
+      const n = ratesApplyPreset(r, RATE_PRESETS.find(x => x.key === '2026-05'));
+      const g = rateRow(r, 'Гафер'), o = rateRow(r, 'Осветитель'), d = rateRow(r, 'Диммер борд'), k = rateRow(r, 'Кей грип');
+      return (n === 7 && r.roles.length === BASE_RATES.roles.length
+        && g.shift === 24000 && g.p1 === 4800 && g.p2 === 9600 && g.p3 === 19200
+        && k.shift === 16800 && k.p1 === 3800 && k.p2 === 7600 && k.p3 === 15200
+        && d.shift === 18600 && d.p1 === 3800 && d.p3 === 15200
+        && o.shift === 14400 && o.p1 === 3200 && o.p2 === 6400 && o.p3 === 12800
+        && r.band1 === BASE_RATES.band1 && r.band2 === BASE_RATES.band2 && r.normHours === BASE_RATES.normHours
+        && r.scoutShort === BASE_RATES.scoutShort) ? 1 : 0;
+    }, expect:1},
 ];
 
 function runSelfCheck(){
