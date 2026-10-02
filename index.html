@@ -6309,8 +6309,8 @@ function generateAutoTasks(){
       // сразу нужны свои смета и команда — иначе задача всплыла бы только перед съёмкой.
       allDays(p).forEach((d,i)=>{
         const dayHasCrew = (d.units||[]).some(u=>unitOthers(u).length);
-        // в дне, где на смене только я, собирать некого
-        if(!dayHasCrew && !soloCrew && !dayHasMe(d)){
+        // в дне, где на смене только я, собирать некого; прошедший день — тем более
+        if(!dayHasCrew && !soloCrew && !dayHasMe(d) && d.iso >= TODAY_ISO){
           tasks.push({key:`crewD:${d.iso}`, label:`Собрать команду · день ${i+1}`, projectId:p.id, tab:'crew',
                       date:d.iso, dayIso:d.iso, solo:true});
         }
@@ -6319,7 +6319,9 @@ function generateAutoTasks(){
                       date:d.iso, dayIso:d.iso});
         }
       });
-    } else if(!hasCrew && !soloCrew && !projectSoloByMe(p) && (du<5 || scoutDone)){
+    /* Съёмка позади — собирать команду уже не к чему: задача подготовки, а не учёта.
+       Раньше она висела на каждом старом проекте без состава и забивала дэшборд. */
+    } else if(!hasCrew && !soloCrew && !projectSoloByMe(p) && du >= 0 && (du<5 || scoutDone)){
       tasks.push({key:'crew', label:'Собрать команду', projectId:p.id, tab:'crew', date:p.date, solo:true});
     }
     // «Оплатить команду» — деньги от клиента получены целиком, но не все в команде закрыты
@@ -6338,6 +6340,13 @@ function generateAutoTasks(){
     if(p.steps[STEP.estimate][1] && !p.steps[STEP.bill][1] && lastShootDay<=TODAY_ISO && !soloTrip){
       tasks.push({key:'bill', label:'Выставить счёт / дать реквизиты', projectId:p.id, tab:'pay', date:p.date,
         onComplete:`quickStep('${p.id}','bill')`});
+    }
+    /* «Назначить дату оплаты» — счёт выставлен, съёмка позади, деньги пришли не все,
+       а даты, по которой приложение напомнит, нет. Без неё проект просто висел бы
+       в ожидании и ничего бы не напомнил: это единственное действие, которое тут есть. */
+    if(p.invoiceSent && !p.expectedPaymentDate && (p.sum - p.paidAmount) > 0 && lastShootDay<=TODAY_ISO){
+      tasks.push({key:'payDate', label:'Назначить дату оплаты', projectId:p.id, tab:'info', date:p.date,
+                  amount: p.sum - p.paidAmount});
     }
     // «Сформировать чек» (замена «Чек») — деньги получены целиком
     if(fullyPaid && !p.steps[STEP.check][1]){
@@ -6733,7 +6742,7 @@ function foldDayTasks(key, tasks){
    «Сегодня» — что делаю прямо сейчас, «Всё» — вся работа одной лентой.
    Лента собрана по смыслу дела: деньги → подготовка к съёмкам → хвосты по отснятому
    → отложенное. Отдельной вкладки «Прошедшие» больше нет: она дублировала секцию. */
-const MONEY_KEYS = new Set(['payChk','payCrew','payRent','penalty']);
+const MONEY_KEYS = new Set(['payChk','payDate','payCrew','payRent','penalty']);
 function isMoneyTask(t){ return MONEY_KEYS.has(t.key); }
 function plural(n, one, few, many){
   const a = Math.abs(n) % 100, b = a % 10;
@@ -6764,16 +6773,7 @@ function dashSecHTML(key, title, meta, def, body){
    оплаты, в конце — остатки по отснятым проектам, про которые иначе забываешь. */
 function moneyTone(t){
   if(t.key === 'payChk') return /^Напомнить/.test(t.label) ? 'late' : 'now';
-  if(t.key === 'rest') return 'late';
   return '';
-}
-// Остаток по отснятому проекту, на который нет напоминания по дате — тихий долг заказчика
-function unpaidRestTasks(items){
-  const haveChk = new Set(items.filter(t=>t.key === 'payChk').map(t=>t.projectId));
-  return openProjects().filter(p=>
-      !haveChk.has(p.id) && (p.sum > 0) && (p.sum - p.paidAmount) > 0 && projectShot(p))
-    .map(p=>({key:'rest', label:'Остаток от заказчика', projectId:p.id, tab:'pay',
-              date:p.date, amount:p.sum - p.paidAmount}));
 }
 /* Выплата раскрывается по людям и ренталам: имя, сколько осталось и кнопка «Оплатить» —
    та же, что в проекте (settleOpenPay), чтобы деньги закрывались прямо с дэшборда. */
@@ -6816,13 +6816,13 @@ function moneyRowHTML(t, opts){
       <div class="dm-info"><div class="dm-label">${esc(t.label)}${canOpen?`<span class="dm-chev">${open?'▾':'▸'}</span>`:''}</div>
         ${sub?`<div class="dm-proj">${sub}</div>`:''}</div>
       <div class="dm-sum mono">${t.amount?fmtMoney(t.amount):''}</div>
-      ${t.pinned || t.key==='rest' ? '' : taskPlanBtnHTML(t)}
+      ${t.pinned ? '' : taskPlanBtnHTML(t)}
     </div>${open ? payoutRowsHTML(t) : ''}`;
 }
-function moneyBlockHTML(money, rests){
+function moneyBlockHTML(money){
   const payouts = money.filter(t=>t.key==='payCrew' || t.key==='payRent' || t.key==='penalty');
-  const checks  = money.filter(t=>t.key==='payChk');
-  if(!payouts.length && !checks.length && !rests.length) return '';
+  const checks  = money.filter(t=>t.key==='payChk' || t.key==='payDate');
+  if(!payouts.length && !checks.length) return '';
   const sum = arr => arr.reduce((s,t)=>s+(t.amount||0), 0);
   const part = (title, list, cls, note) => list.length ? `
     <div class="money-head ${cls}"><b>${title}</b><span class="money-total mono">${fmtMoney(sum(list))}</span></div>
@@ -6831,13 +6831,11 @@ function moneyBlockHTML(money, rests){
     ${part('Выплатить', payouts, 'out')}
     ${part('Оплата от заказчика', checks, 'in', t=>{
         const pr = PROJECTS.find(x=>x.id===t.projectId);
-        if(!pr || !pr.expectedPaymentDate) return '';
+        if(!pr) return '';
+        if(t.key === 'payDate') return `получено ${fmtMoney(pr.paidAmount)} из ${fmtMoney(pr.sum)} · даты нет`;
+        if(!pr.expectedPaymentDate) return '';
         const d = daysUntil(pr.expectedPaymentDate);
-        return d === 0 ? 'ждём сегодня' : d < 0 ? `просрочено на ${-d} ${plural(-d,'день','дня','дней')}` : `обещали ${fmtDate(pr.expectedPaymentDate)}`;
-      })}
-    ${part('Остатки', rests, 'in', t=>{
-        const pr = PROJECTS.find(x=>x.id===t.projectId);
-        return pr ? `получено ${fmtMoney(pr.paidAmount)} из ${fmtMoney(pr.sum)}` : '';
+        return d === 0 ? 'ждём сегодня' : `просрочено на ${-d} ${plural(-d,'день','дня','дней')}`;
       })}
   </div>`;
 }
@@ -6934,12 +6932,11 @@ function renderTasksList(){
   const box = document.getElementById('taskList');
   if(dashMode==='today'){ box.innerHTML = dashTodayHTML(awake); return; }
   const money = awake.filter(isMoneyTask);
-  const rests = unpaidRestTasks(awake);
   const {groups, unassigned} = buildProjectTaskGroups('all', awake.filter(t=>!isMoneyTask(t)));
   const {soon, past} = dashBuckets(groups);
   const secMeta = list => `${list.length} ${plural(list.length,'проект','проекта','проектов')} · `
     + `${list.reduce((s,g)=>s+g.tasks.length,0)} ${plural(list.reduce((s,g)=>s+g.tasks.length,0),'задача','задачи','задач')}`;
-  let html = moneyBlockHTML(money, rests);
+  let html = moneyBlockHTML(money);
   if(soon.length) html += dashSecHTML('_prep', 'Подготовить к съёмке', secMeta(soon), true,
     ()=>soon.map(projCardHTML).join(''));
   if(past.length) html += dashSecHTML('_tail', 'Закрыть после съёмки', secMeta(past), past.length <= 3,
@@ -17914,21 +17911,36 @@ const SELF_CHECK_CASES = [
       const g = {p:{id:'x', date:isoShift(TODAY_ISO,-2), dates:[isoShift(TODAY_ISO,-2), isoShift(TODAY_ISO,1)]}, tasks:[1]};
       return dashBuckets([g]).soon.length;
     }, expect:1},
-  {group:'Дэшборд', name:'Остаток по отснятому проекту без даты оплаты попадает в «Остатки»',
+  {group:'Дэшборд', name:'Счёт выставлен, даты нет — задача «Назначить дату оплаты» с остатком',
     run:()=>{
-      const p = selfCheckProject({id:'__sc_rest', date:isoShift(TODAY_ISO,-5), dates:[isoShift(TODAY_ISO,-5)],
-        steps:STEP_NAMES.map(n=>[n,0]), sum:100000, paidAmount:60000, units:[{id:1,name:'Юнит 1',crew:[]}]});
+      const p = selfCheckProject({id:'__sc_pd', date:isoShift(TODAY_ISO,-5), dates:[isoShift(TODAY_ISO,-5)],
+        steps:STEP_NAMES.map(n=>[n,0]), sum:100000, paidAmount:60000, invoiceSent:true,
+        units:[{id:1,name:'Юнит 1',crew:[]}]});
+      p.steps[STEP.bill][1] = 1;
       return scWithProject(p, x=>{
-        const r = unpaidRestTasks([]).filter(t=>t.projectId===x.id);
-        return r.length === 1 ? r[0].amount : 0;
+        const t = generateAutoTasks().find(y=>y.projectId===x.id && y.key==='payDate');
+        return t ? t.amount : 0;
       });
     }, expect:40000},
-  {group:'Дэшборд', name:'Если по проекту уже есть напоминание об оплате, в «Остатки» он не дублируется',
+  {group:'Дэшборд', name:'Дата оплаты назначена — проект просто ждёт и на дэшборде не висит',
     run:()=>{
-      const p = selfCheckProject({id:'__sc_rest2', date:isoShift(TODAY_ISO,-5), dates:[isoShift(TODAY_ISO,-5)],
-        steps:STEP_NAMES.map(n=>[n,0]), sum:100000, paidAmount:60000, units:[{id:1,name:'Юнит 1',crew:[]}]});
-      return scWithProject(p, x=>unpaidRestTasks([{key:'payChk', projectId:x.id}]).filter(t=>t.projectId===x.id).length);
+      const p = selfCheckProject({id:'__sc_pd2', date:isoShift(TODAY_ISO,-5), dates:[isoShift(TODAY_ISO,-5)],
+        steps:STEP_NAMES.map(n=>[n,0]), sum:100000, paidAmount:60000, invoiceSent:true, creditsSent:true,
+        expectedPaymentDate: isoShift(TODAY_ISO, 10), units:[{id:1,name:'Юнит 1',crew:[]}]});
+      p.steps[STEP.estimate][1] = 1;
+      p.steps[STEP.bill][1] = 1;
+      return scWithProject(p, x=>buildTaskItems(null).filter(t=>t.projectId===x.id).length);
     }, expect:0},
+  {group:'Дэшборд', name:'Счёт не выставлен — зовём выставить счёт, а не назначать дату',
+    run:()=>{
+      const p = selfCheckProject({id:'__sc_pd3', date:isoShift(TODAY_ISO,-5), dates:[isoShift(TODAY_ISO,-5)],
+        steps:STEP_NAMES.map(n=>[n,0]), sum:100000, paidAmount:0, units:[{id:1,name:'Юнит 1',crew:[]}]});
+      p.steps[STEP.estimate][1] = 1;
+      return scWithProject(p, x=>{
+        const keys = generateAutoTasks().filter(t=>t.projectId===x.id).map(t=>t.key);
+        return (keys.includes('bill') && !keys.includes('payDate')) ? 1 : 0;
+      });
+    }, expect:1},
   {group:'Дэшборд', name:'Складка помнит и открытие, и закрытие',
     run:()=>{
       tasksOpen.delete('__sc_fold'); tasksShut.delete('__sc_fold');
@@ -17960,6 +17972,24 @@ const SELF_CHECK_CASES = [
     run:()=>(APP_MODE === 'demo' && realTodayIso() !== TODAY_ISO) ? 1 : (APP_MODE === 'live' ? 1 : 0),
     expect:1},
 
+  {group:'Дэшборд', name:'Съёмка прошла — собирать команду больше не просим',
+    run:()=>{
+      const mk = iso => selfCheckProject({id:'__sc_crewday', date:iso, dates:[iso],
+        steps:STEP_NAMES.map(n=>[n,0]), units:[{id:1, name:'Юнит 1', crew:[]}]});
+      const n = iso => scWithProject(mk(iso), x=>generateAutoTasks()
+        .filter(t=>t.projectId===x.id && /Собрать команду/.test(t.label)).length);
+      return (n(isoShift(TODAY_ISO,-1)) === 0 && n(TODAY_ISO) === 1 && n(isoShift(TODAY_ISO,2)) === 1) ? 1 : 0;
+    }, expect:1},
+  {group:'Дэшборд', name:'В многодневном прошедший день команду не просит, будущий — просит',
+    run:()=>{
+      const days = [isoShift(TODAY_ISO,-1), isoShift(TODAY_ISO,2)];
+      const p = selfCheckProject({id:'__sc_crewdays', date:days[0], dates:days,
+        steps:STEP_NAMES.map(n=>[n,0]),
+        days:days.map((iso,i)=>({iso, estimate:[{sec:'Персонал',name:'A',qty:1,days:1,price:1000,client:true}],
+          units:[{id:i+1, name:'Юнит 1', crew:[]}], notes:[], payments:[]}))});
+      return scWithProject(p, x=>generateAutoTasks()
+        .filter(t=>t.projectId===x.id && /Собрать команду/.test(t.label)).length);
+    }, expect:1},
   {group:'Соло', name:'На смене только я — команду собирать не просим',
     run:()=>{
       const p = selfCheckProject({id:'__sc_meonly', date:TODAY_ISO, dates:[TODAY_ISO],
