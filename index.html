@@ -4215,7 +4215,7 @@ let TRASH = [];
 /* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
    (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
    приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
-const HX_SKILL_VERSION = 'bacf57c04206';
+const HX_SKILL_VERSION = '051e67ef7dbd';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -14726,7 +14726,9 @@ function renderEfpList(){
         : '<div class="empty-hint">У этого рентала пустой прайс. Открой его карточку и загрузи прайс — или вписывай позиции руками.</div>'));
     return;
   }
-  items.sort((a, b) => (EST_SECTIONS.indexOf(a.sec) - EST_SECTIONS.indexOf(b.sec)) ||
+  // своё — в том же порядке разделов, что на экране «Моё оборудование»
+  items.sort((a, b) => (own ? gearSecRank(a.sec) - gearSecRank(b.sec)
+                            : EST_SECTIONS.indexOf(a.sec) - EST_SECTIONS.indexOf(b.sec)) ||
     (a.name || '').localeCompare(b.name || '', 'ru'));
   if(own){
     // сколько штук в наличии — справкой: взять больше можно, но это уже не твоё железо
@@ -14866,12 +14868,22 @@ function efpAdd(){
    уже вернула. Сами покупки в «Финансы» не идут: это вложение, а не расход
    проекта, и его окупаемость видна здесь. */
 const OWN_GEAR = '__own__';      // «рентал» в окне набора позиций, когда выбрано своё
-// разделы сметы, в которые встаёт своё железо, — те же названия, что у позиций ренталов
-const GEAR_SECTIONS = ['Свет','Грип','Электрика','Спецэффекты','Расходники','Логистика'];
+/* Разделы своего оборудования. Свет, грип, электрика, спецэффекты, расходники
+   и логистика называются так же, как разделы позиций ренталов. «Digital», «Связь»
+   и «Прочее» есть только здесь: в формуляре сметы они встают в главу «ПРОЧЕЕ»,
+   и скидка клиенту на оборудование их не режет — как спецэффекты с расходниками.
+   В EST_SECTIONS их нет намеренно: иначе заголовок «Digital» в файле рентала
+   перестал бы читаться как оборудование, и его скидка разошлась бы с файлом. */
+const GEAR_SECTIONS = ['Свет','Грип','Электрика','Digital','Связь','Спецэффекты','Расходники','Логистика','Прочее'];
 let MY_GEAR = [];                // {id, name, sec, qty, price, cost, bought, note}
 let gearSeq = 1;
 let gearEditId = null;
 function gearItem(id){ return MY_GEAR.find(g => g.id === id); }
+// место раздела в списках; раздел не из списка встаёт в конец
+function gearSecRank(sec){
+  const i = GEAR_SECTIONS.indexOf(sec || GEAR_SECTIONS[0]);
+  return i < 0 ? GEAR_SECTIONS.length : i;
+}
 // раздел заведён, даже если из него потом всё удалили: пустой список — тоже данные
 function gearUsed(){ return MY_GEAR.length > 0 || gearSeq > 1; }
 function gearCost(g){ return (Number(g && g.cost) || 0) * (Number(g && g.qty) || 0); }
@@ -14983,10 +14995,9 @@ function renderGearScreen(){
                    : 'цены покупки не внесены', invested > 0 && left <= 0 ? 'ok' : '')}
     ${tile('Ждём', fmtMoney(pending), 'в сметах, ещё не оплачено')}
   </div>`;
-  // по разделам сметы, внутри — по алфавиту; раздел не из списка встаёт в конец
+  // по разделам, внутри — по алфавиту
   const secOf = g => g.sec || GEAR_SECTIONS[0];
-  const order = s => { const i = GEAR_SECTIONS.indexOf(s); return i < 0 ? GEAR_SECTIONS.length : i; };
-  const secs = [...new Set(MY_GEAR.map(secOf))].sort((a, b) => order(a) - order(b));
+  const secs = [...new Set(MY_GEAR.map(secOf))].sort((a, b) => gearSecRank(a) - gearSecRank(b));
   listEl.innerHTML = secs.map(sec => {
     const items = MY_GEAR.filter(g => secOf(g) === sec)
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
@@ -20470,6 +20481,20 @@ const SELF_CHECK_CASES = [
       {sec:'Свет', name:'Прибор', qty:1, days:1, price:10000, client:true, gearId:'g1'},
       {sec:'Логистика', name:'Своя машина', qty:1, days:1, price:8000, client:true, gearId:'g2'}]})),
     expect:9000 + 8000},
+  {group:'Моё оборудование', name:'Digital, связь и прочее: в формуляре — глава «ПРОЧЕЕ», скидка клиенту их не режет',
+    run:()=>{
+      const own = ['Digital','Связь','Прочее'];
+      const p = selfCheckProject({id:'__sc_gearS', estDiscount:10, estimate:[
+        {sec:'Свет', name:'Прибор', qty:1, days:1, price:10000, client:true, gearId:'g1'},
+        ...own.map((sec, n) => ({sec, name:sec, qty:1, days:1, price:1000, client:true, gearId:'g' + (n + 2)}))]});
+      const t = estPayable(p, estItems(p.estimate));
+      return (own.every(s => GEAR_SECTIONS.includes(s) && estFormGroup(s) === 'ПРОЧЕЕ') && t.other === 3000)
+        ? projectGearSum(p) : -1;
+    },
+    expect:9000 + 3000},
+  {group:'Сметы', name:'Заголовок «Digital» в файле рентала читается как оборудование — свои разделы на загрузку не влияют',
+    run:()=>['DIGITAL','Связь','Прочее'].every(s => estFormGroup(pbNormalizeSec(s)) === 'СВЕТ') ? 1 : 0,
+    expect:1},
   {group:'Моё оборудование', name:'Строка, привязанная к ренталу, в мои деньги не идёт',
     run:()=>projectGearSum(selfCheckProject({id:'__sc_gearR', estimate:[
       {sec:'Свет', name:'Прибор', qty:1, days:1, price:10000, client:true, gearId:'g1', rental:'__Р'},
