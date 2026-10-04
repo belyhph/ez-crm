@@ -1145,6 +1145,9 @@
   .proof-btn{padding:.2rem .4rem;color:var(--ink-muted);}
   .proof-btn.has{color:var(--ok);border-color:var(--ok);}
   /* Частичные выплаты: прогресс и история платежей под строкой */
+  .est-sum-foot{display:flex;justify-content:space-between;align-items:baseline;gap:.6rem;
+    padding:.3rem .1rem;font-size:.78rem;color:var(--ink-muted);}
+  .est-sum-foot.total{color:var(--ink);font-weight:600;border-top:1px solid var(--line);margin-top:.1rem;}
   .pay-row-wrap{margin-bottom:.15rem;}
   .pay-progress{display:block;font-family:var(--font-body);font-size:.68rem;
     color:var(--ink-muted);margin-top:.1rem;}
@@ -3295,7 +3298,9 @@ function ratesMissingRoles(p, rates){
   const need = new Set();
   allDays(p).forEach(d => (d.units || []).forEach((u, i) => {
     unitOthers(u).forEach(c => need.add(c.role || 'Осветитель'));
-    if(unitMeOn(u, i) && !(u.crew || []).some(c => (c.role || '') === 'Гафер')) need.add('Гафер');
+    // моя карточка тоже лежит в crew с ролью «Гафер» — смотрим только наёмных,
+    // иначе роль никогда не попадала в список недостающих ставок
+    if(unitMeOn(u, i) && u.meFee == null && !unitOthers(u).some(c => (c.role || '') === 'Гафер')) need.add('Гафер');
   }));
   return [...need].filter(r => !rateRow(rates, r));
 }
@@ -4060,7 +4065,7 @@ let TRASH = [];
 /* Версия навыка Hermes, с которой собран сайт: build-site.sh вписывает её сюда при сборке
    (в артефакте остаётся пусто). Приложение кладёт её в данные — открыл обновлённое
    приложение, и Hermes по ней сразу видит, что пора подтянуть новые инструкции. */
-const HX_SKILL_VERSION = '0b1ab2769619';
+const HX_SKILL_VERSION = 'dc09f48f671b';
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 // родительный падеж — для заголовков вида «14 июля 2026»
@@ -5036,10 +5041,12 @@ function openCancelProj(pid, afterDone){
       /* «Я на смене» — мой гонорар живёт в смете, а не в выплатах, поэтому и неустойка
          по нему отдельной строкой: без неё свои деньги за отмену просто терялись.
          Если гафером в юните стоит человек из команды, моей строки нет — он уже выше. */
-      if(unitMeOn(u, uIdx) && !isSoloTrip(p) && !(u.crew||[]).some(c => (c.role||'') === 'Гафер')){
+      if(unitMeOn(u, uIdx) && !isSoloTrip(p) && !unitOthers(u).some(c => (c.role||'') === 'Гафер')){
+        // база — вписанный гонорар, если он задан: отменяют ту смену, о которой договорились
         gaffer.push({unitId:u.id, dayIso:iso, name:'Я — гафер', role:'Гафер',
           note: [where, 'я на смене'].filter(Boolean).join(' · '),
-          base: roleShiftRate(rates, 'Гафер'), mode:'100', custom:0, locked:false, paidSum:0});
+          base: u.meFee != null ? Math.max(0, Math.round(Number(u.meFee) || 0)) : roleShiftRate(rates, 'Гафер'),
+          mode:'100', custom:0, locked:false, paidSum:0});
       }
     });
   });
@@ -7403,7 +7410,7 @@ function renderTrip(p){
    потому что заметить это по итогу трудно. */
 function tripMeWarnHTML(p){
   if(isSoloTrip(p) || !tripFee(p)) return '';
-  const days = allDays(p).filter(d => (d.units||[]).some((u,i)=>unitMeOn(u,i) && !(u.crew||[]).some(c=>(c.role||'')==='Гафер')));
+  const days = allDays(p).filter(d => (d.units||[]).some((u,i)=>unitMeOn(u,i) && !unitOthers(u).some(c=>(c.role||'')==='Гафер')));
   if(!days.length) return '';
   return `<div class="form-hint" style="margin-top:.4rem;">В ${days.length} ${plural(days.length,'дне','днях','днях')}
     включено «Я на смене» — там в смету идёт ещё и посменный гонорар гафера, поверх этого фикса.
@@ -7733,8 +7740,10 @@ function moneyTotals(p){
   const rentDue = Math.max(0, rentGross - rentCut);
   const over = projectOverrun(p);
   const taxi = allUnits(p).reduce((sum, u) => sum + (u.taxi || 0), 0);   // такси раздаю ребятам — это расход
+  const bill = estPayable(p, estItems(allEstimate(p)));   // из чего сложилась сумма клиенту
+  const myFee = allEstimate(p).filter(i => i.gaffer).reduce((sum, i) => sum + lineTotal(i), 0);
   return {
-    client: p.sum || 0, clientPaid: p.paidAmount || 0,
+    client: p.sum || 0, clientPaid: p.paidAmount || 0, bill, myFee,
     crewGross, crewCut, crewDue, crewPaid, crewLeft: Math.max(0, crewDue - crewPaid),
     rentGross, rentCut, rentDue, rentPaid, rentLeft: Math.max(0, rentDue - rentPaid),
     overrun: over, cuts: crewCut + rentCut, onMe: overrunOnMe(p),
@@ -7743,6 +7752,46 @@ function moneyTotals(p){
     mine: (p.sum || 0) - over - crewDue - rentDue - taxi - tripSpend(p),
     fact: projectProfit(p),
   };
+}
+/* Почему моего гонорара нет в сумме клиенту. Молчаливый ноль здесь дороже всего:
+   смета уходит заказчику без моей смены, и замечаешь это уже по деньгам. */
+function gafferFeeNote(p){
+  if(isSoloTrip(p) || p.cancelled) return '';
+  const myFee = allEstimate(p).filter(i => i.gaffer).reduce((s, i) => s + lineTotal(i), 0);
+  if(myFee > 0) return '';
+  const units = [];
+  allDays(p).forEach(d => (d.units || []).forEach((u, i) => units.push({u, i, d})));
+  if(!units.length) return '';
+  const mine = units.filter(x => unitMeOn(x.u, x.i));
+  if(!mine.length){
+    // нигде не отмечено «Я на смене» — может быть и правдой, поэтому подсказка мягкая
+    return `<div class="money-over">
+      <span>Моего гонорара в смете нет: ни в одной смене не включено «Я на смене».</span>
+      <button class="btn ghost tiny" onclick="showTab('crew')">Открыть команду</button>
+    </div>`;
+  }
+  const hired = mine.every(x => unitOthers(x.u).some(c => (c.role || '') === 'Гафер'));
+  if(hired) return '';   // гафером стоит человек из команды — ему и платят, это нормально
+  const noTime = mine.some(x => unitShiftHours(x.u) == null);
+  const noRate = !roleShiftRate(projectRates(p), 'Гафер');
+  return `<div class="money-over">
+    <span>Я на смене, но гонорара в смете нет${noRate ? ': в ставках проекта нет роли «Гафер»'
+      : (noTime ? ': не проставлено время смены' : '')}.</span>
+    <button class="btn ghost tiny" onclick="showTab('crew')">Открыть команду</button>
+  </div>`;
+}
+// вернуть сумму проекта на автоматический расчёт по смете
+function useAutoSum(pid){
+  const p = PROJECTS.find(x => x.id === pid);
+  if(!p || !p.sumManual) return;
+  const auto = autoSumFromEstimate(p);
+  askConfirm({title:'Считать сумму по смете?',
+    text:`Сейчас вписано ${fmtMoney(p.sum || 0)}, по смете выходит ${fmtMoney(auto)}. `
+      + 'Дальше сумма будет меняться вместе со сметой.', okText:'Считать по смете'}, () => {
+    p.sumManual = false;
+    refreshProjectSum(p);
+    renderMoneySummary(p); renderInfo(p); renderEstimate(p); refreshAll();
+  });
 }
 /* Какие плитки сводки раскрыты — помним между перерисовками: цифры пересчитываются
    на каждый чих, а раскрытая витрина схлопываться от этого не должна. */
@@ -7791,9 +7840,30 @@ function renderMoneySummary(p){
     ...(tripSpend(p) > 0 ? [['командировка', '−' + fmtMoney(tripSpend(p))]] : []),
     ['итого мне', `${t.mine < 0 ? '−' : ''}${fmtMoney(Math.abs(t.mine))}`],
   ];
+  /* Из чего сложилась сумма клиенту — по тем же группам, что в документе сметы.
+     Раньше плитка показывала только итог, и понять, вошёл ли в него мой гонорар,
+     было негде: приходилось сверять со сметой руками. */
+  const b = t.bill;
+  const clientRows = isSoloTrip(p)
+    ? [['гонорар за командировку', fmtMoney(tripFee(p))], ['к оплате', fmtMoney(t.client)]]
+    : [
+      ...(b.gear > 0 ? [['оборудование', fmtMoney(b.gear)]] : []),
+      ...(b.logistics > 0 ? [['логистика', fmtMoney(b.logistics)]] : []),
+      ...(b.crew > 0 ? [['персонал', fmtMoney(b.crew)]] : []),
+      ...(t.myFee > 0 ? [['· мой гонорар', fmtMoney(t.myFee)]]
+                      : [['· мой гонорар', 'не начислен']]),
+      ...(b.other > 0 ? [['прочее', fmtMoney(b.other)]] : []),
+      ...(b.rentalOff > 0 ? [['скидка рентала', '−' + fmtMoney(b.rentalOff)]] : []),
+      ...(b.gearNet - b.gearDisc > 0 ? [[`скидка клиенту ${b.discount}%`, '−' + fmtMoney(b.gearNet - b.gearDisc)]] : []),
+      ...(b.taxSum > 0 ? [[`налог ${b.tax}%`, '+' + fmtMoney(b.taxSum)]] : []),
+      ['к оплате', fmtMoney(b.payable)],
+      ...(p.sumManual ? [['вписано руками', fmtMoney(t.client)]] : []),
+      ...(t.clientPaid > 0 ? [['получено', fmtMoney(t.clientPaid)]] : []),
+    ];
   box.innerHTML = `<div class="money-sum">
     ${tile('От клиента', `<span class="ms-pair">${fmtMoney(t.clientPaid).replace(' ₽', '')} / ${fmtMoney(t.client)}</span>`,
-      t.client - t.clientPaid > 0 ? `остаток ${fmtMoney(t.client - t.clientPaid)}` : (t.client ? 'закрыт' : 'сметы нет'))}
+      t.client - t.clientPaid > 0 ? `остаток ${fmtMoney(t.client - t.clientPaid)}` : (t.client ? 'закрыт' : 'сметы нет'),
+      '', 'client', clientRows)}
     ${tile('Команде', fmtMoney(t.crewDue), t.crewCut > 0
       ? `начислено ${fmtMoney(t.crewGross)} · вылет −${fmtMoney(t.crewCut)}`
       : (t.crewDue ? (t.crewLeft > 0 ? `осталось ${fmtMoney(t.crewLeft)}` : 'все выплаты закрыты') : 'пока никого'),
@@ -7809,6 +7879,35 @@ function renderMoneySummary(p){
   </div>`;
   // суммы в шапках блоков — чтобы свёрнутый блок всё равно говорил цифру
   const set = (id, v) => { const el = document.getElementById(id); if(el) el.innerHTML = v; };
+  /* Две вещи, из-за которых сумма клиенту бывает «не та», а почему — не видно:
+     сумма заморожена ручным вводом, и мой гонорар не попал в смету. Говорим прямо. */
+  const manualGap = p.sumManual ? autoSumFromEstimate(p) : 0;
+  if(p.sumManual){
+    box.insertAdjacentHTML('beforeend', `<div class="money-over">
+      <span>Сумма вписана руками${Math.abs(manualGap - (p.sum || 0)) > 0.5
+        ? ` — по смете ${fmtMoney(manualGap)}` : ''}. Смета её больше не меняет.</span>
+      <button class="btn ghost tiny" onclick="useAutoSum('${p.id}')">Считать по смете</button>
+    </div>`);
+  }
+  const feeNote = gafferFeeNote(p);
+  if(feeNote) box.insertAdjacentHTML('beforeend', feeNote);
+  /* Смета персонала прежнего вида: тихий пересчёт отказался (суммы разошлись),
+     и в ней может не быть ни разбивки, ни моего гонорара. Раньше об этом знал
+     только раскрытый раздел «Персонал». */
+  if(allDays(p).some(d => dayCrewIsOld(d))){
+    box.insertAdjacentHTML('beforeend', `<div class="money-over">
+      <span>Персонал посчитан прежней версией — в сумме может не быть переработок и моего гонорара.</span>
+      <button class="btn ghost tiny" onclick="showTab('estimate')">Открыть расчёт</button>
+    </div>`);
+  }
+  // соло-командировка: сумма — это гонорар поездки, позиции сметы в неё не идут
+  if(isSoloTrip(p)){
+    const est = estPayable(p, estItems(allEstimate(p))).payable;
+    if(est > 0.5) box.insertAdjacentHTML('beforeend', `<div class="money-over">
+      <span>Соло-командировка: клиенту выставлен гонорар поездки. Позиции сметы на ${fmtMoney(est)} в эту сумму не входят.</span>
+      <button class="btn ghost tiny" onclick="showTab('trip')">Открыть поездку</button>
+    </div>`);
+  }
   if(t.overrun > 0){
     const box2 = document.getElementById('moneySummary');
     if(box2) box2.insertAdjacentHTML('beforeend', `<div class="money-over">
@@ -8134,15 +8233,31 @@ function renderEstimate(p){
   function draw(){
     const day = activeDay(p);
     const items = estItems(day.estimate);
-    /* Свод дня считается тем же расчётом, что и документ: скидка рентала,
-       скидка клиенту и налог — здесь же. Раньше скидку ставили только внутри
-       «Открыть смету», и свод показывал одно, а сумма проекта — другое. */
+    /* Группы свода показывают позиции дня со скидкой ренталов. Скидка клиенту
+       и налог — свойства всей сделки, а не дня, поэтому под сводом отдельная
+       строка: сколько за день и сколько в итоге к оплате по проекту. Без неё
+       свод и плитка «От клиента» показывали разные цифры и сверить их было
+       невозможно. */
     const multi = isMultiDay(p);
+    const buckets = estSummaryBuckets(items, p);
+    const dayTotal = buckets.reduce((sum, b) => sum + b.sum, 0);
+    const tAll = estPayable(p, estItems(allEstimate(p)));
+    const why = [tAll.discount > 0 ? `скидка ${tAll.discount}%` : '',
+                 tAll.tax > 0 ? `налог ${tAll.tax}%` : '',
+                 multi ? 'все дни' : ''].filter(Boolean).join(' · ');
+    const footRow = (Math.abs(dayTotal - tAll.payable) > 0.5)
+      ? `<div class="est-sum-foot">
+           <span>${multi ? 'За этот день' : 'Позиции'}</span><span class="mono">${fmtMoney(dayTotal)}</span>
+         </div>
+         <div class="est-sum-foot total">
+           <span>К оплате${why ? ` · ${esc(why)}` : ''}</span><span class="mono">${fmtMoney(tAll.payable)}</span>
+         </div>`
+      : `<div class="est-sum-foot total"><span>К оплате</span><span class="mono">${fmtMoney(tAll.payable)}</span></div>`;
     pane.querySelector('.est-body').innerHTML = `
       ${multi ? `<div class="form-hint" style="margin-bottom:.4rem;">За ${fmtDate(day.iso)}${day.transfer?' · <b>50%</b>':''}</div>` : ''}
       <div class="est-sum">
-        ${estSummaryBuckets(items, p).map(groupRowHTML).join('')}
-      </div>` + loadNoteHTML(day);
+        ${buckets.map(groupRowHTML).join('')}
+      </div>${buckets.length ? footRow : ''}` + loadNoteHTML(day);
   }
   // «Открыть смету» — весь документ по формуляру: позиции и люди, сразу целиком.
   const docIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:.2rem;"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12.5h5M9.5 16h5"/></svg>`;
@@ -8909,16 +9024,20 @@ function estPayable(p, items){
   /* «Оборудование» в своде — свет, грип и электрика: скидка рентала и скидка
      клиенту касаются железа, но не людей, не машины и не услуг. */
   const gear = g['СВЕТ'] + g['ГРИП'] + g['ЭЛЕКТРИКА'];
-  const gearDisc = Math.round(gear * (1 - discount / 100));
-  /* Скидка рентала — та, что стоит в его же смете. Она уменьшает итог: тогда
+  /* Скидка рентала — та, что стоит в его же смете. Она уменьшает железо: тогда
      цифра в приложении совпадает с той, что рентал прислал, и с тем, что ему
-     платим. Клиентская скидка (estDiscount) — отдельная, поверх. */
+     платим. Скидка клиенту идёт ПОВЕРХ неё — по уже уценённому железу.
+     Раньше обе считались от полного гросса и вычитались одна за другой: при
+     скидке клиенту разница съедала машину, людей и мой гонорар, и сумма
+     клиенту выходила меньше настоящей. */
   const rentalRows = rentalDiscountRows(p, items);
   const rentalOff = rentalRows.reduce((sum, r) => sum + r.off, 0);
-  const total = Math.max(0, gearDisc + g['ТРАНСПОРТ'] + g['ПЕРСОНАЛ'] + g['ПРОЧЕЕ'] - rentalOff);
+  const gearNet = Math.max(0, gear - rentalOff);
+  const gearDisc = Math.round(gearNet * (1 - discount / 100));
+  const total = Math.max(0, gearDisc + g['ТРАНСПОРТ'] + g['ПЕРСОНАЛ'] + g['ПРОЧЕЕ']);
   const elec = g['ЭЛЕКТРИКА'];
   const taxSum = Math.round(total * tax / 100);
-  return {groups:g, gear, gearDisc, discount, tax, taxSum, rentalRows, rentalOff, elec,
+  return {groups:g, gear, gearNet, gearDisc, discount, tax, taxSum, rentalRows, rentalOff, elec,
     logistics:g['ТРАНСПОРТ'], crew:g['ПЕРСОНАЛ'], other:g['ПРОЧЕЕ'],
     total, payable: total + taxSum};
 }
@@ -9103,9 +9222,9 @@ function estimateTableHTML(items, t){
       <tbody>${body}</tbody>
       <tfoot>
         ${t.gear > 0 ? sumRow(t.elec > 0 ? 'Оборудование (свет, грип, электрика)' : 'Оборудование (свет + грип)', t.gear) : ''}
-        ${t.discount > 0 ? sumRow(`Скидка на оборудование ${t.discount}%`, -(t.gear - t.gearDisc)) : ''}
-        ${t.discount > 0 ? sumRow('Итого оборудование со скидкой', t.gearDisc) : ''}
-        ${(t.rentalRows || []).map(r => sumRow(`Скидка рентала «${esc(r.rental)}» ${esc(r.label).replace('скидка ', '')}`, -r.off)).join('')}
+        ${t.rentalOff > 0 ? sumRow('Скидка на оборудование', -t.rentalOff) : ''}
+        ${t.discount > 0 ? sumRow(`${t.rentalOff > 0 ? 'Дополнительная скидка' : 'Скидка на оборудование'} ${t.discount}%`, -(t.gearNet - t.gearDisc)) : ''}
+        ${(t.rentalOff > 0 || t.discount > 0) ? sumRow('Итого оборудование со скидкой', t.gearDisc) : ''}
         ${t.elec > 0 && t.discount <= 0 ? sumRow('в том числе электрика', t.elec) : ''}
         ${t.logistics > 0 ? sumRow('Логистика', t.logistics) : ''}
         ${t.crew > 0 ? sumRow('Персонал', t.crew) : ''}
@@ -9182,7 +9301,8 @@ function estimateTextVersion(p, scope){
       : `  ${i.name} — ${i.qty} × ${lineShifts(i)} смен × ${money(i.price)} = ${money(lineTotal(i))}`));
     lines.push(`  Итого ${g.toLowerCase()}: ${money(t.groups[g])}`, '');
   });
-  if(t.discount) lines.push(`Скидка на оборудование ${t.discount}%: ${money(t.gear)} → ${money(t.gearDisc)}`);
+  if(t.rentalOff) lines.push(`Скидка на оборудование: ${money(t.gear)} → ${money(t.gearNet)}`);
+  if(t.discount) lines.push(`${t.rentalOff ? 'Дополнительная скидка' : 'Скидка на оборудование'} ${t.discount}%: ${money(t.gearNet)} → ${money(t.gearDisc)}`);
   lines.push(`ИТОГО: ${money(t.total)}`);
   if(t.tax) lines.push(`Налог ${t.tax}%: ${money(t.taxSum)}`);
   lines.push(`К ОПЛАТЕ: ${money(t.payable)}`);
@@ -9524,11 +9644,11 @@ async function estimatePdfBytes(p, docLabel, scope){
   };
   y -= 4;
   if(t.gear > 0) sumRow(t.elec > 0 ? 'Оборудование (свет, грип, электрика)' : 'Оборудование (свет + грип)', t.gear);
-  if(t.discount > 0){
-    sumRow(`Скидка на оборудование ${t.discount}%`, -(t.gear - t.gearDisc));
-    sumRow('Итого оборудование со скидкой', t.gearDisc);
-  }
-  (t.rentalRows || []).forEach(r => sumRow(`Скидка рентала «${r.rental}» ${String(r.label).replace('скидка ', '')}`, -r.off));
+  /* Имя рентала и его процент — моя кухня, в документ заказчику они не идут:
+     одной строкой «Скидка на оборудование». Клиентская скидка — поверх неё. */
+  if(t.rentalOff > 0) sumRow('Скидка на оборудование', -t.rentalOff);
+  if(t.discount > 0) sumRow(`${t.rentalOff > 0 ? 'Дополнительная скидка' : 'Скидка на оборудование'} ${t.discount}%`, -(t.gearNet - t.gearDisc));
+  if(t.rentalOff > 0 || t.discount > 0) sumRow('Итого оборудование со скидкой', t.gearDisc);
   if(t.elec > 0 && t.discount <= 0) sumRow('в том числе электрика', t.elec);
   if(t.logistics > 0) sumRow('Логистика', t.logistics);
   if(t.crew > 0) sumRow('Персонал', t.crew);
@@ -10341,21 +10461,33 @@ function renderCrewTab(p){
              Сумма показывается по гонорару из сметы — чтобы было видно, во что
              оценена собственная смена. */
           const fee = myFeeInUnit(p, u);
+          const byHandFee = u.meFee != null;
+          const feeTag = byHandFee
+            ? `<span class="cm-tag">вручную${activeDay(p).transfer ? ' · без половины дня' : ''}</span>` : '';
+          const noRate = !byHandFee && !roleShiftRate(projectRates(p), 'Гафер');
           return `<div class="cm${open ? ' open' : ''}">
             <button class="cm-head" onclick="toggleCrewRow(${u.id},'${c.id}')">
               <span class="avatar sm">${initials}</span>
               <span class="cm-name">${esc(person ? person.name : 'Я')}
-                <span class="cm-role">Гафер<span class="cm-tag">это я</span></span></span>
+                <span class="cm-role">Гафер<span class="cm-tag">это я</span>${feeTag}</span></span>
               <span class="cm-sum mono">${fee > 0 ? fmtMoney(fee) : '<span class="cm-sum-sub">гонорар в смете</span>'}</span>
               <span class="cm-chev">›</span>
             </button>
             <div class="cm-body">
               <div class="cm-tools">
+                <button class="btn ghost tiny" onclick="openMeFee(${u.id})">${byHandFee ? '✎ Гонорар вручную' : 'Гонорар'}</button>
+                ${byHandFee ? `<button class="btn ghost tiny" onclick="clearMeFee(${u.id})" title="Считать по ставке «Гафер»">↺ Авторасчёт</button>` : ''}
                 <button class="btn ghost tiny" onclick="openCrewDetail('${ME_ID}')">Карточка</button>
                 <button class="btn ghost tiny" onclick="toggleUnitMe(${u.id})">Убрать себя со смены</button>
               </div>
+              ${noRate ? `<div class="form-err">В ставках этого проекта нет роли «Гафер» —
+                гонорар считается по нулю и в смету клиенту не попадает. Впиши сумму кнопкой «Гонорар»
+                или добавь ставку в версию ставок.</div>` : ''}
               <div class="form-hint">Гонорар уходит клиенту в смету и остаётся в моём доходе —
                 выплаты себе не бывает, поэтому в долгах эта строка не появляется.
+                ${byHandFee
+                  ? 'Сейчас он вписан руками: пересчёт команды его не трогает.'
+                  : 'Можно вписать свою сумму — кнопка «Гонорар», тогда ставка не применяется.'}
                 Пропуск и кредитсы бери из карточки.</div>
             </div>
           </div>`;
@@ -10795,6 +10927,17 @@ function buildCrewLines(p, day, loadOverrides, dry){
 
   dayUnits.forEach((u, uIdx)=>{
     if(!u.crew.length && !unitMeOn(u, uIdx)) return;
+    const prefixEarly = multi ? `${u.name} · ` : '';
+    /* Вписанный руками гонорар ставим до всех проверок: ему не нужны ни часы
+       смены, ни отсутствие наёмного гафера — это моя договорная цена, и она
+       должна дойти до клиента в любом случае. */
+    const meFeeSet = unitMeOn(u, uIdx) && u.meFee != null;
+    if(meFeeSet){
+      newLines.push({sec:'Персонал', name:`${prefixEarly}Гафер — гонорар за смену`,
+        qty:1, days:1, people:1, unitLabel:'смена',
+        price:Math.max(0, Math.round(Number(u.meFee) || 0)),
+        client:true, gaffer:true, meFee:true, noK:true});
+    }
     const shiftH = unitShiftHours(u);
     if(shiftH==null){ problems.push(`${u.name}: не проставлены начало и конец смены`); return; }
     const ot = unitOvertimeHours(u, rates);   // учитывает ночную смену и текущий обед
@@ -10884,25 +11027,27 @@ function buildCrewLines(p, day, loadOverrides, dry){
        в моём доходе. Если в юните уже есть человек с ролью «Гафер», авто-строки
        не добавляются — чтобы не задвоить. */
     if(unitMeOn(u, uIdx) && !unitOthers(u).some(c => (c.role || '') === 'Гафер')){
-      const meBase = roleShiftRate(rates, 'Гафер');
-      const meOt = prog ? overtimePayR(rates, 'Гафер', ot) : overtimePayFlatR(rates, 'Гафер', ot);
-      const meP1 = (rateRow(rates, 'Гафер') || {}).p1 || 0;
-      const meLoad = Math.round(loadH * meP1);
-      const meGap = Math.round(gapH * meP1);
-      newLines.push({sec:'Персонал', name:`${prefix}Гафер — смена${unitNight(u)?' (ночная)':''}`,
-        qty:1, days:1, people:1, unitLabel:'смена', price:meBase, client:true, gaffer:true});
-      const meOtH = otLineHours(ot, loadH, loadAsOt);
-      otBands(rates, 'Гафер', ot, prog, loadAsOt ? loadH : 0).forEach((b, bi) => {
-        newLines.push({sec:'Персонал',
-          name:`${prefix}Гафер — переработка${prog ? ', ' + OT_STEP_NAME[b.step] : ''}`,
-          qty:b.hours, days:1, people:1, unitLabel:'ч', price:b.rate, client:true, gaffer:true,
-          otHours:bi === 0 ? meOtH : 0,
-          loadHours:(bi === 0 && loadAsOt) ? loadH : 0,
-          loadPay:(bi === 0 && loadAsOt) ? meLoad : 0});
-      });
-      if(meGap>0) newLines.push({sec:'Персонал',
-        name:`${prefix}Гафер — разрыв (переработка, 1-я ступень)`,
-        qty:gapH, days:1, people:1, unitLabel:'ч', price:meP1, client:true, gaffer:true});
+      // вписанный гонорар уже добавлен выше — по ставке тогда не считаем
+      if(u.meFee == null){
+        const meBase = roleShiftRate(rates, 'Гафер');
+        const meP1 = (rateRow(rates, 'Гафер') || {}).p1 || 0;
+        const meLoad = Math.round(loadH * meP1);
+        const meGap = Math.round(gapH * meP1);
+        newLines.push({sec:'Персонал', name:`${prefix}Гафер — смена${unitNight(u)?' (ночная)':''}`,
+          qty:1, days:1, people:1, unitLabel:'смена', price:meBase, client:true, gaffer:true});
+        const meOtH = otLineHours(ot, loadH, loadAsOt);
+        otBands(rates, 'Гафер', ot, prog, loadAsOt ? loadH : 0).forEach((b, bi) => {
+          newLines.push({sec:'Персонал',
+            name:`${prefix}Гафер — переработка${prog ? ', ' + OT_STEP_NAME[b.step] : ''}`,
+            qty:b.hours, days:1, people:1, unitLabel:'ч', price:b.rate, client:true, gaffer:true,
+            otHours:bi === 0 ? meOtH : 0,
+            loadHours:(bi === 0 && loadAsOt) ? loadH : 0,
+            loadPay:(bi === 0 && loadAsOt) ? meLoad : 0});
+        });
+        if(meGap>0) newLines.push({sec:'Персонал',
+          name:`${prefix}Гафер — разрыв (переработка, 1-я ступень)`,
+          qty:gapH, days:1, people:1, unitLabel:'ч', price:meP1, client:true, gaffer:true});
+      }
     }
 
     // Фикс с клиента за П/Р — одной строкой на юнит, поверх начислений команде
@@ -11049,6 +11194,59 @@ function setUnitTime(unitId, field, value){
 /* «Я на смене»: по умолчанию гафер стоит на первом юните дня.
    Явный выбор пользователя хранится в u.me и главнее умолчания. */
 function unitMeOn(u, idx){ return u.me != null ? !!u.me : idx === 0; }
+/* ===== Мой гонорар за смену =====
+   По умолчанию он считается по ставке «Гафер» — смена, переработка, П/Р, разрыв.
+   Но цена гафера часто договорная: вписанная сумма заменяет весь этот расчёт
+   одной строкой в смете. Живёт на юните (u.meFee), поэтому переживает пересчёт
+   команды, у каждого юнита своя и копируется вместе с днём. */
+function meFeeAuto(p, u){
+  // считаем «как было бы по ставке»: на время прикидки убираем вписанную сумму
+  const saved = u.meFee;
+  delete u.meFee;
+  try{
+    const res = buildCrewLines(p, activeDay(p), null, true);
+    const multi = (activeDay(p).units || []).length > 1;
+    const prefix = multi ? `${u.name} · ` : '';
+    return res.newLines
+      .filter(i => i.gaffer && (!multi || String(i.name || '').startsWith(prefix)))
+      .reduce((sum, i) => sum + lineTotal(i), 0);
+  } finally {
+    if(saved != null) u.meFee = saved;
+  }
+}
+function openMeFee(unitId){
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  const u = findUnit(p, unitId);
+  if(!u) return;
+  const cur = u.meFee != null ? u.meFee : myFeeInUnit(p, u);
+  askInput({title:'Мой гонорар за смену', type:'number', value:cur, okText:'Сохранить',
+    text:'Сколько я беру за эту смену. Цифра уйдёт клиенту в смету одной строкой вместо '
+      + 'расчёта по ставке «Гафер» — смена, переработка, П/Р и разрыв в неё уже входят. '
+      + 'На половинном дне берётся как есть, вполовину не режется.'}, raw => {
+    const v = parseFloat(String(raw).replace(',', '.').replace(/\s/g, ''));
+    if(isNaN(v) || v < 0){ askNotice('Нужно число не меньше нуля.', 'Не сохранил'); return; }
+    u.meFee = Math.round(v);
+    autoCalcPersonnel(p);
+    renderCrewTab(p); renderEstimate(p); renderPayTab(p); renderInfo(p);
+    syncEstimateToFiles(p); refreshAll();
+  });
+}
+function clearMeFee(unitId){
+  const p = PROJECTS.find(x => x.id === currentProjectId);
+  const u = findUnit(p, unitId);
+  if(!u || u.meFee == null) return;
+  const was = Number(u.meFee) || 0;
+  const auto = meFeeAuto(p, u);
+  askConfirm({title:'Вернуть авторасчёт?',
+    text:`Гонорар снова будет считаться по ставке «Гафер»: смена, переработка, П/Р и разрыв `
+      + `по часам этой смены. Сейчас вписано ${fmtMoney(was)}, станет ${fmtMoney(auto)}.`,
+    okText:'Вернуть'}, () => {
+    delete u.meFee;
+    autoCalcPersonnel(p);
+    renderCrewTab(p); renderEstimate(p); renderPayTab(p); renderInfo(p);
+    syncEstimateToFiles(p); refreshAll();
+  });
+}
 function toggleUnitMe(unitId){
   const p = PROJECTS.find(x=>x.id===currentProjectId);
   const units = activeDay(p).units;
@@ -11593,7 +11791,7 @@ function renderPayTab(p){
       <label title="Скидка клиенту на оборудование">скидка
         <input class="est-opt-in" type="number" min="0" max="100" step="1" value="${p.estDiscount || 0}"
           onchange="setEstOpt('${p.id}','estDiscount',this.value)">%</label>
-      <span class="mono est-foot-off">${tAll.gear - tAll.gearDisc > 0 ? '−' + fmtMoney(tAll.gear - tAll.gearDisc) : ''}</span>
+      <span class="mono est-foot-off">${tAll.gearNet - tAll.gearDisc > 0 ? '−' + fmtMoney(tAll.gearNet - tAll.gearDisc) : ''}</span>
       <label title="Налог на весь итог">налог
         <input class="est-opt-in" type="number" min="0" max="30" step="0.5" value="${p.estTax || 0}"
           onchange="setEstOpt('${p.id}','estTax',this.value)">%</label>
@@ -17779,6 +17977,81 @@ const SELF_CHECK_CASES = [
   {group:'Выплаты', name:'Закрытая позиция — остаток всегда ноль',
     run:()=>{ const item={amount:15000, paid:true, payments:[{amount:12000,type:'cash',date:'2026-01-01'}]};
       return settlementLeft(item); }, expect:0},
+
+  // ---- Мой гонорар: авторасчёт и вписанная сумма ----
+  {group:'Смета', name:'Гонорар гафера попадает в сумму клиенту',
+    run:()=>{
+      const u = selfCheckUnit({me:true, shiftEnd:'20:00', crew:[]});
+      const p = selfCheckProject({id:'__selfcheck_fee__', units:[u]});
+      const lines = buildCrewLines(p, p, null, true).newLines;
+      p.estimate = lines;
+      const fee = lines.filter(i => i.gaffer).reduce((s,i)=>s+lineTotal(i),0);
+      return (fee > 0 && autoSumFromEstimate(p) >= fee) ? 1 : 0; },
+    expect:1},
+  {group:'Смета', name:'Вписанный гонорар заменяет расчёт по ставке одной строкой',
+    run:()=>{
+      const u = selfCheckUnit({me:true, shiftEnd:'20:00', crew:[], meFee:45000});
+      const p = selfCheckProject({id:'__selfcheck_fee2__', units:[u]});
+      const mine = buildCrewLines(p, p, null, true).newLines.filter(i => i.gaffer);
+      return (mine.length === 1 && mine[0].meFee === true && lineTotal(mine[0]) === 45000) ? 1 : 0; },
+    expect:1},
+  {group:'Трансферный день', name:'Вписанный гонорар половинным днём не режется',
+    run:()=>{
+      const u = selfCheckUnit({me:true, shiftEnd:'20:00', crew:[], meFee:40000});
+      const p = selfCheckProject({id:'__selfcheck_fee3__', units:[u], transfer:true});
+      p.estimate = buildCrewLines(p, p, null, true).newLines;
+      syncTransferK(p);
+      return allEstimate(p).filter(i => i.gaffer).reduce((s,i)=>s+lineTotal(i),0); },
+    expect:40000},
+  {group:'Смета', name:'Нулевой гонорар видно: роль «Гафер» попадает в недостающие ставки',
+    run:()=>{
+      const u = selfCheckUnit({me:true, shiftEnd:'20:00', crew:[]});
+      const p = selfCheckProject({id:'__selfcheck_fee4__', units:[u]});
+      const rates = cloneRates(BASE_RATES);
+      rates.roles = rates.roles.filter(r => r.name !== 'Гафер');
+      const need = ratesMissingRoles(p, rates);
+      // а со вписанным гонораром ставка уже не нужна
+      u.meFee = 30000;
+      return (need.includes('Гафер') && !ratesMissingRoles(p, rates).includes('Гафер')) ? 1 : 0; },
+    expect:1},
+
+  {group:'Смета', name:'Вписанный гонорар доходит до клиента и без времени смены',
+    run:()=>{
+      const u = selfCheckUnit({me:true, shiftStart:'', shiftEnd:'', crew:[], meFee:60000});
+      const p = selfCheckProject({id:'__selfcheck_fee5__', units:[u]});
+      p.estimate = buildCrewLines(p, p, null, true).newLines;
+      return autoSumFromEstimate(p); },
+    expect:60000},
+  {group:'Смета', name:'Вписанный гонорар не пропадает, когда в юните есть наёмный гафер',
+    run:()=>{
+      const u = selfCheckUnit({me:true, shiftEnd:'20:00', meFee:60000,
+        crew:[{id:'x', role:'Гафер', payments:[], paid:false}]});
+      const p = selfCheckProject({id:'__selfcheck_fee6__', units:[u]});
+      const mine = buildCrewLines(p, p, null, true).newLines.filter(i => i.meFee);
+      return (mine.length === 1 && lineTotal(mine[0]) === 60000) ? 1 : 0; },
+    expect:1},
+  {group:'Сметы', name:'Скидка клиенту считается от железа, уже уценённого ренталом',
+    run:()=>{
+      const p = selfCheckProject({id:'__selfcheck_disc__', estimate:[
+        {sec:'Свет', name:'Комплект', qty:1, days:1, price:100000, client:true, rental:'Тест Рентал'},
+        {sec:'Логистика', name:'Фура', qty:1, days:1, price:20000, client:true},
+        {sec:'Персонал', name:'Гафер — смена', qty:1, days:1, people:1, price:30000, client:true, gaffer:true}]});
+      setRentalDiscountOn(p, 'Тест Рентал', {pct:50});
+      p.estDiscount = 50;
+      const t = estPayable(p, estItems(p.estimate));
+      // 100 000 → 50 000 (рентал) → 25 000 (клиент) + фура 20 000 + гонорар 30 000
+      return t.total; },
+    expect:75000},
+  {group:'Сметы', name:'Полная скидка на оборудование не съедает логистику и мой гонорар',
+    run:()=>{
+      const p = selfCheckProject({id:'__selfcheck_disc2__', estimate:[
+        {sec:'Свет', name:'Комплект', qty:1, days:1, price:100000, client:true, rental:'Тест Рентал'},
+        {sec:'Логистика', name:'Фура', qty:1, days:1, price:20000, client:true},
+        {sec:'Персонал', name:'Гафер — смена', qty:1, days:1, people:1, price:30000, client:true, gaffer:true}]});
+      setRentalDiscountOn(p, 'Тест Рентал', {pct:50});
+      p.estDiscount = 100;
+      return estPayable(p, estItems(p.estimate)).total; },
+    expect:50000},
 
   // ---- Правка ошибочной записи об оплате ----
   {group:'Выплаты', name:'Платёж убран из закрытой выплаты — она снова открыта с остатком',
